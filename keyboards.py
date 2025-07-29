@@ -259,9 +259,6 @@ def get_management_keyboard(is_running: bool, ub_username: str, ub_type: str, is
             if ub_type in ['fox', 'heroku']:
                 builder.row(InlineKeyboardButton(text="🔄 Переустановить", callback_data=f"reinstall_ub_start_request:{ub_username}:{owner_id_str}"))
             if is_private:
-                web_app_url = f"https://host.ekey.space/"
-                builder.row(InlineKeyboardButton(text="🌐 Веб-интерфейс", web_app=WebAppInfo(url=web_app_url)))
-            if is_private:
                 builder.row(InlineKeyboardButton(text="👥 Поделиться панелью", callback_data=f"share_panel_start:{ub_username}"))
             if is_super_admin:
                 builder.row(InlineKeyboardButton(text="🔄 Мигрировать на другой сервер", callback_data=f"migrate_ub_start:{ub_username}"))
