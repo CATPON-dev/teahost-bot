@@ -21,6 +21,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.markdown import hlink
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters.callback_data import CallbackData
+from aiogram.exceptions import TelegramBadRequest
 import html as py_html
 import traceback
 
@@ -442,439 +443,475 @@ async def cmd_review(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "accept_agreement")
 async def cq_accept_agreement(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    user = call.from_user
-    await db.register_or_update_user(tg_user_id=user.id, username=user.username, full_name=user.full_name)
-    await db.set_user_agreement_accepted(user.id)
-    await call.answer("Спасибо! Теперь вы можете пользоваться всеми функциями бота.", show_alert=True)
-    await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=user.id, user_name=user.full_name, state=state, message_id=call.message.message_id, topic_id=call.message.message_thread_id)
+    try:
+        user = call.from_user
+        await db.register_or_update_user(tg_user_id=user.id, username=user.username, full_name=user.full_name)
+        await db.set_user_agreement_accepted(user.id)
+        await call.answer("Спасибо! Теперь вы можете пользоваться всеми функциями бота.", show_alert=True)
+        await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=user.id, user_name=user.full_name, state=state, message_id=call.message.message_id, topic_id=call.message.message_thread_id)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data == "back_to_main_panel")
 async def cq_back_to_main_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
-    await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=call.from_user.id, user_name=call.from_user.full_name, state=state, message_id=call.message.message_id, topic_id=call.message.message_thread_id)
-    await call.answer()
+    try:
+        await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+        await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=call.from_user.id, user_name=call.from_user.full_name, state=state, message_id=call.message.message_id, topic_id=call.message.message_thread_id)
+        await call.answer()
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data == "back_to_main_panel_delete")
 async def cq_back_to_main_panel_delete(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    await call.message.delete()
-    await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=call.from_user.id, user_name=call.from_user.full_name, state=state, topic_id=call.message.message_thread_id)
-    await call.answer()
+    try:
+        await call.message.delete()
+        await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=call.from_user.id, user_name=call.from_user.full_name, state=state, topic_id=call.message.message_thread_id)
+        await call.answer()
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 async def _start_installation_flow(call: types.CallbackQuery, state: FSMContext):
-    from bot import BANNER_FILE_IDS
-    photo_file = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
-    message_to_edit_id = call.message.message_id
     try:
-        await call.message.edit_media(
-            media=InputMediaPhoto(media=photo_file, caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов..."),
-            reply_markup=kb.get_loading_keyboard()
+        from bot import BANNER_FILE_IDS
+        photo_file = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
+        message_to_edit_id = call.message.message_id
+        try:
+            await call.message.edit_media(
+                media=InputMediaPhoto(media=photo_file, caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов..."),
+                reply_markup=kb.get_loading_keyboard()
+            )
+        except TelegramBadRequest:
+            await call.message.delete()
+            new_msg = await call.message.answer_photo(
+                photo=photo_file, 
+                caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов...",
+                reply_markup=kb.get_loading_keyboard()
+            )
+            message_to_edit_id = new_msg.message_id
+
+        await state.update_data(message_id_to_edit=message_to_edit_id)
+
+        servers = server_config.get_servers()
+        installed_bots_map = {ip: len(await db.get_userbots_by_server_ip(ip)) for ip in servers.keys()}
+        tasks = [sm.get_server_stats(ip) for ip in servers.keys()]
+        stats_results = await asyncio.gather(*tasks)
+        server_stats = dict(zip(servers.keys(), stats_results))
+        
+        await state.update_data(server_stats=server_stats)
+        
+        text = "<b>⬇️ Установка</b>\n\n<b>💻 Выберите сервер, на который хотите установить юзербот</b>"
+        
+        await call.bot.edit_message_media(
+            chat_id=call.message.chat.id, message_id=message_to_edit_id,
+            media=InputMediaPhoto(media=photo_file, caption=text),
+            reply_markup=kb.get_server_selection_keyboard(call.from_user.id, installed_bots_map, server_stats)
         )
+        await state.set_state(UserBotSetup.ChoosingServer)
     except TelegramBadRequest:
-        await call.message.delete()
-        new_msg = await call.message.answer_photo(
-            photo=photo_file, 
-            caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов...",
-            reply_markup=kb.get_loading_keyboard()
-        )
-        message_to_edit_id = new_msg.message_id
-
-    await state.update_data(message_id_to_edit=message_to_edit_id)
-
-    servers = server_config.get_servers()
-    installed_bots_map = {ip: len(await db.get_userbots_by_server_ip(ip)) for ip in servers.keys()}
-    tasks = [sm.get_server_stats(ip) for ip in servers.keys()]
-    stats_results = await asyncio.gather(*tasks)
-    server_stats = dict(zip(servers.keys(), stats_results))
-    
-    await state.update_data(server_stats=server_stats)
-    
-    text = "<b>⬇️ Установка</b>\n\n<b>💻 Выберите сервер, на который хотите установить юзербот</b>"
-    
-    await call.bot.edit_message_media(
-        chat_id=call.message.chat.id, message_id=message_to_edit_id,
-        media=InputMediaPhoto(media=photo_file, caption=text),
-        reply_markup=kb.get_server_selection_keyboard(call.from_user.id, installed_bots_map, server_stats)
-    )
-    await state.set_state(UserBotSetup.ChoosingServer)
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data == "create_userbot_start", IsSubscribed(), StateFilter("*"))
 async def cq_create_userbot_start(call: types.CallbackQuery, state: FSMContext):
-    if len(await db.get_userbots_by_tg_id(call.from_user.id)) >= 1:
-        await call.answer("❌ У вас уже есть юзербот. Вы можете установить только одного.", show_alert=True)
-        return
-    
-    await state.clear()
-    await call.answer()
-    await _start_installation_flow(call, state)
+    try:
+        if len(await db.get_userbots_by_tg_id(call.from_user.id)) >= 1:
+            await call.answer("❌ У вас уже есть юзербот. Вы можете установить только одного.", show_alert=True)
+            return
+        
+        await state.clear()
+        await call.answer()
+        await _start_installation_flow(call, state)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 class ReinstallUBCallback(CallbackData, prefix="reinstall_ub_start_request"):
     ub_username: str
     owner_id: int
-
+    
 @router.callback_query(ReinstallUBCallback.filter())
 async def cq_reinstall_ub_start_request(call: types.CallbackQuery, callback_data: ReinstallUBCallback, state: FSMContext, bot: Bot):
-    ub_username = callback_data.ub_username
-    owner_id = callback_data.owner_id
-    if not check_panel_owner(call, owner_id):
-        return
-    await call.answer("Функция переустановки временно недоступна.", show_alert=True)
+    try:
+        ub_username = callback_data.ub_username
+        owner_id = callback_data.owner_id
+        if not check_panel_owner(call, owner_id):
+            return
+        await call.answer("Функция переустановки временно недоступна.", show_alert=True)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.in_({"server_unavailable", "server_test_unavailable", "server_noub", "server_full"}), UserBotSetup.ChoosingServer)
 async def cq_server_unavailable(call: types.CallbackQuery):
-    alerts = {
-        "server_unavailable": "🔴 Этот сервер временно недоступен для выбора.",
-        "server_test_unavailable": "🧪 Нельзя выбрать тестовый сервер!",
-        "server_noub": "🟢 Установка новых юзерботов на этот сервер временно отключена.",
-        "server_full": "❌ Сервера переполнен\n\nВыберите другой сервер."
-    }
-    await call.answer(alerts.get(call.data, "Это действие сейчас недоступно."), show_alert=True)
+    try:
+        alerts = {
+            "server_unavailable": "🔴 Этот сервер временно недоступен для выбора.",
+            "server_test_unavailable": "🧪 Нельзя выбрать тестовый сервер!",
+            "server_noub": "🟢 Установка новых юзерботов на этот сервер временно отключена.",
+            "server_full": "❌ Сервера переполнен\n\nВыберите другой сервер."
+        }
+        await call.answer(alerts.get(call.data, "Это действие сейчас недоступно."), show_alert=True)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data == "server_is_service", UserBotSetup.ChoosingServer)
 async def cq_service_server_selected(call: types.CallbackQuery):
-    await call.answer("ℹ️ Это сервисный сервер, на котором работает бот.\n\nУстановка юзерботов на него невозможна.", show_alert=True)
+    try:
+        await call.answer("ℹ️ Это сервисный сервер, на котором работает бот.\n\nУстановка юзерботов на него невозможна.", show_alert=True)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("confirm_unstable:"), UserBotSetup.ChoosingServer)
 async def cq_confirm_unstable_server(call: types.CallbackQuery, state: FSMContext):
-    await call.answer("Хорошо, продолжаю установку.")
-    server_ip = call.data.split(":")[1]
-    await _proceed_to_type_selection(call, state, server_ip)
-    
+    try:
+        await call.answer("Хорошо, продолжаю установку.")
+        server_ip = call.data.split(":")[1]
+        await _proceed_to_type_selection(call, state, server_ip)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
 @router.callback_query(F.data.startswith("ub_type:"), UserBotSetup.ChoosingUserBotType)
 async def cq_process_ub_type_selection(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    await call.answer()
-    _, ub_type, server_ip = call.data.split(":")
-    await state.update_data(selected_ub_type=ub_type)
-    
-    user = call.from_user
-    name_base = str(user.id)
-    ub_username = f"ub{name_base}"
-
-    await state.update_data(chosen_username_base=name_base, ub_username=ub_username)
-
-    current_state = await state.get_state()
-    if current_state != UserBotSetup.Reinstalling.state and await db.get_userbot_data(ub_username=ub_username):
-        await call.message.edit_caption(
-            caption="❌ <b>Ошибка:</b> У вас уже есть юзербот с таким системным именем.\n\n"
-                    "Это могло произойти, если была прервана предыдущая установка. "
-                    "Обратитесь в поддержку для решения проблемы.",
-            reply_markup=kb.get_back_to_main_panel_keyboard()
-        )
-        await state.clear()
-        return
-
-    data = await state.get_data()
-    message_id = data.get("message_id_to_edit", call.message.message_id)
-
     try:
-        await bot.edit_message_caption(
-            chat_id=call.message.chat.id, message_id=message_id,
-            caption="<b>[Шаг 3/3] Установка...</b>\n\n<blockquote>Этот процесс может занять несколько минут. Подождите.</blockquote>",
-            reply_markup=kb.get_loading_keyboard()
-        )
-    except Exception as e:
-        from aiogram.exceptions import TelegramBadRequest
-        if isinstance(e, TelegramBadRequest) and "message is not modified" in str(e):
-            pass
-        else:
-            raise
+        await call.answer()
+        _, ub_type, server_ip = call.data.split(":")
+        await state.update_data(selected_ub_type=ub_type)
+        
+        user = call.from_user
+        name_base = str(user.id)
+        ub_username = f"ub{name_base}"
 
-    await state.set_state(UserBotSetup.InstallingUserBot)
-    asyncio.create_task(perform_installation_and_find_link(call.from_user.id, call.message.chat.id, message_id, state, bot, is_private=(call.message.chat.type == 'private')))
+        await state.update_data(chosen_username_base=name_base, ub_username=ub_username)
 
-async def monitor_for_restart(user_id: int, state: FSMContext, bot: Bot):
-    data = await state.get_data()
-    ub_username, msg_id, server_ip = data.get("ub_username"), data.get("status_message_id"), data.get("server_ip")
-    if not all([ub_username, msg_id, server_ip]): return
+        current_state = await state.get_state()
+        if current_state != UserBotSetup.Reinstalling.state and await db.get_userbot_data(ub_username=ub_username):
+            await call.message.edit_caption(
+                caption="❌ <b>Ошибка:</b> У вас уже есть юзербот с таким системным именем.\n\n"
+                        "Это могло произойти, если была прервана предыдущая установка. "
+                        "Обратитесь в поддержку для решения проблемы.",
+                reply_markup=kb.get_back_to_main_panel_keyboard()
+            )
+            await state.clear()
+            return
 
-    end_time = asyncio.get_event_loop().time() + 300
-    is_restarted = False
-    while asyncio.get_event_loop().time() < end_time:
-        if await sm.check_journal_for_restart(ub_username, server_ip):
-            is_restarted = True
-            break
-        await asyncio.sleep(5)
-    
-    try: await bot.delete_message(chat_id=user_id, message_id=msg_id)
-    except Exception: pass
-    
-    if is_restarted:
-        await bot.send_message(chat_id=user_id, text="✅ <b>Авторизация прошла успешно!</b>")
-    
-    await _show_main_panel(bot=bot, chat_id=user_id, user_id=user_id, user_name=(await bot.get_chat(user_id)).full_name, state=state)
-  
+        data = await state.get_data()
+        message_id = data.get("message_id_to_edit", call.message.message_id)
+
+        try:
+            await bot.edit_message_caption(
+                chat_id=call.message.chat.id, message_id=message_id,
+                caption="<b>[Шаг 3/3] Установка...</b>\n\n<blockquote>Этот процесс может занять несколько минут. Подождите.</blockquote>",
+                reply_markup=kb.get_loading_keyboard()
+            )
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
+
+        await state.set_state(UserBotSetup.InstallingUserBot)
+        asyncio.create_task(perform_installation_and_find_link(call.from_user.id, call.message.chat.id, message_id, state, bot, is_private=(call.message.chat.type == 'private')))
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
 @router.callback_query(F.data == "go_to_control_panel", IsSubscribed(), StateFilter("*"))
 async def cq_go_to_control_panel(call: types.CallbackQuery, state: FSMContext):
-    if call.message.chat.type != "private":
-        if call.message.reply_to_message:
-            owner_id = call.message.reply_to_message.from_user.id
-            if call.from_user.id != owner_id:
+    try:
+        if call.message.chat.type != "private":
+            if call.message.reply_to_message:
+                owner_id = call.message.reply_to_message.from_user.id
+                if call.from_user.id != owner_id:
+                    await call.answer("Только тот, кто вызвал /start, может использовать эти кнопки!", show_alert=True)
+                    return
+            else:
                 await call.answer("Только тот, кто вызвал /start, может использовать эти кнопки!", show_alert=True)
                 return
-        else:
-            await call.answer("Только тот, кто вызвал /start, может использовать эти кнопки!", show_alert=True)
+        
+        await call.answer()
+        await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+
+        all_bots = await db.get_userbots_by_tg_id(call.from_user.id)
+        
+        if not all_bots:
+            await call.answer("❌ Юзербот не найден. Возможно, он был удален.", show_alert=True)
+            await _show_main_panel(call.bot, call.message.chat.id, call.from_user.id, call.from_user.full_name, state, call.message.message_id)
             return
-    
-    await call.answer()
-    await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
 
-    all_bots = await db.get_userbots_by_tg_id(call.from_user.id)
-    
-    if not all_bots:
-        await call.answer("❌ Юзербот не найден. Возможно, он был удален.", show_alert=True)
-        await _show_main_panel(call.bot, call.message.chat.id, call.from_user.id, call.from_user.full_name, state, call.message.message_id)
-        return
+        the_only_bot = all_bots[0]
+        ub_username = the_only_bot['ub_username']
+        server_ip = the_only_bot['server_ip']
+        service_name = f"hikka-{ub_username}.service"
+        
+        service_file_exists = await sm.check_systemd_file_exists(service_name, server_ip)
+        disk_space_ok = True  # Упрощенная проверка
 
-    the_only_bot = all_bots[0]
-    ub_username = the_only_bot['ub_username']
-    server_ip = the_only_bot['server_ip']
-    service_name = f"hikka-{ub_username}.service"
-    
-    service_file_exists = await sm.check_systemd_file_exists(service_name, server_ip)
-    disk_space_ok = True  # Упрощенная проверка
+        if not service_file_exists or not disk_space_ok:
+            error_text = (
+                f"<b>🎛 Панель управления</b>\n\n"
+                f"<i>😢 На данный момент наблюдаются сбои в работе юзербота/сервера.</i>\n\n"
+                f"<b>Повторите попытку через <code>10-15</code> минут</b>"
+            )
+            builder = InlineKeyboardBuilder()
+            builder.button(text="🔄 Обновить", callback_data=f"health_check_retry:{ub_username}")
+            builder.button(text="🔙 Назад", callback_data="back_to_main_panel")
+            await call.message.edit_caption(caption=error_text, reply_markup=builder.as_markup())
+            return
+        
+        if len(all_bots) == 1:
+            await show_management_panel(call, ub_username, state)
+            return
 
-    if not service_file_exists or not disk_space_ok:
-        error_text = (
-            f"<b>🎛 Панель управления</b>\n\n"
-            f"<i>😢 На данный момент наблюдаются сбои в работе юзербота/сервера.</i>\n\n"
-            f"<b>Повторите попытку через <code>10-15</code> минут</b>"
-        )
-        builder = InlineKeyboardBuilder()
-        builder.button(text="🔄 Обновить", callback_data=f"health_check_retry:{ub_username}")
-        builder.button(text="🔙 Назад", callback_data="back_to_main_panel")
-        await call.message.edit_caption(caption=error_text, reply_markup=builder.as_markup())
-        return
-    
-    if len(all_bots) == 1:
-        await show_management_panel(call, ub_username, state)
-        return
-
-    text = "<b>Выберите юзербота для управления:</b>"
-    markup = kb.get_user_bots_list_keyboard(all_bots, call.from_user.id)
-    await call.message.edit_caption(caption=text, reply_markup=markup)
+        text = "<b>Выберите юзербота для управления:</b>"
+        markup = kb.get_user_bots_list_keyboard(all_bots, call.from_user.id)
+        await call.message.edit_caption(caption=text, reply_markup=markup)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("select_ub_panel:"))
 async def cq_select_ub_panel(call: types.CallbackQuery, state: FSMContext):
-    ub_username = call.data.split(":")[1]
-    await show_management_panel(call, ub_username, state)
-    await call.answer()
+    try:
+        ub_username = call.data.split(":")[1]
+        await show_management_panel(call, ub_username, state)
+        await call.answer()
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("refresh_panel:"))
 async def cq_refresh_panel(call: types.CallbackQuery, state: FSMContext):
-    parts = call.data.split(":")
-    if len(parts) < 3:
-        await call.answer("Кнопка устарела, обновите панель.", show_alert=True)
-        return
-    _, ub_username, owner_id_str = parts
-    owner_id = int(owner_id_str)
-    if not check_panel_owner(call, owner_id):
-        return
-    await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
-    await show_management_panel(call, ub_username, state)
-    
+    try:
+        parts = call.data.split(":")
+        if len(parts) < 3:
+            await call.answer("Кнопка устарела, обновите панель.", show_alert=True)
+            return
+        _, ub_username, owner_id_str = parts
+        owner_id = int(owner_id_str)
+        if not check_panel_owner(call, owner_id):
+            return
+        await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+        await show_management_panel(call, ub_username, state)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
 @router.callback_query(F.data.startswith("show_user_logs:"))
 async def cq_show_user_logs(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    _, log_type, ub_username, owner_id_str, page = call.data.split(":")
-    owner_id = int(owner_id_str)
-    if not check_panel_owner(call, owner_id):
-        return
-    await call.answer()
-    
     try:
-        page = int(page)
-    except ValueError:
-        await call.answer("Ошибка данных.", show_alert=True)
-        return
+        _, log_type, ub_username, owner_id_str, page = call.data.split(":")
+        owner_id = int(owner_id_str)
+        if not check_panel_owner(call, owner_id):
+            return
+        await call.answer()
+        
+        try:
+            page = int(page)
+        except ValueError:
+            await call.answer("Ошибка данных.", show_alert=True)
+            return
 
-    ub_data = await db.get_userbot_data(ub_username)
-    if not ub_data:
-        await call.answer("🚫 У вас нет доступа к этому юзерботу.", show_alert=True)
-        return
+        ub_data = await db.get_userbot_data(ub_username)
+        if not ub_data:
+            await call.answer("🚫 У вас нет доступа к этому юзерботу.", show_alert=True)
+            return
 
-    is_pagination = call.message.text is not None
+        is_pagination = call.message.text is not None
 
-    msg_to_edit = call.message
-    if not is_pagination:
-        await call.message.delete()
-        msg_to_edit = await bot.send_message(call.from_user.id, "⏳ Загружаю логи...", reply_markup=kb.get_loading_keyboard())
-    else:
-        await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+        msg_to_edit = call.message
+        if not is_pagination:
+            await call.message.delete()
+            msg_to_edit = await bot.send_message(call.from_user.id, "⏳ Загружаю логи...", reply_markup=kb.get_loading_keyboard())
+        else:
+            await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
 
-    logs = await sm.get_journal_logs(ub_username, ub_data['server_ip'], lines=1000)
+        logs = await sm.get_journal_logs(ub_username, ub_data['server_ip'], lines=1000)
 
-    if not logs:
-        await msg_to_edit.delete()
-        await show_management_panel(call, ub_username, state)
-        await bot.send_message(call.from_user.id, "📜 Логи для этого юзербота пусты.")
-        return
-    
-    log_lines = logs.strip().split('\n')
-    total_pages = max(1, (len(log_lines) + LOG_LINES_PER_PAGE - 1) // LOG_LINES_PER_PAGE)
-    page = max(1, min(page, total_pages))
-    start_index = (page - 1) * LOG_LINES_PER_PAGE
-    end_index = start_index + LOG_LINES_PER_PAGE
-    page_content = "\n".join(log_lines[start_index:end_index])
-    
-    text = (f"📜 <b>Логи ({log_type.capitalize()}) для <code>{html.quote(ub_username)}</code></b>\n"
-            f"<i>(Стр. {page}/{total_pages}, новые логи сверху)</i>\n\n"
-            f"<pre>{html.quote(page_content)}</pre>")
-            
-    if len(text) > 4096:
-        text = text[:4090] + "...</pre>"
+        if not logs:
+            await msg_to_edit.delete()
+            await show_management_panel(call, ub_username, state)
+            await bot.send_message(call.from_user.id, "📜 Логи для этого юзербота пусты.")
+            return
+        
+        log_lines = logs.strip().split('\n')
+        total_pages = max(1, (len(log_lines) + LOG_LINES_PER_PAGE - 1) // LOG_LINES_PER_PAGE)
+        page = max(1, min(page, total_pages))
+        start_index = (page - 1) * LOG_LINES_PER_PAGE
+        end_index = start_index + LOG_LINES_PER_PAGE
+        page_content = "\n".join(log_lines[start_index:end_index])
+        
+        text = (f"📜 <b>Логи ({log_type.capitalize()}) для <code>{html.quote(ub_username)}</code></b>\n"
+                f"<i>(Стр. {page}/{total_pages}, новые логи сверху)</i>\n\n"
+                f"<pre>{html.quote(page_content)}</pre>")
+                
+        if len(text) > 4096:
+            text = text[:4090] + "...</pre>"
 
-    markup = kb.get_user_logs_paginator_keyboard(log_type, ub_username, page, total_pages, owner_id)
-    
-    try:
-        await msg_to_edit.edit_text(text=text, reply_markup=markup)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e).lower():
-            logging.error(f"Error editing message with logs: {e}")
-            await call.answer("Произошла ошибка при отображении логов.", show_alert=True)
+        markup = kb.get_user_logs_paginator_keyboard(log_type, ub_username, page, total_pages, owner_id)
+        
+        try:
+            await msg_to_edit.edit_text(text=text, reply_markup=markup)
+        except TelegramBadRequest as e:
+            if "message is not modified" not in str(e).lower():
+                logging.error(f"Error editing message with logs: {e}")
+                await call.answer("Произошла ошибка при отображении логов.", show_alert=True)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("manage_ub:"))
 async def cq_manage_userbot(call: types.CallbackQuery, bot: Bot, state: FSMContext):
-    parts = call.data.split(":")
-    if len(parts) < 4:
-        await call.answer("Кнопка устарела или повреждена, обновите панель.", show_alert=True)
-        return
-    _, action, ub_username, owner_id_str = parts
-    owner_id = int(owner_id_str)
-    if not check_panel_owner(call, owner_id):
-        return
-    
-    ub_data = await db.get_userbot_data(ub_username)
-    server_ip = ub_data['server_ip']
-    is_server_active_str = server_config.get_server_status_by_ip(server_ip)
-    if is_server_active_str in ["false", "not_found"]:
-        await call.answer("🔴 Управление невозможно, так как сервер отключен.", show_alert=True)
-        return
-
     try:
-        await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
-        await call.answer()
+        parts = call.data.split(":")
+        if len(parts) < 4:
+            await call.answer("Кнопка устарела или повреждена, обновите панель.", show_alert=True)
+            return
+        _, action, ub_username, owner_id_str = parts
+        owner_id = int(owner_id_str)
+        if not check_panel_owner(call, owner_id):
+            return
+        
+        ub_data = await db.get_userbot_data(ub_username)
+        server_ip = ub_data['server_ip']
+        is_server_active_str = server_config.get_server_status_by_ip(server_ip)
+        if is_server_active_str in ["false", "not_found"]:
+            await call.answer("🔴 Управление невозможно, так как сервер отключен.", show_alert=True)
+            return
+
+        try:
+            await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+            await call.answer()
+        except TelegramBadRequest:
+            await call.answer("Выполняю команду...")
+
+        await sm.manage_ub_service(ub_username, action, server_ip)
+
+        try:
+            user_data_log = {"id": call.from_user.id, "full_name": call.from_user.full_name}
+            ub_info_log = {"name": ub_username}
+            log_data = {"user_data": user_data_log, "ub_info": ub_info_log, "action": action}
+            await log_event(bot, "user_action_manage_ub", log_data)
+        except Exception as e:
+            logging.error(f"Failed to log user action: {e}")
+
+        if action == 'restart':
+            await db.update_userbot_started_time(ub_username, datetime.now(pytz.utc))
+
+        await asyncio.sleep(1.5) 
+        await show_management_panel(call, ub_username, state)
     except TelegramBadRequest:
-        await call.answer("Выполняю команду...")
-
-    await sm.manage_ub_service(ub_username, action, server_ip)
-
-    try:
-        user_data_log = {"id": call.from_user.id, "full_name": call.from_user.full_name}
-        ub_info_log = {"name": ub_username}
-        log_data = {"user_data": user_data_log, "ub_info": ub_info_log, "action": action}
-        await log_event(bot, "user_action_manage_ub", log_data)
-    except Exception as e:
-        logging.error(f"Failed to log user action: {e}")
-
-    if action == 'restart':
-        await db.update_userbot_started_time(ub_username, datetime.now(pytz.utc))
-
-    await asyncio.sleep(1.5) 
-    await show_management_panel(call, ub_username, state)
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("delete_ub_confirm_request:"))
 async def cq_delete_ub_confirm_request(call: types.CallbackQuery, state: FSMContext):
-    parts = call.data.split(":")
-    if len(parts) < 3:
-        await call.answer("Кнопка устарела, обновите панель.", show_alert=True)
-        return
-    _, ub_username, owner_id_str = parts
-    owner_id = int(owner_id_str)
-    if not check_panel_owner(call, owner_id):
-        return
-    text = (
-        f"<b>⚠️ Вы уверены, что хотите удалить ваш юзербот?</b>\n\n"
-        f"❗️ Все ваши модули и настройки будут <b>безвозвратно удалены</b>."
-    )
-    markup = kb.get_confirm_delete_keyboard(ub_username)
     try:
-        await call.message.edit_caption(caption=text, reply_markup=markup)
-        await call.answer()
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e).lower():
-            await call.answer("Нажмите на кнопку ниже для подтверждения.")
-        else:
-            logging.error(f"Error in delete confirmation: {e}")
-            await call.answer("Произошла ошибка, попробуйте снова.", show_alert=True)
-    await state.set_state(UserBotSetup.ConfirmDeleteUserBot)
+        parts = call.data.split(":")
+        if len(parts) < 3:
+            await call.answer("Кнопка устарела, обновите панель.", show_alert=True)
+            return
+        _, ub_username, owner_id_str = parts
+        owner_id = int(owner_id_str)
+        if not check_panel_owner(call, owner_id):
+            return
+        text = (
+            f"<b>⚠️ Вы уверены, что хотите удалить ваш юзербот?</b>\n\n"
+            f"❗️ Все ваши модули и настройки будут <b>безвозвратно удалены</b>."
+        )
+        markup = kb.get_confirm_delete_keyboard(ub_username)
+        try:
+            await call.message.edit_caption(caption=text, reply_markup=markup)
+            await call.answer()
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e).lower():
+                await call.answer("Нажмите на кнопку ниже для подтверждения.")
+            else:
+                logging.error(f"Error in delete confirmation: {e}")
+                await call.answer("Произошла ошибка, попробуйте снова.", show_alert=True)
+        await state.set_state(UserBotSetup.ConfirmDeleteUserBot)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("delete_ub_cancel:"), UserBotSetup.ConfirmDeleteUserBot)
 async def cq_delete_ub_cancel(call: types.CallbackQuery, state: FSMContext):
-    await call.answer("🚫 Удаление отменено.")
-    ub_username = call.data.split(":")[1]
-    await show_management_panel(call, ub_username, state)
+    try:
+        await call.answer("🚫 Удаление отменено.")
+        ub_username = call.data.split(":")[1]
+        await show_management_panel(call, ub_username, state)
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("delete_ub_execute:"), UserBotSetup.ConfirmDeleteUserBot)
 async def cq_delete_ub_execute(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    await call.answer()
+    try:
+        await call.answer()
 
-    await call.message.edit_caption(
-        caption="🗑️ <b>Удаление юзербота...</b>\n\n<blockquote>Этот процесс может занять до минуты.</blockquote>",
-        reply_markup=kb.get_loading_keyboard()
-    )
-
-    ub_username = call.data.split(":")[1]
-    
-    ub_data = await db.get_userbot_data(ub_username)
-    if not ub_data:
         await call.message.edit_caption(
-            caption="❌ <b>Ошибка:</b> Юзербот не найден или у вас больше нет к нему доступа.",
-            reply_markup=kb.get_back_to_main_panel_keyboard()
+            caption="🗑️ <b>Удаление юзербота...</b>\n\n<blockquote>Этот процесс может занять до минуты.</blockquote>",
+            reply_markup=kb.get_loading_keyboard()
         )
-        return
 
-    # Устанавливаем статус "deleting" перед началом удаления
-    await db.update_userbot_status(ub_username, "deleting")
-    
-    res = await sm.delete_userbot_full(ub_username, ub_data['server_ip'])
-    
-    if res["success"]:
-        user_data = {"id": call.from_user.id, "full_name": call.from_user.full_name}
-        server_details = server_config.get_servers().get(ub_data['server_ip'], {})
-        log_data = {
-            "user_data": user_data,
-            "ub_info": {"name": ub_username},
-            "server_info": {"ip": ub_data['server_ip'], "code": server_details.get("code", "N/A")}
-        }
-        await log_event(bot, "deletion_by_owner", log_data)
+        ub_username = call.data.split(":")[1]
         
-        await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=call.from_user.id,
-            user_name=call.from_user.full_name, state=state, message_id=call.message.message_id
-        )
-    else:
-        error_message = res.get('message', 'Произошла неизвестная ошибка.')
-        await call.message.edit_caption(
-            caption=f"❌ <b>Ошибка при удалении:</b>\n\n<pre>{html.quote(error_message)}</pre>",
-            reply_markup=kb.get_back_to_main_panel_keyboard()
-        )
+        ub_data = await db.get_userbot_data(ub_username)
+        if not ub_data:
+            await call.message.edit_caption(
+                caption="❌ <b>Ошибка:</b> Юзербот не найден или у вас больше нет к нему доступа.",
+                reply_markup=kb.get_back_to_main_panel_keyboard()
+            )
+            return
+
+        await db.update_userbot_status(ub_username, "deleting")
+        
+        res = await sm.delete_userbot_full(ub_username, ub_data['server_ip'])
+        
+        if res["success"]:
+            user_data = {"id": call.from_user.id, "full_name": call.from_user.full_name}
+            server_details = server_config.get_servers().get(ub_data['server_ip'], {})
+            log_data = {
+                "user_data": user_data,
+                "ub_info": {"name": ub_username},
+                "server_info": {"ip": ub_data['server_ip'], "code": server_details.get("code", "N/A")}
+            }
+            await log_event(bot, "deletion_by_owner", log_data)
+            
+            await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=call.from_user.id,
+                user_name=call.from_user.full_name, state=state, message_id=call.message.message_id
+            )
+        else:
+            error_message = res.get('message', 'Произошла неизвестная ошибка.')
+            await call.message.edit_caption(
+                caption=f"❌ <b>Ошибка при удалении:</b>\n\n<pre>{html.quote(error_message)}</pre>",
+                reply_markup=kb.get_back_to_main_panel_keyboard()
+            )
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data == "check_subscription")
 async def check_subscription_callback(call: types.CallbackQuery, bot: Bot, state: FSMContext):
-    user_id = call.from_user.id
-    
     try:
-        member = await bot.get_chat_member(chat_id=config.CHANNEL_ID, user_id=user_id)
-        if member.status not in ["left", "kicked"]:
-            await call.answer("✅ Спасибо за подписку!", show_alert=True)
-            await call.message.delete()
-            await call.answer("Запустите бота снова /start")
-        else:
-            await call.answer("🚫 Вы еще не подписаны. Подпишитесь и попробуйте снова.", show_alert=True)
-    except Exception as e:
-        await call.answer("Произошла ошибка при проверке. Попробуйте снова.", show_alert=True)
-        logging.error(f"Ошибка проверки подписки по кнопке: {e}")
+        user_id = call.from_user.id
+        try:
+            member = await bot.get_chat_member(chat_id=config.CHANNEL_ID, user_id=user_id)
+            if member.status not in ["left", "kicked"]:
+                await call.answer("✅ Спасибо за подписку!", show_alert=True)
+                await call.message.delete()
+                await call.answer("Запустите бота снова /start")
+            else:
+                await call.answer("🚫 Вы еще не подписаны. Подпишитесь и попробуйте снова.", show_alert=True)
+        except Exception as e:
+            await call.answer("Произошла ошибка при проверке. Попробуйте снова.", show_alert=True)
+            logging.error(f"Ошибка проверки подписки по кнопке: {e}")
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("share_panel_start:"))
 async def cq_share_panel_start(call: types.CallbackQuery, state: FSMContext):
-    logger.info(f"share_panel_start: chat.type={getattr(call.message.chat, 'type', None)}, user={call.from_user.id}")
-    if getattr(call.message.chat, 'type', None) != "private":
-        await call.answer("⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.", show_alert=True)
-        return
-    ub_username = call.data.split(":")[1]
-    await state.set_state(UserBotShare.WaitingForShareUserID)
-    await state.update_data(ub_username=ub_username, message_id_to_edit=call.message.message_id)
-    text = "Введите ID пользователя, которому хотите выдать доступ к панели управления этим юзерботом."
-    markup = kb.get_cancel_revoke_shared_keyboard(ub_username)
-    await call.message.edit_caption(caption=text, reply_markup=markup)
-    await call.answer()
+    try:
+        logger.info(f"share_panel_start: chat.type={getattr(call.message.chat, 'type', None)}, user={call.from_user.id}")
+        if getattr(call.message.chat, 'type', None) != "private":
+            await call.answer("⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.", show_alert=True)
+            return
+        ub_username = call.data.split(":")[1]
+        await state.set_state(UserBotShare.WaitingForShareUserID)
+        await state.update_data(ub_username=ub_username, message_id_to_edit=call.message.message_id)
+        text = "Введите ID пользователя, которому хотите выдать доступ к панели управления этим юзерботом."
+        markup = kb.get_cancel_revoke_shared_keyboard(ub_username)
+        await call.message.edit_caption(caption=text, reply_markup=markup)
+        await call.answer()
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.message(StateFilter(UserBotShare.WaitingForShareUserID))
 async def msg_process_share_user_id(message: types.Message, state: FSMContext, bot: Bot):
@@ -906,76 +943,92 @@ async def msg_process_share_user_id(message: types.Message, state: FSMContext, b
     text = f"Вы точно хотите выдать доступ к панели <code>{html.quote(ub_username)}</code> пользователю {html.quote(user_display)} (<code>{share_user_id}</code>)?"
     markup = kb.get_confirm_share_panel_keyboard(ub_username, share_user_id)
     await bot.edit_message_caption(caption=text, chat_id=message.chat.id, message_id=message_id_to_edit, reply_markup=markup)
+    
 
 @router.callback_query(F.data.startswith("confirm_share_panel:"), UserBotShare.ConfirmingShare)
 async def cq_confirm_share_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    _, ub_username, share_user_id_str = call.data.split(":")
-    share_user_id = int(share_user_id_str)
-    owner = call.from_user
-    text = (f"Пользователь {html.quote(owner.full_name)} (<code>{owner.id}</code>) хочет поделиться с вами панелью управления юзерботом <code>{html.quote(ub_username)}</code>.\n\n"
-            "Вы хотите принять доступ? Вы сможете отказаться в любой момент.")
-    markup = kb.get_accept_share_panel_keyboard(ub_username, owner.id)
-    
     try:
-        await bot.send_message(chat_id=share_user_id, text=text, reply_markup=markup)
-        await call.message.edit_caption(caption="⏳ Ожидание подтверждения вторым пользователем...", reply_markup=kb.get_back_to_main_panel_keyboard())
-    except TelegramForbiddenError:
-        await call.answer("❌ Не удалось отправить приглашение. Пользователь должен сначала начать диалог с ботом.", show_alert=True)
-        await call.message.edit_caption(caption="❌ Ошибка: пользователь не начал диалог с ботом", reply_markup=kb.get_back_to_main_panel_keyboard())
-    except Exception as e:
-        logging.error(f"Ошибка при отправке приглашения пользователю {share_user_id}: {e}")
-        await call.answer("❌ Произошла ошибка при отправке приглашения", show_alert=True)
-        await call.message.edit_caption(caption="❌ Ошибка при отправке приглашения", reply_markup=kb.get_back_to_main_panel_keyboard())
-    
-    await state.clear()
+        _, ub_username, share_user_id_str = call.data.split(":")
+        share_user_id = int(share_user_id_str)
+        owner = call.from_user
+        text = (f"Пользователь {html.quote(owner.full_name)} (<code>{owner.id}</code>) хочет поделиться с вами панелью управления юзерботом <code>{html.quote(ub_username)}</code>.\n\n"
+                "Вы хотите принять доступ? Вы сможете отказаться в любой момент.")
+        markup = kb.get_accept_share_panel_keyboard(ub_username, owner.id)
+        
+        try:
+            await bot.send_message(chat_id=share_user_id, text=text, reply_markup=markup)
+            await call.message.edit_caption(caption="⏳ Ожидание подтверждения вторым пользователем...", reply_markup=kb.get_back_to_main_panel_keyboard())
+        except TelegramForbiddenError:
+            await call.answer("❌ Не удалось отправить приглашение. Пользователь должен сначала начать диалог с ботом.", show_alert=True)
+            await call.message.edit_caption(caption="❌ Ошибка: пользователь не начал диалог с ботом", reply_markup=kb.get_back_to_main_panel_keyboard())
+        except Exception as e:
+            logging.error(f"Ошибка при отправке приглашения пользователю {share_user_id}: {e}")
+            await call.answer("❌ Произошла ошибка при отправке приглашения", show_alert=True)
+            await call.message.edit_caption(caption="❌ Ошибка при отправке приглашения", reply_markup=kb.get_back_to_main_panel_keyboard())
+        
+        await state.clear()
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("accept_share_panel:"), F.chat.type == "private")
 async def cq_accept_share_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    _, ub_username, owner_id_str = call.data.split(":")
-    await db.add_userbot_shared_access(ub_username, call.from_user.id)
-    
     try:
-        owner_id = int(owner_id_str)
-        sharer_data_log = {"id": owner_id, "full_name": (await bot.get_chat(owner_id)).full_name}
-        user_data_log = {"id": call.from_user.id, "full_name": call.from_user.full_name}
-        ub_info_log = {"name": ub_username}
-        log_data = {"sharer_data": sharer_data_log, "user_data": user_data_log, "ub_info": ub_info_log}
-        await log_event(bot, "panel_shared_accepted", log_data)
-    except Exception as e:
-        logging.error(f"Failed to log panel share event: {e}")
+        _, ub_username, owner_id_str = call.data.split(":")
+        await db.add_userbot_shared_access(ub_username, call.from_user.id)
+        
+        try:
+            owner_id = int(owner_id_str)
+            sharer_data_log = {"id": owner_id, "full_name": (await bot.get_chat(owner_id)).full_name}
+            user_data_log = {"id": call.from_user.id, "full_name": call.from_user.full_name}
+            ub_info_log = {"name": ub_username}
+            log_data = {"sharer_data": sharer_data_log, "user_data": user_data_log, "ub_info": ub_info_log}
+            await log_event(bot, "panel_shared_accepted", log_data)
+        except Exception as e:
+            logging.error(f"Failed to log panel share event: {e}")
 
-    await call.answer("✅ Доступ выдан! Теперь вы можете управлять этим юзерботом.", show_alert=True)
-    await show_management_panel(call, ub_username, state)
-    
-    try:
-        await bot.send_message(chat_id=int(owner_id_str), text=f"Пользователь <code>{call.from_user.id}</code> принял доступ к панели <code>{html.quote(ub_username)}</code>.")
-    except TelegramForbiddenError:
-        logging.warning(f"Не удалось уведомить владельца {owner_id_str} о принятии доступа: пользователь не начал диалог с ботом")
-    except Exception as e:
-        logging.error(f"Ошибка при уведомлении владельца {owner_id_str}: {e}")
+        await call.answer("✅ Доступ выдан! Теперь вы можете управлять этим юзерботом.", show_alert=True)
+        await show_management_panel(call, ub_username, state)
+        
+        try:
+            await bot.send_message(chat_id=int(owner_id_str), text=f"Пользователь <code>{call.from_user.id}</code> принял доступ к панели <code>{html.quote(ub_username)}</code>.")
+        except TelegramForbiddenError:
+            logging.warning(f"Не удалось уведомить владельца {owner_id_str} о принятии доступа: пользователь не начал диалог с ботом")
+        except Exception as e:
+            logging.error(f"Ошибка при уведомлении владельца {owner_id_str}: {e}")
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("accept_share_panel:"))
 async def cq_accept_share_panel_fallback(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    chat = getattr(call.message, "chat", None)
-    if chat and chat.type == "private":
-        await cq_accept_share_panel(call, state, bot)
-    else:
+    try:
+        chat = getattr(call.message, "chat", None)
+        if chat and chat.type == "private":
+            await cq_accept_share_panel(call, state, bot)
+        else:
+            await call.answer(
+                "⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.",
+                show_alert=True
+            )
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
+@router.callback_query(F.data.startswith("decline_share_panel:"), F.chat.type == "private")
+async def cq_decline_share_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
+    try:
+        await call.answer("Вы отклонили приглашение.", show_alert=True)
+        await call.message.edit_text("❌ Вы отклонили приглашение к совместному управлению этим юзерботом.")
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
+@router.callback_query(F.data.startswith("decline_share_panel:"), F.chat.type != "private")
+async def cq_decline_share_panel_in_chat(call: types.CallbackQuery):
+    try:
         await call.answer(
             "⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.",
             show_alert=True
         )
-
-@router.callback_query(F.data.startswith("decline_share_panel:"), F.chat.type == "private")
-async def cq_decline_share_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    await call.answer("Вы отклонили приглашение.", show_alert=True)
-    await call.message.edit_text("❌ Вы отклонили приглашение к совместному управлению этим юзерботом.")
-
-@router.callback_query(F.data.startswith("decline_share_panel:"), F.chat.type != "private")
-async def cq_decline_share_panel_in_chat(call: types.CallbackQuery):
-    await call.answer(
-        "⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.",
-        show_alert=True
-    )
+    except TelegramBadRequest:
+        await call.answer("Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.message(Command("ping"))
 async def cmd_ping(message: types.Message):
