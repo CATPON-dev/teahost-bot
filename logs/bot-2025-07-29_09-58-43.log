@@ -1,0 +1,15 @@
+2025-07-29 09:58:43,603 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'users' already exists
+  await self._query(query)
+2025-07-29 09:58:43,695 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'userbots' already exists
+  await self._query(query)
+2025-07-29 09:58:43,776 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'commits' already exists
+  await self._query(query)
+2025-07-29 09:58:43,806 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'commit_votes' already exists
+  await self._query(query)
+2025-07-29 09:58:43,835 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'userbot_shared' already exists
+  await self._query(query)
+2025-07-29 09:59:40,422 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: pwd. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && pwd' as ub5448741148 on sharkhost.
+
+2025-07-29 10:00:00,211 - WARNING - aiogram.dispatcher - Received SIGINT signal
+2025-07-29 10:00:00,214 - ERROR - root - ❌ Ошибка автоматического бэкапа: Проверка зависимостей...
+2025-07-29 10:00:00,463 - WARNING - root - Bot polling stopped. Shutting down...

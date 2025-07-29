@@ -1,0 +1,565 @@
+import logging
+import asyncio
+import secrets
+import time
+import os
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, Query, Path, Request
+from fastapi.responses import JSONResponse, FileResponse
+from pydantic import BaseModel, constr
+from typing import Literal, List, Optional, Any
+from datetime import datetime
+
+from aiogram import Bot, html
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+
+import database as db
+import system_manager as sm
+import server_config
+from config_manager import config
+from channel_logger import log_event
+from system_manager import get_service_process_uptime
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="SharkHost API",
+    version="1.0.0",
+    redoc_url=None
+)
+
+REQUEST_LIMIT = 20
+TIME_WINDOW = 60
+REQUESTS = {}
+
+MAINTENANCE_MODE = False
+
+@app.middleware("http")
+async def combined_middleware(request: Request, call_next):
+    ip = request.client.host
+    now = time.time()
+    
+    timestamps = REQUESTS.get(ip, [])
+    recent_timestamps = [t for t in timestamps if now - t < TIME_WINDOW]
+
+    if len(recent_timestamps) >= REQUEST_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Flood."
+        )
+    
+    recent_timestamps.append(now)
+    REQUESTS[ip] = recent_timestamps
+
+    if MAINTENANCE_MODE:
+        path = request.url.path
+        main_paths = ["/", "/index.html", "/profile", "/profile.html", "/servers", "/servers.html"]
+        if path in main_paths:
+            tech_path = os.path.join("static", "tech.html")
+            return FileResponse(tech_path, media_type="text/html")
+
+    response = await call_next(request)
+    return response
+
+def create_bot_instance():
+    bot_session = None
+    if config.CUSTOM_BOT_API_SERVER:
+        bot_session = AiohttpSession(
+            api=TelegramAPIServer.from_base(config.CUSTOM_BOT_API_SERVER)
+        )
+    return Bot(
+        token=config.BOT_TOKEN, 
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=bot_session
+    )
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("FastAPI application startup...")
+    await db.init_pool()
+    logger.info("Database pool initialized for FastAPI.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("FastAPI application shutdown...")
+    if db.pool:
+        db.pool.close()
+        await db.pool.wait_closed()
+        logger.info("Database pool closed.")
+
+class APIError(BaseModel):
+    code: str
+    message: str
+
+class APIErrorResponse(BaseModel):
+    success: bool = False
+    error: APIError
+
+class APIResponse(BaseModel):
+    success: bool = True
+    data: Optional[Any] = None
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    error_message = exc.detail
+    error_code = "CLIENT_ERROR"
+    if status.HTTP_500_INTERNAL_SERVER_ERROR <= exc.status_code:
+        error_code = "SERVER_ERROR"
+    elif exc.status_code == status.HTTP_404_NOT_FOUND:
+        error_code = "NOT_FOUND"
+    elif exc.status_code == status.HTTP_403_FORBIDDEN:
+        error_code = "FORBIDDEN"
+    elif exc.status_code == status.HTTP_409_CONFLICT:
+        error_code = "CONFLICT"
+    elif exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        error_code = "RATE_LIMIT_EXCEEDED"
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "error": {"code": error_code, "message": error_message}},
+    )
+
+class UserbotCreateRequest(BaseModel):
+    server_code: constr(strip_whitespace=True, min_length=1)
+    ub_type: Literal['hikka', 'heroku', 'fox']
+
+class UserbotManageRequest(BaseModel):
+    action: Literal['start', 'stop', 'restart']
+
+class UserbotTransferRequest(BaseModel):
+    new_owner_identifier: str
+
+class UserbotExecRequest(BaseModel):
+    ub_username: str
+    command: str
+
+async def verify_token(x_api_token: str = Header(...)):
+    user_data = await db.get_user_by_api_token(x_api_token)
+    if not user_data:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired API token.")
+    user_id = user_data['tg_user_id']
+    if not await db.has_user_accepted_agreement(user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User has not accepted the agreement.")
+    if await db.is_user_banned(user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This user is banned.")
+    return user_data
+
+async def api_create_and_notify(tg_user_id: int, ub_type: str, server_ip: str, ub_username: str):
+    bot = create_bot_instance()
+    try:
+        install_result = await sm.create_server_user_and_setup_hikka(tg_user_id=tg_user_id, username_base=str(tg_user_id), ub_type=ub_type, server_ip=server_ip)
+        if not install_result.get("success"):
+            err_msg = install_result.get('message', 'Unknown installation error.')
+            await bot.send_message(tg_user_id, f"❌ <b>API Installation Failed:</b>\n{html.quote(err_msg)}")
+            await sm.delete_userbot_full(ub_username, server_ip)
+            return
+        login_url = await sm.find_login_url_in_loop(ub_username, server_ip, ub_type)
+        if login_url:
+            builder = InlineKeyboardBuilder()
+            builder.button(text="➡️ Войти в WEB-UI", url=login_url)
+            text = f"✅ <b>Your userbot, created via API, is ready!</b>\n\nUse the button below to authorize."
+            await bot.send_message(tg_user_id, text, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+        else:
+            text = f"✅ <b>API installation is complete, but the login link could not be retrieved automatically.</b>\n\nPlease open the bot and request the link manually via the control panel."
+            await bot.send_message(tg_user_id, text)
+    finally:
+        await bot.session.close()
+
+async def api_delete_and_notify(tg_user_id: int, ub_username: str, server_ip: str, api_token: str):
+    bot = create_bot_instance()
+    try:
+        user_data = await db.get_user_data(tg_user_id)
+        owner_username = user_data.get('username', 'N/A') if user_data else 'N/A'
+        text = (f"🗑️ Your userbot <b>{html.quote(ub_username)}</b> has been deleted!\n\n"
+                f"<b>Details:</b>\n• Method: <code>API Request</code>\n• Server IP: <code>{server_ip}</code>\n"
+                f"• Owner: @{owner_username}\n• Token Used: <code>{html.quote(api_token)}</code>")
+        await bot.send_message(tg_user_id, text)
+    finally:
+        await bot.session.close()
+
+async def api_transfer_and_notify(old_owner_data: dict, new_owner_data: dict, ub_username: str):
+    bot = create_bot_instance()
+    try:
+        old_owner_id, new_owner_id = old_owner_data['tg_user_id'], new_owner_data['tg_user_id']
+        try:
+            await bot.send_message(old_owner_id, f"✅ You have successfully transferred the userbot <code>{html.quote(ub_username)}</code> to the user @{new_owner_data.get('username', new_owner_id)}.")
+        except Exception as e: 
+            logger.warning(f"Failed to notify old owner {old_owner_id} about transfer: {e}")
+        try:
+            await bot.send_message(new_owner_id, f"✅ User @{old_owner_data.get('username', old_owner_id)} has transferred the userbot <code>{html.quote(ub_username)}</code> to you. You are now its owner.")
+        except Exception as e: 
+            logger.warning(f"Failed to notify new owner {new_owner_id} about transfer: {e}")
+        log_data = {"user_data": {"id": old_owner_id, "full_name": old_owner_data.get('full_name')}, "new_owner_data": {"id": new_owner_id, "full_name": new_owner_data.get('full_name')}, "ub_info": {"name": ub_username}}
+        await log_event(bot, "userbot_transferred", log_data)
+    finally:
+        await bot.session.close()
+
+router = APIRouter(prefix="/api/v1")
+
+@router.get("/servers/status", response_model=APIResponse, tags=["Servers"])
+async def get_server_statuses(code: Optional[str] = Query(None), current_user: dict = Depends(verify_token)):
+    all_servers, servers_to_check = server_config.get_servers(), {}
+    if code:
+        found_ip = next((ip for ip, details in all_servers.items() if details.get("code") == code), None)
+        if not found_ip:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Server with code '{code}' not found.")
+        servers_to_check[found_ip] = all_servers[found_ip]
+    else:
+        servers_to_check = all_servers
+    
+    tasks = [sm.get_server_stats(ip) for ip in servers_to_check.keys()]
+    live_stats_results = await asyncio.gather(*tasks, return_exceptions=True)
+    live_stats_map = dict(zip(servers_to_check.keys(), live_stats_results))
+    
+    response_servers = []
+    for ip, details in servers_to_check.items():
+        if ip == sm.LOCAL_IP: 
+            continue
+        userbots_count = len(await db.get_userbots_by_server_ip(ip))
+        live_stats = live_stats_map.get(ip)
+        server_status_str = "online"
+        if isinstance(live_stats, Exception): 
+            server_status_str = "error"
+            live_stats = {}
+        if details.get("status") == "test": 
+            server_status_str = "test_mode"
+        elif details.get("status") == "false": 
+            server_status_str = "offline"
+        
+        status_obj = {
+            "code": details.get("code", "N/A"), "name": details.get("name", "Unknown"),
+            "flag": details.get("flag", "🏳️"), "location": f"{details.get('country', 'N/A')}, {details.get('city', 'N/A')}",
+            "status": server_status_str, "cpu_usage": f"{live_stats.get('cpu_usage', 'N/A')}%",
+            "ram_usage": f"{live_stats.get('ram_percent', 'N/A')}%", "disk_usage": f"{live_stats.get('disk_percent', 'N/A')}",
+            "uptime": live_stats.get('uptime', 'N/A'), "userbots_count": userbots_count,
+            "slots": f"{userbots_count}/{details.get('slots', 0)}"
+        }
+        response_servers.append(status_obj)
+        
+    return APIResponse(data={"servers": response_servers})
+
+@router.get("/servers/available", response_model=APIResponse, tags=["Servers"])
+async def get_available_servers(current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    all_servers, available_servers = server_config.get_servers(), []
+    for ip, details in all_servers.items():
+        if ip == sm.LOCAL_IP: 
+            continue
+        if server_config.is_install_allowed(ip, tg_user_id):
+            slots, installed = details.get("slots", 0), len(await db.get_userbots_by_server_ip(ip))
+            if slots > 0 and installed >= slots: 
+                continue
+            available_servers.append({"code": details.get("code", "N/A"), "name": details.get("name", "Unknown"), "flag": details.get("flag", "🏳️"), "location": f"{details.get('country', 'N/A')}, {details.get('city', 'N/A')}", "slots_free": slots - installed})
+    return APIResponse(data={"available_servers": available_servers})
+
+@router.get("/users/{identifier}", response_model=APIResponse, tags=["Users"])
+async def get_user_info(identifier: str = Path(...), current_user: dict = Depends(verify_token)):
+    target_user_data = await db.get_user_by_username_or_id(identifier)
+    if not target_user_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in the database.")
+
+    target_id = target_user_data.get('tg_user_id')
+    if not target_id:
+        logger.error(f"FATAL: User data found for '{identifier}' but tg_user_id is missing.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Inconsistent user data in the database.")
+
+    user_bots = await db.get_userbots_by_tg_id(target_id)
+    userbot_info_obj = None
+
+    if user_bots:
+        ub = user_bots[0]
+        ub_username = ub.get('ub_username')
+        server_ip = ub.get('server_ip')
+
+        if ub_username and server_ip:
+            is_active = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip)
+            status_str = "running" if is_active else "stopped"
+            uptime_str = await get_service_process_uptime(f"hikka-{ub_username}.service", server_ip) if is_active else None
+            server_details = server_config.get_servers().get(server_ip, {})
+            userbot_info_obj = {
+                "ub_username": ub_username,
+                "ub_type": ub.get('ub_type'),
+                "status": status_str,
+                "uptime": uptime_str,
+                "server_code": server_details.get('code', 'N/A'),
+                "created_at": ub.get('created_at')
+            }
+
+    response_data = {
+        "owner": {
+            "id": target_id,
+            "username": target_user_data.get('username'),
+            "full_name": target_user_data.get('full_name'),
+            "registered_at": target_user_data.get('registered_at')
+        },
+        "userbot": userbot_info_obj
+    }
+    return APIResponse(data=response_data)
+
+@router.post("/token/regenerate", response_model=APIResponse, tags=["Users"])
+async def regenerate_token(current_user: dict = Depends(verify_token)):
+    user_id = current_user['tg_user_id']
+    username = current_user.get('username') or f"user{user_id}"
+    new_token = f"{username}:{user_id}:{secrets.token_hex(18)}"
+    if await db.regenerate_user_token(user_id, new_token):
+        return APIResponse(data={"new_token": new_token})
+    else:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update token in the database.")
+
+@router.get("/userbots", response_model=APIResponse, tags=["Userbots"])
+async def get_my_userbots(current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    userbots_from_db = await db.get_userbots_by_tg_id(tg_user_id)
+    if not userbots_from_db:
+        return APIResponse(data={"userbots": []})
+        
+    response_bots = []
+    for ub in userbots_from_db:
+        server_details = server_config.get_servers().get(ub.get('server_ip'), {})
+        is_active = await sm.is_service_active(f"hikka-{ub.get('ub_username')}.service", ub.get('server_ip'))
+        uptime_str = await get_service_process_uptime(f"hikka-{ub.get('ub_username')}.service", ub.get('server_ip')) if is_active else None
+        bot_info = {
+            "ub_username": ub.get('ub_username'),
+            "ub_type": ub.get('ub_type'),
+            "status": "running" if is_active else "stopped",
+            "uptime": uptime_str,
+            "created_at": ub.get('created_at'),
+            "server": {
+                "code": server_details.get('code', 'N/A'),
+                "flag": server_details.get('flag', '🏳️')
+            }
+        }
+        response_bots.append(bot_info)
+        
+    return APIResponse(data={"userbots": response_bots})
+
+@router.get("/userbots/{ub_username}/logs", response_model=APIResponse, tags=["Userbots"])
+async def get_my_userbot_logs(ub_username: str, lines: int = Query(50, ge=1, le=500), current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data or userbot_data.get('tg_user_id') != tg_user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found or you don't have permission.")
+    
+    logs = await sm.get_journal_logs(userbot_data['ub_username'], userbot_data['server_ip'], lines=lines)
+    log_lines = logs.strip().split('\n') if logs else []
+    return APIResponse(data={"logs": log_lines})
+
+@router.post("/userbots/create", response_model=APIResponse, tags=["Userbots"])
+async def create_userbot(request_data: UserbotCreateRequest, current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    if len(await db.get_userbots_by_tg_id(tg_user_id)) >= 1:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have an active userbot.")
+    
+    all_servers = server_config.get_servers()
+    server_ip = next((ip for ip, details in all_servers.items() if details.get("code") == request_data.server_code), None)
+    if not server_ip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Server with code '{request_data.server_code}' not found.")
+    if server_ip == sm.LOCAL_IP:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Installation on the service server is not permitted.")
+    if not server_config.is_install_allowed(server_ip, tg_user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Installation on this server is restricted.")
+    
+    server_details = all_servers.get(server_ip, {})
+    server_limit = server_details.get("slots", 0)
+    current_bots = len(await db.get_userbots_by_server_ip(server_ip))
+    if server_limit > 0 and current_bots >= server_limit:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Server has no free slots.")
+    
+    ub_username = f"ub{tg_user_id}"
+    if await db.get_userbot_data(ub_username=ub_username):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A userbot with this system name already exists.")
+    
+    logger.info(f"API: Initiating installation for {ub_username} on {server_ip} for user {tg_user_id}")
+    asyncio.create_task(api_create_and_notify(tg_user_id=tg_user_id, ub_type=request_data.ub_type, server_ip=server_ip, ub_username=ub_username))
+    return APIResponse(data={"ub_username": ub_username, "message": "Userbot installation initiated."})
+
+@router.delete("/userbots/{ub_username}", response_model=APIResponse, tags=["Userbots"])
+async def delete_userbot(ub_username: str, current_user: dict = Depends(verify_token), x_api_token: str = Header(...)):
+    tg_user_id = current_user['tg_user_id']
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found.")
+    if userbot_data.get('tg_user_id') != tg_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied: You do not own this userbot.")
+    if userbot_data.get('server_ip') == sm.LOCAL_IP:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Actions on the service server are not permitted via API.")
+    
+    logger.info(f"API: Initiating deletion for userbot {ub_username} owned by {tg_user_id}")
+    server_ip = userbot_data['server_ip']
+    deletion_result = await sm.delete_userbot_full(ub_username, server_ip)
+    if not deletion_result.get("success"):
+        error_detail = deletion_result.get('message', 'An unknown error occurred on the server.')
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_detail)
+    
+    asyncio.create_task(api_delete_and_notify(tg_user_id, ub_username, server_ip, x_api_token))
+    return APIResponse(data={"message": "Userbot has been successfully deleted."})
+
+@router.post("/userbots/{ub_username}/manage", response_model=APIResponse, tags=["Userbots"])
+async def manage_userbot(ub_username: str, request_data: UserbotManageRequest, current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found.")
+    if userbot_data.get('tg_user_id') != tg_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied: You do not own this userbot.")
+    if userbot_data.get('server_ip') == sm.LOCAL_IP:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Actions on the service server are not permitted via API.")
+    
+    server_ip = userbot_data['server_ip']
+    if server_config.get_server_status_by_ip(server_ip) in ["false", "not_found"]:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Action cannot be performed: the server is offline or unavailable.")
+    
+    logger.info(f"API: Performing '{request_data.action}' on {ub_username} for user {tg_user_id}")
+    result = await sm.manage_ub_service(ub_username, request_data.action, server_ip)
+    if not result.get("success"):
+        error_detail = result.get('message', 'An unknown error occurred on the server.')
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_detail)
+    
+    await asyncio.sleep(1.5)
+    is_active_now = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip)
+    new_status = "running" if is_active_now else "stopped"
+    return APIResponse(data={"new_status": new_status})
+
+@router.post("/userbots/{ub_username}/transfer", response_model=APIResponse, tags=["Userbots"])
+async def transfer_userbot(ub_username: str, request_data: UserbotTransferRequest, current_user: dict = Depends(verify_token)):
+    old_owner_id = current_user['tg_user_id']
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found.")
+    if userbot_data.get('tg_user_id') != old_owner_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied: You do not own this userbot.")
+    if userbot_data.get('server_ip') == sm.LOCAL_IP:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Actions on the service server are not permitted via API.")
+    
+    new_owner_data = await db.get_user_by_username_or_id(request_data.new_owner_identifier)
+    if not new_owner_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="New owner not found.")
+    
+    new_owner_id = new_owner_data['tg_user_id']
+    if new_owner_id == old_owner_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot transfer userbot to yourself.")
+    if len(await db.get_userbots_by_tg_id(new_owner_id)) >= 1:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The new owner already has an active userbot.")
+    if not await db.has_user_accepted_agreement(new_owner_id) or await db.is_user_banned(new_owner_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="The new owner cannot receive a userbot at this time.")
+    
+    if await db.transfer_userbot(ub_username, new_owner_id):
+        logger.info(f"API: Transferred {ub_username} from {old_owner_id} to {new_owner_id}")
+        asyncio.create_task(api_transfer_and_notify(old_owner_data=current_user, new_owner_data=new_owner_data, ub_username=ub_username))
+        return APIResponse(data={"message": f"Userbot successfully transferred to user {request_data.new_owner_identifier}."})
+    else:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update database during transfer.")
+
+@router.post("/userbots/exec", response_model=APIResponse, tags=["Userbots"])
+async def exec_command(request_data: UserbotExecRequest, current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    ub_username = request_data.ub_username
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found.")
+    if userbot_data.get('tg_user_id') != tg_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied: You do not own this userbot.")
+    if userbot_data.get('server_ip') == sm.LOCAL_IP:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Actions on the service server are not permitted via API.")
+    
+    server_ip, system_user = userbot_data['server_ip'], userbot_data['ub_username']
+    logger.info(f"API: Executing command for {system_user} on {server_ip}: {request_data.command}")
+    result = await sm.run_command_async(request_data.command, server_ip, timeout=60, user=system_user)
+    
+    response_data = {
+        "success": result.get("success", False), "stdout": result.get("output", ""),
+        "stderr": result.get("error", ""), "exit_code": result.get("exit_status", -1)
+    }
+    return APIResponse(data=response_data)
+
+@router.get("/stats", response_model=APIResponse, tags=["Stats"])
+async def get_extended_stats(current_user: dict = Depends(verify_token)):
+    from datetime import date, datetime as dt
+    all_users_data = await db.get_all_users_with_reg_date()
+    all_ubs_info = await db.get_all_userbots_full_info()
+    servers_info = server_config.get_servers()
+    total_users = len(all_users_data)
+    total_ubs = len(all_ubs_info)
+    owners_count = await db.get_userbot_owners_count()
+    new_users_today = 0
+    today_date = date.today()
+    for user in all_users_data:
+        registration_datetime = user.get('registered_at')
+        if registration_datetime:
+            if isinstance(registration_datetime, dt):
+                reg_date = registration_datetime.date()
+            else:
+                try:
+                    reg_date = dt.fromisoformat(str(registration_datetime)).date()
+                except Exception:
+                    continue
+            if reg_date == today_date:
+                new_users_today += 1
+    active_ubs_count = 0
+    bots_by_server = {ip: 0 for ip in servers_info.keys()}
+    bots_by_type = {}
+    if all_ubs_info:
+        services_by_ip = {}
+        for ub in all_ubs_info:
+            ip = ub.get('server_ip')
+            if ip:
+                if ip not in services_by_ip:
+                    services_by_ip[ip] = []
+                service_name = f"hikka-{ub['ub_username']}.service"
+                services_by_ip[ip].append(service_name)
+        batch_tasks = [sm.get_batch_service_statuses(names, ip) for ip, names in services_by_ip.items()]
+        batch_results = await asyncio.gather(*batch_tasks)
+        active_statuses = {}
+        for result_dict in batch_results:
+            for service_name, is_active in result_dict.items():
+                ub_username = service_name.replace("hikka-", "").replace(".service", "")
+                active_statuses[ub_username] = is_active
+        for ub in all_ubs_info:
+            if active_statuses.get(ub['ub_username'], False):
+                active_ubs_count += 1
+            if ub['server_ip'] in bots_by_server:
+                bots_by_server[ub['server_ip']] += 1
+            ub_type = ub.get('ub_type', 'unknown').capitalize()
+            bots_by_type[ub_type] = bots_by_type.get(ub_type, 0) + 1
+    inactive_ubs_count = total_ubs - active_ubs_count
+    stats = {
+        "total_users": total_users,
+        "owners_count": owners_count,
+        "new_users_today": new_users_today,
+        "total_ubs": total_ubs,
+        "active_ubs_count": active_ubs_count,
+        "inactive_ubs_count": inactive_ubs_count,
+        "bots_by_type": bots_by_type,
+        "bots_by_server": {
+            ip: {
+                "count": count,
+                "flag": servers_info.get(ip, {}).get("flag", "🏳️"),
+                "name": servers_info.get(ip, {}).get("name", ip)
+            } for ip, count in bots_by_server.items()
+        }
+    }
+    return APIResponse(data=stats)
+
+@router.get("/commits", response_model=APIResponse, tags=["Commits"])
+async def get_commits(limit: int = 50, offset: int = 0, current_user: dict = Depends(verify_token)):
+    commits = []
+    try:
+        async with db.pool.acquire() as conn:
+            async with conn.cursor(db.aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT id, commit_id, admin_id, admin_name, admin_username, commit_text, created_at "
+                    "FROM commits ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                    (limit, offset)
+                )
+                commits = await cursor.fetchall()
+    except Exception as e:
+        import logging
+        logging.error(f"Ошибка при получении коммитов: {e}")
+        return APIResponse(success=False, data=None)
+    return APIResponse(data=commits)
+
+app.include_router(router)

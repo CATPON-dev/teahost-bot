@@ -1,0 +1,1561 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SharkHost</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --ios-blue: #007AFF;
+      --ios-gray: #F2F2F7;
+      --ios-dark: #1C1C1E;
+      --ios-light: #FFFFFF;
+      --ios-green: #34C759;
+      --ios-red: #FF3B30;
+      --ios-orange: #FF9500;
+      --ios-indigo: #5856D6;
+      --ios-separator: #C6C6C8;
+      --text-primary: #000000;
+      --text-secondary: #666666;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    
+    body {
+      background: var(--ios-gray);
+      color: var(--text-primary);
+      padding: 0;
+      max-width: 100%;
+      margin: 0 auto;
+      min-height: 100vh;
+      overflow-x: hidden; /* Prevent horizontal scroll when sidebar is open */
+    }
+    
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding-bottom: 80px;
+      transition: transform 0.3s ease; /* For sidebar push effect */
+    }
+    
+    .header {
+      background: var(--ios-light);
+      padding: 16px 20px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
+      display: flex; /* Added for hamburger button */
+      align-items: center;
+      justify-content: space-between; /* Added for hamburger button */
+    }
+
+    .header .menu-icon { /* New style for hamburger icon */
+        font-size: 24px;
+        color: var(--ios-blue);
+        cursor: pointer;
+        padding-right: 15px;
+    }
+    
+    .header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-grow: 1; /* Allow h1 to take available space */
+      justify-content: center; /* Center the title */
+      padding-right: 24px; /* Offset for menu icon to center text */
+    }
+    
+    .header .logo {
+      width: 24px;
+      height: 24px;
+      filter: var(--logo-filter, none);
+    }
+    
+    .card {
+      background: var(--ios-light);
+      border-radius: 12px;
+      margin: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    
+    .card-header {
+      padding: 16px;
+      font-size: 18px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--ios-separator);
+    }
+    
+    .card-header i {
+      color: var(--ios-blue);
+      font-size: 20px;
+    }
+    
+    .info-row {
+      display: flex;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--ios-separator);
+      align-items: center;
+    }
+    
+    .info-row:last-child {
+      border-bottom: none;
+    }
+    
+    .info-label {
+      flex: 1;
+      font-size: 16px;
+      color: var(--text-primary);
+    }
+    
+    .info-value {
+      font-size: 16px;
+      color: var(--text-secondary);
+      text-align: right;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    
+    .status-online {
+      background: var(--ios-green);
+      box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.3);
+    }
+    
+    .status-offline {
+      background: var(--ios-separator);
+    }
+    
+    .status-error {
+      background: var(--ios-red);
+      box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.3);
+      animation: pulse 1.5s infinite;
+    }
+    
+    .status-not-found {
+      background: var(--ios-orange);
+      box-shadow: 0 0 0 2px rgba(255, 149, 0, 0.3);
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+      padding: 16px;
+      background: var(--ios-light);
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      max-width: 600px;
+      margin: 0 auto;
+      box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.05);
+    }
+    
+    .action-btn {
+      flex: 1;
+      height: 50px;
+      border-radius: 12px;
+      border: none;
+      font-size: 16px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .action-btn:active {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+    
+    .action-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+    
+    .start-btn {
+      background: var(--ios-green);
+      color: white;
+    }
+    
+    .stop-btn {
+      background: var(--ios-red);
+      color: white;
+    }
+    
+    .restart-btn {
+      background: var(--ios-blue);
+      color: white;
+    }
+    
+    .progress-container {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--ios-separator);
+    }
+    
+    .progress-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    
+    .progress-label {
+      flex: 1;
+      font-size: 16px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .progress-value {
+      font-size: 16px;
+      color: var(--text-secondary);
+    }
+    
+    .progress-bar {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--ios-separator);
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.5s ease-out;
+      position: relative;
+    }
+    
+    .progress-fill::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(to right, rgba(255,255,255,0.3), transparent);
+    }
+    
+    .cpu-progress {
+      background: var(--ios-indigo);
+    }
+    
+    .ram-progress {
+      background: var(--ios-orange);
+    }
+    
+    .disk-progress {
+      background: var(--ios-green);
+    }
+    
+    .error-message {
+      background: rgba(255, 59, 48, 0.1);
+      color: var(--ios-red);
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin: 16px;
+      font-size: 14px;
+      display: none;
+      animation: fadeIn 0.3s;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .error-message.show {
+      display: block;
+    }
+    
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+    }
+
+    .loading-dark {
+      border: 2px solid rgba(0,0,0,0.3);
+      border-top-color: var(--text-primary);
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .preloader {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--ios-light);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 1;
+      transition: opacity 0.3s;
+    }
+    
+    .preloader.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    .shark-loader {
+      width: 80px;
+      height: 80px;
+      position: relative;
+      margin-bottom: 20px;
+    }
+    
+    .shark-icon {
+      font-size: 60px;
+      color: var(--ios-blue);
+      animation: swim 2s infinite ease-in-out;
+    }
+    
+    @keyframes swim {
+      0%, 100% { transform: translateY(0) rotate(-5deg); }
+      50% { transform: translateY(-10px) rotate(5deg); }
+    }
+    
+    .preloader-text {
+      margin-top: 20px;
+      font-size: 16px;
+      color: var(--text-primary);
+    }
+    
+    .server-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .server-code {
+      font-weight: 600;
+    }
+    
+    .server-location {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1001;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease-in-out;
+    }
+
+    .modal-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-content {
+      background: var(--ios-light);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      padding: 20px;
+      transform: translateY(20px);
+      transition: transform 0.3s ease-in-out;
+    }
+
+    .modal-overlay.show .modal-content {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 15px;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    .form-input, .form-select {
+      width: 100%;
+      padding: 12px 15px;
+      border: 1px solid var(--ios-separator);
+      border-radius: 8px;
+      font-size: 16px;
+      color: var(--text-primary);
+      background-color: var(--ios-gray);
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+
+    .form-input::placeholder {
+      color: var(--text-secondary);
+    }
+
+    .form-select {
+      background-image: url('data:image/svg+xml;utf8,<svg fill="%23666666" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>');
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 20px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 25px;
+    }
+
+    .modal-action-btn {
+      flex: 1;
+      height: 48px;
+      border-radius: 10px;
+      border: none;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .modal-action-btn:active {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+
+    .modal-action-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .btn-cancel {
+      background: var(--ios-separator);
+      color: var(--text-primary);
+    }
+
+    .btn-submit {
+      background: var(--ios-blue);
+      color: white;
+    }
+
+    /* Sidebar styles */
+    .sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 999;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+    }
+
+    .sidebar-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 280px; /* Adjust as needed */
+        background: var(--ios-light);
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar.show {
+        transform: translateX(0%);
+    }
+
+    .container.sidebar-open {
+        transform: translateX(280px); /* Push main content */
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid var(--ios-separator);
+    }
+
+    .sidebar-nav-list {
+        list-style: none;
+        padding: 0;
+        flex-grow: 1; /* Allow nav list to grow */
+        overflow-y: auto; /* Enable scroll for long bot lists */
+    }
+
+    .sidebar-nav-item {
+        padding: 14px 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 17px;
+        color: var(--text-primary);
+        border-bottom: 1px solid var(--ios-separator);
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }
+
+    .sidebar-nav-item:hover {
+        background: var(--ios-gray);
+    }
+
+    .sidebar-nav-item i {
+        font-size: 20px;
+        color: var(--ios-blue);
+    }
+
+    .sidebar-nav-item.bot-item .bot-name {
+        flex-grow: 1;
+    }
+
+    .sidebar-nav-item.bot-item .bot-status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-left: auto;
+    }
+
+    .sidebar-nav-item.bot-item .bot-status-online { background: var(--ios-green); }
+    .sidebar-nav-item.bot-item .bot-status-offline { background: var(--ios-separator); }
+    .sidebar-nav-item.bot-item .bot-status-error { background: var(--ios-red); }
+
+    .sidebar-nav-item.active {
+        background: var(--ios-blue);
+        color: white;
+    }
+    .sidebar-nav-item.active i {
+        color: white;
+    }
+
+    .sidebar-footer {
+        padding: 14px 20px;
+        border-top: 1px solid var(--ios-separator);
+        font-size: 13px;
+        color: var(--text-secondary);
+        text-align: center;
+    }
+    
+    /* Dark mode */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ios-light: #2C2C2E;
+        --ios-gray: #1C1C1E;
+        --text-primary: #FFFFFF;
+        --text-secondary: #AEAEB2;
+        --logo-filter: invert(1);
+      }
+      
+      .header, .card, .action-buttons, .modal-content, .sidebar, .sidebar-header, .sidebar-nav-item {
+        background: var(--ios-light);
+      }
+      
+      .card-header, .info-row, .progress-container, .sidebar-nav-item, .sidebar-header, .sidebar-footer {
+        border-color: #38383A;
+      }
+      
+      .preloader, .form-input, .form-select {
+        background: var(--ios-gray);
+      }
+
+      .form-input, .form-select {
+        border-color: #38383A;
+      }
+
+      .btn-cancel {
+        background: #48484A;
+        color: var(--text-primary);
+      }
+
+      .loading-dark {
+        border-color: rgba(255,255,255,0.3);
+        border-top-color: white;
+      }
+
+      .sidebar-nav-item.active {
+        background: var(--ios-blue);
+        color: white;
+      }
+      .sidebar-nav-item.active i {
+        color: white;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="preloader animate__animated animate__fadeIn">
+    <div class="shark-loader">
+      <i class="fas fa-fish shark-icon"></i>
+    </div>
+    <p class="preloader-text">Загрузка SharkHost...</p>
+  </div>
+
+  <div class="container" id="main-container">
+    <div class="header">
+      <i class="fas fa-bars menu-icon" id="menu-icon"></i> <h1>
+        <img src="https://img.icons8.com/fluency/48/shark.png" class="logo" alt="Shark">
+        SharkHost
+      </h1>
+      <div></div> </div>
+    
+    <div id="bot-info-container">
+      </div>
+    
+    <div id="server-stats-container">
+      </div>
+    
+    <div id="error-message" class="error-message"></div>
+  </div>
+  
+  <div id="action-buttons" class="action-buttons">
+    </div>
+
+  <div id="create-bot-modal" class="modal-overlay">
+    <div class="modal-content animate__animated animate__zoomIn">
+      <div class="modal-header">
+        <i class="fas fa-robot" style="color: var(--ios-blue);"></i>
+        <span>Создать нового юзербота</span>
+      </div>
+      <form id="create-bot-form">
+        <div class="form-group">
+          <label for="server-select" class="form-label">Выберите сервер:</label>
+          <select id="server-select" class="form-select" required>
+            <option value="" disabled selected>Загрузка серверов...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="ub-type-select" class="form-label">Тип юзербота:</label>
+          <select id="ub-type-select" class="form-select" required>
+            <option value="hikka">Hikka</option>
+            <option value="heroku">Heroku</option>
+            <option value="fox">FoxUserbot</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="ub-name-input" class="form-label">Имя юзербота (1-8 символов, латиница/цифры):</label>
+          <input type="text" id="ub-name-input" class="form-input" placeholder="Например, mybot" pattern="^[a-z0-9]{1,8}$" maxlength="8" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="cancel-create-bot" class="modal-action-btn btn-cancel">
+            <i class="fas fa-times"></i>
+            <span>Отмена</span>
+          </button>
+          <button type="submit" id="submit-create-bot" class="modal-action-btn btn-submit">
+            <i class="fas fa-plus"></i>
+            <span>Создать</span>
+          </button>
+        </div>
+        <div id="form-error-message" class="error-message"></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <i class="fas fa-bars"></i>
+      <span>Навигация</span>
+    </div>
+    <ul class="sidebar-nav-list" id="sidebar-nav-list">
+      <li class="sidebar-nav-item" id="main-dashboard-link">
+        <i class="fas fa-home"></i>
+        <span>Главная</span>
+      </li>
+      <li class="sidebar-nav-item" id="profile-link">
+        <i class="fas fa-user-circle"></i>
+        <span>Профиль</span>
+      </li>
+      <li class="sidebar-nav-item" id="userbots-section-header" style="font-weight: 600; padding-top: 20px; color: var(--text-primary);">
+        <i class="fas fa-robot"></i>
+        <span>Ваши Юзерботы</span>
+      </li>
+      <li id="no-bots-message" class="sidebar-nav-item" style="font-size: 14px; color: var(--text-secondary); cursor: default; display: none;">
+        <span>Нет активных юзерботов.</span>
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+        SharkHost v1.0
+    </div>
+  </div>
+
+  <script>
+    // Telegram WebApp initialization
+    const tgWebApp = window.Telegram.WebApp;
+    
+    // ВАШ API ТОКЕН (для демонстрационных целей, в реальном приложении должен быть на сервере)
+    const API_TOKEN = "b70b74c095435be2b74c02abf"; // Обновил API_ACCESS_TOKEN
+    
+    // DOM elements
+    const mainContainer = document.getElementById('main-container'); 
+    const botInfoContainer = document.getElementById('bot-info-container');
+    const serverStatsContainer = document.getElementById('server-stats-container');
+    const actionButtonsContainer = document.getElementById('action-buttons');
+    const errorElement = document.getElementById('error-message');
+    const preloader = document.querySelector('.preloader');
+
+    // Modal elements (still needed for the /create_userbot endpoint logic if it's external, but not directly triggered from UI)
+    const createBotModal = document.getElementById('create-bot-modal');
+    const createBotForm = document.getElementById('create-bot-form');
+    const serverSelect = document.getElementById('server-select');
+    const ubTypeSelect = document.getElementById('ub-type-select');
+    const ubNameInput = document.getElementById('ub-name-input');
+    const cancelCreateBotBtn = document.getElementById('cancel-create-bot');
+    const submitCreateBotBtn = document.getElementById('submit-create-bot');
+    const formErrorElement = document.getElementById('form-error-message');
+
+    // Sidebar elements
+    const menuIcon = document.getElementById('menu-icon');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const sidebarNavList = document.getElementById('sidebar-nav-list');
+    const profileLink = document.getElementById('profile-link');
+    const mainDashboardLink = document.getElementById('main-dashboard-link');
+    const serversStatusLink = document.getElementById('servers-status-link'); // НОВАЯ КНОПКА
+    const noBotsMessage = document.getElementById('no-bots-message');
+
+    // Server data loaded from external JSON (ip.json)
+    let serverData = {};
+    let currentUserbots = []; // Store list of userbots for the sidebar
+    let activeUserbotUsername = null; // To track which bot is currently displayed
+
+    // Initialize the app
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Expand the WebApp to full size
+      tgWebApp.expand();
+      tgWebApp.enableClosingConfirmation();
+      
+      // Load server data (ip.json) first
+      await loadIpData();
+      
+      // Then load initial bot data for the main dashboard or specific bot if deep-linked/saved
+      // Загружаем ботов для меню, чтобы определить, есть ли они вообще
+      await loadUserbotsForMenu(); 
+
+      // Если в URL есть параметр 'ub_username', пытаемся загрузить конкретного бота
+      const urlParams = new URLSearchParams(window.location.search);
+      const initialUbUsername = urlParams.get('ub_username');
+      
+      if (initialUbUsername) {
+          activeUserbotUsername = initialUbUsername; // Устанавливаем активного бота для подсветки в сайдбаре
+          await loadBotData(initialUbUsername);
+      } else {
+          // Если конкретный бот не запрошен, берем первого из списка, если он есть
+          if (currentUserbots.length > 0) {
+              activeUserbotUsername = currentUserbots[0].ub_username;
+              await loadBotData(currentUserbots[0].ub_username);
+          } else {
+              // Если ботов нет, показываем интерфейс "бот не найден"
+              renderBotNotFound();
+          }
+      }
+      
+      // Скрыть прелоадер после первоначальной загрузки данных
+      setTimeout(() => {
+        preloader.classList.add('animate__fadeOut');
+        setTimeout(() => {
+          preloader.classList.add('hidden');
+        }, 300);
+      }, 500);
+
+      // Set up periodic updates
+      // Обновляем данные текущего отображаемого бота
+      setInterval(() => {
+        if (activeUserbotUsername) {
+          loadBotData(activeUserbotUsername); 
+        }
+      }, 30000); // Update main bot data every 30 seconds
+      
+      // Обновляем список ботов в сайдбаре
+      setInterval(loadUserbotsForMenu, 60000); // Update sidebar bot list every 60 seconds
+
+      // Add event listeners for modal form (Keep these if the modal can still be triggered by other means,
+      // but the "create-bot-trigger-btn" will be removed)
+      cancelCreateBotBtn.addEventListener('click', hideCreateBotForm);
+      createBotForm.addEventListener('submit', handleCreateBotSubmit);
+
+      // Sidebar event listeners
+      menuIcon.addEventListener('click', toggleSidebar);
+      sidebarOverlay.addEventListener('click', hideSidebar);
+      profileLink.addEventListener('click', () => {
+        // Добавляем параметр для перехода на страницу профиля, чтобы она могла инициализироваться
+        window.location.href = '/profile'; 
+      });
+      mainDashboardLink.addEventListener('click', () => {
+        // Переход на главную страницу без конкретного бота
+        activeUserbotUsername = null; 
+        loadBotData(); // Загрузка первого бота или "бот не найден"
+        hideSidebar();
+      });
+      // НОВАЯ КНОПКА В САЙДБАРЕ
+      // Обновляем активный элемент сайдбара при загрузке страницы
+      updateSidebarActiveBot();
+    });
+
+    // Function to make API requests with Authorization header
+    async function callApi(url, method = 'GET', body = null) {
+      const headers = { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_TOKEN}`
+      };
+
+      const options = {
+        method: method,
+        headers: headers
+      };
+
+      if (body) {
+        options.body = JSON.stringify(body);
+      }
+
+      try {
+          const response = await fetch(url, options);
+          if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`API Error Response (${response.status}):`, errorText);
+              // Попытка распарсить JSON ошибку, если она есть
+              try {
+                  const errorJson = JSON.parse(errorText);
+                  throw new Error(errorJson.message || `HTTP error! Status: ${response.status}`);
+              } catch (parseError) {
+                  throw new Error(`HTTP error! Status: ${response.status} - ${errorText}`);
+              }
+          }
+          return response;
+      } catch (e) {
+          console.error(`Fetch error for ${url}:`, e);
+          throw e; // Re-throw to be caught by the calling function
+      }
+    }
+
+    // Load ip.json data from the new /ip endpoint
+    async function loadIpData() {
+      try {
+        const response = await callApi('/ip'); 
+        serverData = await response.json();
+        console.log("IP data loaded:", serverData);
+      } catch (e) {
+        console.error('Failed to load IP data:', e);
+        showError('Не удалось загрузить конфигурацию серверов. Попробуйте обновить страницу.');
+      }
+    }
+    
+    // Format server display name
+    function formatServerName(ip) {
+      const server = serverData[ip]; // Get server info from loaded ip.json
+      if (!server || !server.flag || !server.code) {
+        return `
+          <div class="server-info">
+            <i class="fas fa-question-circle" style="color: var(--ios-separator);"></i>
+            <span class="server-code">${ip}</span>
+            <span class="server-location">(Неизвестный сервер)</span>
+          </div>
+        `;
+      }
+      
+      return `
+        <div class="server-info">
+          <span>${server.flag}</span>
+          <span class="server-code">${server.code}</span>
+          <span class="server-location">(${server.country || 'Unknown'}, ${server.city || 'Unknown'})</span>
+        </div>
+      `;
+    }
+    
+    // Load bot data from server
+    // Принимает ubUsernameToLoad, чтобы загрузить данные конкретного бота
+    async function loadBotData(ubUsernameToLoad = null) {
+      try {
+        showLoading(true);
+        
+        // Ensure initData and userId are always available
+        if (!tgWebApp.initData || !tgWebApp.initDataUnsafe.user?.id) {
+          showError("Telegram WebApp данные недоступны. Пожалуйста, откройте через Telegram.");
+          return;
+        }
+
+        const payload = {
+          initData: tgWebApp.initData,
+        };
+        // *** Ключевое изменение: передаем ub_username в payload ***
+        if (ubUsernameToLoad) {
+            payload.ub_username = ubUsernameToLoad; 
+        }
+
+        const response = await callApi('/get_bot_data', 'POST', payload);
+        
+        if (!response.ok) {
+          // Ошибки из API уже обрабатываются в callApi, здесь просто перебрасываем
+          const errorData = await response.json();
+          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          if (data.bot.status === 'not_found' || !data.bot.username) { 
+            renderBotNotFound();
+            activeUserbotUsername = null; // Нет активного бота для отображения
+          } else {
+            updateBotUI(data.bot, data.server);
+            activeUserbotUsername = data.bot.username; // Устанавливаем текущего активного бота
+          }
+          showError(null); // Clear any previous errors
+        } else {
+            // Если успех = false, но это "бот не найден" (например, запросили конкретного, а его нет)
+            if (data.bot && data.bot.status === 'not_found') {
+                renderBotNotFound();
+                activeUserbotUsername = null;
+            } else {
+                showError(data.message || 'Ошибка загрузки данных');
+                activeUserbotUsername = null; // Сброс активного бота при ошибке
+            }
+        }
+      } catch (error) {
+        showError('Ошибка соединения: ' + error.message);
+        console.error('API Error:', error);
+        // Если произошла ошибка при загрузке, переключаемся на состояние "бот не найден"
+        renderBotNotFound();
+        activeUserbotUsername = null;
+      } finally {
+        showLoading(false);
+        updateSidebarActiveBot(); // Обновляем подсветку в сайдбаре после загрузки данных
+      }
+    }
+
+    // Load userbots for the sidebar menu
+    async function loadUserbotsForMenu() {
+        try {
+            if (!tgWebApp.initData || !tgWebApp.initDataUnsafe.user?.id) {
+                console.warn("Telegram WebApp data not available for menu load.");
+                return;
+            }
+
+            const response = await callApi('/userbots_for_menu', 'POST', {
+                initData: tgWebApp.initData,
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success && Array.isArray(data.userbots)) {
+                currentUserbots = data.userbots;
+                renderUserbotsInSidebar(currentUserbots);
+            } else {
+                console.error("Failed to load userbots for menu:", data.message);
+                renderUserbotsInSidebar([]); // Render empty list
+            }
+        } catch (error) {
+            console.error('API Error fetching userbots for menu:', error);
+            renderUserbotsInSidebar([]); // Render empty list on error
+        }
+    }
+
+    // Render userbots in sidebar
+    function renderUserbotsInSidebar(userbots) {
+        // Clear previous bot list items, but keep static items
+        const existingBotItems = sidebarNavList.querySelectorAll('.bot-item');
+        existingBotItems.forEach(item => item.remove());
+
+        // Add userbots
+        if (userbots.length > 0) {
+            noBotsMessage.style.display = 'none';
+            // Вставляем ботов после "Ваши Юзерботы"
+            const userbotsSectionHeader = document.getElementById('userbots-section-header');
+            userbots.forEach(bot => {
+                const li = document.createElement('li');
+                li.className = 'sidebar-nav-item bot-item';
+                li.innerHTML = `
+                    <i class="fas fa-robot"></i>
+                    <span class="bot-name">${bot.ub_username}</span>
+                    <span class="bot-status-indicator ${getStatusClass(bot.status).replace('status-', 'bot-status-')}"></span>
+                `;
+                li.dataset.username = bot.ub_username;
+                li.addEventListener('click', () => {
+                    hideSidebar();
+                    loadBotData(bot.ub_username); // Load data for the clicked bot
+                });
+                sidebarNavList.insertBefore(li, noBotsMessage); 
+            });
+        } else {
+            noBotsMessage.style.display = 'flex'; // Show "No active userbots" message
+        }
+        updateSidebarActiveBot();
+    }
+
+    // Update active state in sidebar
+    function updateSidebarActiveBot() {
+        sidebarNavList.querySelectorAll('.sidebar-nav-item').forEach(item => {
+            item.classList.remove('active');
+        });
+
+        const currentPath = window.location.pathname;
+
+        if (currentPath === '/') {
+            if (activeUserbotUsername) {
+                const activeItem = sidebarNavList.querySelector(`.bot-item[data-username="${activeUserbotUsername}"]`);
+                if (activeItem) {
+                    activeItem.classList.add('active');
+                }
+            } else {
+                mainDashboardLink.classList.add('active');
+            }
+        } else if (currentPath === '/profile') {
+            profileLink.classList.add('active');
+        } else if (currentPath === '/servers') { // Подсвечиваем "Статус серверов"
+            serversStatusLink.classList.add('active');
+        }
+    }
+
+    // Render bot not found message
+    function renderBotNotFound() {
+      botInfoContainer.innerHTML = `
+        <div class="card animate__animated animate__fadeIn">
+          <div class="card-header">
+            <i class="fas fa-exclamation-triangle" style="color: var(--ios-orange);"></i>
+            <span>ЮзерБот не найден</span>
+          </div>
+          
+          <div class="info-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="info-label" style="margin-bottom: 8px;">Информация</span>
+            <span style="color: var(--text-secondary); font-size: 14px;">
+              Ваш юзербот не найден. Возможно, вы ещё не создали его.
+            </span>
+          </div>
+          
+          <div class="info-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="info-label" style="margin-bottom: 8px;">Как создать?</span>
+            <span style="color: var(--text-secondary); font-size: 14px;">
+              Чтобы создать бота, отправьте команду <code>/start</code> в нашего Telegram бота.
+            </span>
+          </div>
+        </div>
+      `;
+      
+      serverStatsContainer.innerHTML = '';
+      actionButtonsContainer.innerHTML = ''; // Убираем кнопки Старт/Стоп/Рестарт
+    }
+    
+    // Update UI with bot data
+    function updateBotUI(bot, server) {
+      // Render bot info
+      botInfoContainer.innerHTML = `
+        <div class="card animate__animated animate__fadeIn">
+          <div class="card-header">
+            <i class="fas fa-robot"></i>
+            <span>Информация о ЮзерБоте</span>
+          </div>
+          
+          <div class="info-row">
+            <span class="info-label">Имя Юзербота</span>
+            <span class="info-value" id="bot-name">${bot.username || '—'}</span>
+          </div>
+          
+          <div class="info-row">
+            <span class="info-label">Статус</span>
+            <span class="info-value">
+              <span class="status-indicator ${getStatusClass(bot.status)}"></span>
+              <span id="bot-status">${getStatusText(bot.status)}</span>
+            </span>
+          </div>
+          
+          <div class="info-row">
+            <span class="info-label">Сервер</span>
+            <span class="info-value" id="bot-server">
+              ${formatServerName(bot.server)}
+            </span>
+          </div>
+          
+          <div class="info-row">
+            <span class="info-label">Тип юзербота</span>
+            <span class="info-value" id="bot-type">${bot.type || '—'}</span>
+          </div>
+        </div>
+      `;
+      
+      // Render server stats if available
+      if (server) {
+        serverStatsContainer.innerHTML = `
+          <div class="card animate__animated animate__fadeIn animate__delay-1s">
+            <div class="card-header">
+              <i class="fas fa-server"></i>
+              <span>Статистика сервера</span>
+            </div>
+            
+            <div class="progress-container">
+              <div class="progress-row">
+                <span class="progress-label">
+                  <i class="fas fa-microchip" style="color: var(--ios-indigo);"></i>
+                  <span>CPU</span>
+                </span>
+                <span class="progress-value" id="cpu-usage">${server.cpu_usage || '—'}</span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill cpu-progress" id="cpu-progress" style="width: ${parseFloat(server.cpu_usage) || 0}%"></div>
+              </div>
+            </div>
+            
+            <div class="progress-container">
+              <div class="progress-row">
+                <span class="progress-label">
+                  <i class="fas fa-memory" style="color: var(--ios-orange);"></i>
+                  <span>RAM</span>
+                </span>
+                <span class="progress-value" id="ram-usage">
+                  ${server.ram_used ? `${server.ram_used} / ${server.ram_total} (${server.ram_percent})` : '—'}
+                </span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill ram-progress" id="ram-progress" style="width: ${parseFloat(server.ram_percent) || 0}%"></div>
+              </div>
+            </div>
+            
+            <div class="progress-container">
+              <div class="progress-row">
+                <span class="progress-label">
+                  <i class="fas fa-database" style="color: var(--ios-green);"></i>
+                  <span>Диск</span>
+                </span>
+                <span class="progress-value" id="disk-usage">
+                  ${server.disk_used ? `${server.disk_used} / ${server.disk_total} (${server.disk_percent})` : '—'}
+                </span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill disk-progress" id="disk-progress" style="width: ${parseFloat(server.disk_percent) || 0}%"></div>
+              </div>
+            </div>
+            
+            <div class="info-row">
+              <span class="info-label">
+                <i class="fas fa-clock" style="color: var(--ios-blue);"></i>
+                <span>Время работы</span>
+              </span>
+              <span class="info-value" id="uptime">${server.uptime || '—'}</span>
+            </div>
+          </div>
+        `;
+      } else {
+        serverStatsContainer.innerHTML = ''; // Clear server stats if not available
+      }
+      
+      // Render action buttons
+      actionButtonsContainer.innerHTML = `
+        <button id="start-btn" class="action-btn start-btn" ${bot.status === 'installing' ? 'disabled' : ''}>
+          <span id="start-icon"><i class="fas fa-play"></i></span>
+          <span>Старт</span>
+        </button>
+        <button id="stop-btn" class="action-btn stop-btn" || bot.status === 'installing' ? 'disabled' : ''}>
+          <span id="stop-icon"><i class="fas fa-stop"></i></span>
+          <span>Стоп</span>
+        </button>
+        <button id="restart-btn" class="action-btn restart-btn" ${bot.status !== 'running' && bot.status !== 'restarting' ? 'disabled' : ''}>
+          <span id="restart-icon"><i class="fas fa-redo"></i></span>
+          <span>Рестарт</span>
+        </button>
+      `;
+      
+      // Set up button handlers
+      document.getElementById('start-btn')?.addEventListener('click', () => manageBot('start'));
+      document.getElementById('stop-btn')?.addEventListener('click', () => manageBot('stop'));
+      document.getElementById('restart-btn')?.addEventListener('click', () => manageBot('restart'));
+    }
+
+    // Helper functions
+    function getStatusText(status) {
+      const statusMap = {
+        'running': 'Запущен',
+        'stopped': 'Остановлен',
+        'error': 'Ошибка',
+        'installing': 'Установка',
+        'restarting': 'Запущен',
+        'not_found': 'Не найден',
+        'unknown': 'Неизвестно'
+      };
+      return statusMap[status] || status;
+    }
+    
+    function getStatusClass(status) {
+      const classMap = {
+        'running': 'status-online',
+        'stopped': 'status-offline',
+        'error': 'status-error',
+        'installing': 'status-error',
+        'restarting': 'status-online',
+        'not_found': 'status-not-found',
+        'unknown': 'status-offline'
+      };
+      return classMap[status] || 'status-offline';
+    }
+    
+    function getActionName(action) {
+      const actionMap = {
+        'start': 'Включение',
+        'stop': 'Выключение',
+        'restart': 'Перезапуск',
+        'create': 'Создание'
+      };
+      return actionMap[action] || action;
+    }
+    
+    function showLoading(show) {
+      const startBtn = document.getElementById('start-btn');
+      const stopBtn = document.getElementById('stop-btn');
+      const restartBtn = document.getElementById('restart-btn');
+      
+      const buttonsToManage = [startBtn, stopBtn, restartBtn].filter(Boolean); // Filter out null if buttons aren't rendered
+      
+      buttonsToManage.forEach(btn => {
+        const iconSpan = btn.querySelector('span:first-child');
+        const spinnerHtml = '<span class="loading ' + (document.body.classList.contains('dark-mode') ? 'loading-dark' : '') + '"></span>';
+
+        if (show) {
+          // Если нужно показать загрузку
+          btn.disabled = true; 
+          if (iconSpan && !iconSpan.querySelector('.loading')) { // Проверяем, чтобы не добавить спиннер дважды
+              btn.dataset.originalIcon = iconSpan.innerHTML; // Сохраняем текущую иконку
+              iconSpan.innerHTML = spinnerHtml;
+          }
+        } else {
+          // Если нужно скрыть загрузку и восстановить состояние
+          if (iconSpan && iconSpan.querySelector('.loading')) {
+              iconSpan.innerHTML = btn.dataset.originalIcon; // Восстанавливаем оригинальную иконку
+              delete btn.dataset.originalIcon; // Удаляем сохраненную иконку
+          }
+          
+          // Устанавливаем правильные состояния кнопок в зависимости от текущего статуса бота
+          const currentBot = currentUserbots.find(b => b.ub_username === activeUserbotUsername);
+          
+          if (btn.id === 'start-btn') {
+            btn.disabled = currentBot && (currentBot.status === 'installing');
+          }
+          if (btn.id === 'stop-btn') {
+            btn.disabled = currentBot && (currentBot.status === 'installing');
+          }
+          if (btn.id === 'restart-btn') {
+            
+          }
+        }
+      });
+    }
+
+    function showFormError(message) {
+      if (!message) {
+        formErrorElement.classList.remove('show');
+        return;
+      }
+      formErrorElement.textContent = message;
+      formErrorElement.classList.add('show');
+    }
+
+    function showFormLoading(show) {
+      const icon = submitCreateBotBtn.querySelector('span:first-child') || submitCreateBotBtn.querySelector('i');
+      const spinnerHtml = '<span class="loading ' + (document.body.classList.contains('dark-mode') ? 'loading-dark' : '') + '"></span>';
+
+      if (show) {
+        submitCreateBotBtn.disabled = true;
+        cancelCreateBotBtn.disabled = true;
+        serverSelect.disabled = true;
+        ubTypeSelect.disabled = true;
+        ubNameInput.disabled = true;
+        if (icon) {
+          icon.innerHTML = spinnerHtml;
+          icon.style.marginRight = '8px'; 
+        }
+      } else {
+        submitCreateBotBtn.disabled = false;
+        cancelCreateBotBtn.disabled = false;
+        serverSelect.disabled = false;
+        ubTypeSelect.disabled = false;
+        ubNameInput.disabled = false;
+        if (icon) {
+          icon.innerHTML = '<i class="fas fa-plus"></i>';
+          icon.style.marginRight = ''; 
+        }
+      }
+    }
+    
+    function showError(message) {
+      if (!message) {
+        errorElement.classList.remove('show');
+        return;
+      }
+      
+      errorElement.textContent = message;
+      errorElement.classList.add('show');
+      
+      setTimeout(() => {
+        errorElement.classList.remove('show');
+      }, 5000);
+    }
+    
+    // Manage bot actions
+    async function manageBot(action) {
+      try {
+        if (!tgWebApp.initData || !tgWebApp.initDataUnsafe.user?.id) {
+          showError("Telegram WebApp данные недоступны. Пожалуйста, откройте через Telegram.");
+          return;
+        }
+
+        if (!activeUserbotUsername) {
+            showError("Не выбран юзербот для управления. Пожалуйста, выберите юзербот из меню.");
+            return;
+        }
+        
+        // Показываем индикатор загрузки для всех кнопок управления
+        showLoading(true);
+
+        const response = await callApi('/manage_bot', 'POST', {
+          initData: tgWebApp.initData,
+          ub_username: activeUserbotUsername,
+          action: action
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          tgWebApp.showAlert(`✅ Действие "${getActionName(action)}" для "${activeUserbotUsername}" выполнено.`);
+          
+          // Добавляем небольшую задержку перед обновлением данных, чтобы сервер успел обработать команду
+          setTimeout(async () => {
+            await loadBotData(activeUserbotUsername);
+            await loadUserbotsForMenu();
+          }, 2000);
+        } else {
+          showError(data.message || 'Ошибка выполнения действия');
+          // Если была ошибка, также перезагружаем данные, чтобы отобразить актуальный статус
+          await loadBotData(activeUserbotUsername);
+          await loadUserbotsForMenu();
+        }
+      } catch (error) {
+        showError('Ошибка соединения: ' + error.message);
+        console.error('API Error:', error);
+        // В случае ошибки соединения, также перезагружаем данные, чтобы отобразить актуальный статус
+        if (activeUserbotUsername) {
+          await loadBotData(activeUserbotUsername);
+          await loadUserbotsForMenu();
+        } else {
+          showLoading(false);
+        }
+      }
+    }
+
+    // Modal Form Functions (These functions are kept, but the UI trigger for them is removed)
+    async function showCreateBotForm() {
+      showFormError(null); 
+      createBotForm.reset(); 
+      
+      serverSelect.innerHTML = '<option value="" disabled selected>Загрузка серверов...</option>';
+      
+      try {
+            const response = await callApi('/get_server_install_info', 'GET');
+            const installInfo = await response.json();
+
+            const serverNames = Object.keys(serverData);
+            if (serverNames.length === 0) {
+                serverSelect.innerHTML = '<option value="" disabled selected>Серверы не найдены</option>';
+                showFormError('Нет доступных серверов. Попробуйте обновить страницу.');
+                return;
+            }
+
+            serverSelect.innerHTML = '<option value="" disabled selected>Выберите сервер</option>';
+            for (const ip of serverNames) {
+                const server = serverData[ip];
+                const stats = installInfo[ip] || { installed_bots: 0, limit: 0, install_allowed: false };
+                let optionText = `${server.flag} ${server.code} (${server.country}, ${server.city})`;
+                let disabled = !stats.install_allowed;
+                let reason = '';
+
+                if (stats.limit > 0) {
+                    optionText += ` — ${stats.installed_bots}/${stats.limit}`;
+                    if (stats.installed_bots >= stats.limit) {
+                        disabled = true;
+                        reason = ' (Заполнен)';
+                    }
+                } else if (!stats.install_allowed) {
+                    disabled = true;
+                    reason = ' (Установка временно отключена)';
+                }
+
+                const option = new Option(optionText + reason, ip);
+                option.disabled = disabled;
+                serverSelect.add(option);
+            }
+        } catch (e) {
+            console.error("Failed to load server install info:", e);
+            showFormError('Не удалось загрузить информацию о серверах. Попробуйте позже.');
+        }
+
+      createBotModal.classList.add('show');
+    }
+
+    function hideCreateBotForm() {
+      createBotModal.classList.remove('show');
+      showFormError(null); 
+    }
+
+    async function handleCreateBotSubmit(event) {
+      event.preventDefault(); 
+      showFormError(null); 
+
+      const selectedServer = serverSelect.value;
+      const selectedUbType = ubTypeSelect.value;
+      const ubName = ubNameInput.value.trim();
+
+      if (!selectedServer) {
+        showFormError('Пожалуйста, выберите сервер.');
+        return;
+      }
+      if (!selectedUbType) {
+        showFormError('Пожалуйста, выберите тип юзербота.');
+        return;
+      }
+      if (!ubName || !/^[a-z0-9]{1,8}$/.test(ubName)) {
+        showFormError('Имя юзербота должно содержать от 1 до 8 символов (латиница/цифры).');
+        return;
+      }
+
+      showFormLoading(true);
+
+      try {
+        const response = await callApi('/create_userbot', 'POST', {
+          initData: tgWebApp.initData,
+          server_ip: selectedServer,
+          ub_type: selectedUbType,
+          username_base: ubName
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          tgWebApp.showAlert('✅ Юзербот успешно создан! Он будет запущен в течение минуты.');
+          hideCreateBotForm();
+          // После успешного создания, переключаемся на отображение этого нового бота
+          activeUserbotUsername = ubName; 
+          loadBotData(activeUserbotUsername); 
+          loadUserbotsForMenu(); // Update sidebar
+        } else {
+          showFormError(data.message || 'Ошибка создания юзербота.');
+        }
+      } catch (error) {
+        showFormError('Ошибка соединения: ' + error.message);
+        console.error('API Error during bot creation:', error);
+      } finally {
+        showFormLoading(false);
+      }
+    }
+
+    // Sidebar functions
+    function toggleSidebar() {
+        sidebar.classList.toggle('show');
+        sidebarOverlay.classList.toggle('show');
+        mainContainer.classList.toggle('sidebar-open');
+    }
+
+    function hideSidebar() {
+        sidebar.classList.remove('show');
+        sidebarOverlay.classList.remove('show');
+        mainContainer.classList.remove('sidebar-open');
+    }
+
+    // Автоматическое определение темной темы
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark-mode');
+    }
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+        if (event.matches) {
+            document.body.classList.add('dark-mode');
+        } else {
+            document.body.classList.remove('dark-mode');
+        }
+    });
+
+  </script>
+</body>
+</html>

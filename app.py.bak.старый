@@ -1,0 +1,470 @@
+import os
+import asyncio
+import logging
+import traceback
+import json
+from functools import wraps
+from datetime import datetime
+
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
+
+import database as db
+import server_config
+import system_manager as sm
+from telegram_auth import verify_init_data
+import admin_manager
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__, static_folder="static")
+
+BOT_TOKEN = "7748911549:AAE-ifjrWLhcvquwVf_X0zFhzAylPRIfR48"
+API_ACCESS_TOKEN = "b70b74c095435be2b74c02abf"
+
+try:
+    loop = asyncio.get_running_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+def is_server_enabled():
+    status_file_path = os.path.join(os.path.dirname(__file__), 'server_status.json')
+    if not os.path.exists(status_file_path):
+        logger.warning(f"server_status.json not found at {status_file_path}. Assuming server is enabled.")
+        return True
+    
+    try:
+        with open(status_file_path, 'r', encoding='utf-8') as f:
+            status_data = json.load(f)
+            return status_data.get("enabled", True)
+    except json.JSONDecodeError:
+        logger.error(f"Error decoding server_status.json at {status_file_path}. Assuming server is enabled.")
+        return True
+    except Exception as e:
+        logger.error(f"Error reading server_status.json: {e}. Assuming server is enabled.")
+        return True
+
+def require_api_token(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.warning("API Token missing from request from %s", request.remote_addr)
+            return jsonify({"success": False, "message": "API Token is missing"}), 401
+        
+        try:
+            token_type, token = auth_header.split(' ', 1)
+            if token_type.lower() != 'bearer' or token != API_ACCESS_TOKEN:
+                logger.warning(f"Invalid API Token: '{token}' from %s", request.remote_addr)
+                return jsonify({"success": False, "message": "Invalid API Token"}), 403
+        except ValueError:
+            logger.warning(f"Malformed Authorization header: '{auth_header}' from %s", request.remote_addr)
+            return jsonify({"success": False, "message": "Malformed Authorization header"}), 403
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+def verify_telegram_user(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        tg_user_id = "unknown"
+        try:
+            data = request.get_json()
+            if not data or "initData" not in data:
+                logger.warning("Missing initData in request from %s", request.remote_addr)
+                return jsonify({"success": False, "message": "Missing Telegram WebApp initData"}), 400
+
+            user_data_from_init = verify_init_data(data["initData"], BOT_TOKEN)
+            if not user_data_from_init:
+                logger.warning("Invalid auth data (initData verification failed) from %s", request.remote_addr)
+                return jsonify({"success": False, "message": "Invalid Telegram WebApp auth data"}), 401
+            
+            tg_user_id = user_data_from_init.get("id")
+            if not tg_user_id:
+                logger.error("Telegram user ID not found in verified initData for %s", request.remote_addr)
+                return jsonify({"success": False, "message": "Telegram user ID not found"}), 400
+
+            kwargs['tg_user_id'] = tg_user_id
+            return f(*args, **kwargs)
+
+        except Exception as e:
+            logger.error(f"Error during Telegram user verification for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
+            return jsonify({"success": False, "message": "Internal authentication error"}), 500
+    return decorated_function
+
+@app.before_request
+def check_server_status():
+    if request.path.startswith('/static/') or request.path == '/tech.html':
+        return None
+
+    if is_server_enabled():
+        return None
+
+    tg_user_id = None
+    try:
+        if request.method == 'POST' and request.is_json:
+            data = request.get_json(silent=True)
+            if data and "initData" in data:
+                user_data_from_init = verify_init_data(data["initData"], BOT_TOKEN)
+                if user_data_from_init:
+                    tg_user_id = user_data_from_init.get("id")
+        
+    except Exception as e:
+        logger.warning(f"Failed to extract tg_user_id from request for maintenance bypass check: {e}")
+
+    if tg_user_id:
+        all_admins = admin_manager.get_all_admins()
+        if tg_user_id in all_admins:
+            logger.info(f"Server is disabled, but admin {tg_user_id} is allowed to bypass maintenance for {request.path}.")
+            return None
+    
+    logger.info(f"Server is disabled. Redirecting {request.path} to /tech.html for {request.remote_addr}. User ID: {tg_user_id if tg_user_id else 'not identified'}")
+    return redirect(url_for('serve_technical_page'))
+
+@app.route("/")
+def serve_index():
+    logger.info("Serving index.html to %s", request.remote_addr)
+    return send_from_directory(app.static_folder, "index.html")
+
+@app.route("/profile")
+def serve_profile():
+    logger.info("Serving profile.html to %s", request.remote_addr)
+    return send_from_directory(app.static_folder, "profile.html")
+
+@app.route("/servers")
+def serve_servers():
+    logger.info("Serving servers.html to %s", request.remote_addr)
+    return send_from_directory(app.static_folder, "servers.html")
+
+@app.route("/tech.html")
+def serve_technical_page():
+    logger.info("Serving tech.html to %s", request.remote_addr)
+    return send_from_directory(app.static_folder, "tech.html")
+
+@app.route("/<path:path>")
+def serve_static(path):
+    if path in ["ip.json", "server_status.json"]:
+        logger.warning(f"Attempt to directly access {path} via static files: {request.remote_addr}")
+        return jsonify({"success": False, "message": "Access Denied"}), 403
+
+    full_path = os.path.join(app.static_folder, path)
+    if os.path.exists(full_path) and os.path.isfile(full_path):
+        logger.info(f"Serving static file: {path} to %s", request.remote_addr)
+        return send_from_directory(app.static_folder, path)
+    
+    logger.warning(f"Static file not found: {path} for %s", request.remote_addr)
+    return jsonify({"success": False, "message": "Not Found"}), 404
+
+@app.route("/ip", methods=["GET"])
+@require_api_token
+def get_ip_json_api():
+    ip_json_path = os.path.join(os.path.dirname(__file__), 'ip.json')
+    if not os.path.exists(ip_json_path):
+        logger.error(f"ip.json not found at {ip_json_path}")
+        return jsonify({"success": False, "message": "Server IP configuration not found"}), 500
+    
+    try:
+        with open(ip_json_path, 'r', encoding='utf-8') as f:
+            data = f.read()
+        logger.info("Successfully served ip.json via API to %s.", request.remote_addr)
+        return app.response_class(
+            response=data,
+            mimetype='application/json'
+        )
+    except Exception as e:
+        logger.error(f"Error reading ip.json: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "Error reading IP configuration"}), 500
+
+@app.route("/get_all_server_stats", methods=["POST"])
+@require_api_token
+@verify_telegram_user
+async def get_all_server_stats_api(tg_user_id):
+    try:
+        logger.info(f"Fetching all server stats for Telegram user ID: {tg_user_id}")
+        servers = server_config.get_servers()
+        all_server_stats = {}
+
+        tasks = []
+        for ip, details in servers.items():
+            tasks.append(sm.get_server_stats(ip))
+
+        stats_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, (ip, details) in enumerate(servers.items()):
+            stats = stats_results[i]
+            if isinstance(stats, Exception):
+                logger.error(f"Error fetching stats for server {ip}: {str(stats)}")
+                all_server_stats[ip] = {
+                    "status": "error",
+                    "message": "Failed to fetch stats",
+                    "flag": details.get("flag", "❓"),
+                    "code": details.get("code", "UNKNOWN"),
+                    "country": details.get("country", "Unknown"),
+                    "city": details.get("city", "Unknown"),
+                    "user_limit": details.get("user_limit", 0),
+                    "cpu_load": "N/A",
+                    "specs": None
+                }
+            else:
+                stats["flag"] = details.get("flag", "❓")
+                stats["code"] = details.get("code", "UNKNOWN")
+                stats["country"] = details.get("country", "Unknown")
+                stats["city"] = details.get("city", "Unknown")
+                stats["user_limit"] = details.get("user_limit", 0)
+                all_server_stats[ip] = stats
+
+        logger.info(f"Successfully fetched all server stats for user {tg_user_id}")
+        return jsonify({"success": True, "servers": all_server_stats})
+
+    except Exception as e:
+        logger.error(f"Error in /get_all_server_stats for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+@app.route("/get_bot_data", methods=["POST"])
+@require_api_token
+@verify_telegram_user
+def get_bot_data_api(tg_user_id):
+    try:
+        data = request.get_json()
+        requested_ub_username = data.get("ub_username")
+
+        logger.info(f"Processing /get_bot_data request for Telegram user ID: {tg_user_id}. Requested bot: {requested_ub_username}")
+
+        userbots = db.get_userbots_by_tg_id(tg_user_id)
+
+        ub = None
+        if requested_ub_username:
+            for bot in userbots:
+                if bot['ub_username'] == requested_ub_username:
+                    ub = bot
+                    break
+            if not ub:
+                logger.warning(f"Requested userbot '{requested_ub_username}' not found for Telegram user ID: {tg_user_id}")
+                return jsonify({
+                    "success": False,
+                    "message": f"Userbot '{requested_ub_username}' not found for this user.",
+                    "bot": {
+                        "status": "not_found",
+                        "message": "Userbot not found for this user."
+                    },
+                    "server": None
+                })
+        elif userbots:
+            ub = userbots[0]
+
+        if not ub:
+            logger.info(f"No userbot found for Telegram user ID: {tg_user_id}")
+            return jsonify({
+                "success": True,
+                "bot": {
+                    "status": "not_found",
+                    "message": "Userbot not found for this user."
+                },
+                "server": None
+            })
+
+        logger.info(f"Found userbot '{ub['ub_username']}' for user ID: {tg_user_id}. Fetching server stats for {ub['server_ip']}.")
+
+        server_stats = loop.run_until_complete(sm.get_server_stats(ub["server_ip"]))
+        logger.info(f"Server stats for {ub['server_ip']}: {server_stats}")
+
+        return jsonify({
+            "success": True,
+            "bot": {
+                "username": ub.get("ub_username", "Unknown"),
+                "status": ub.get("status", "unknown"),
+                "server": ub.get("server_ip", "Unknown"),
+                "type": ub.get("ub_type", "Unknown")
+            },
+            "server": server_stats
+        })
+
+    except Exception as e:
+        logger.error(f"Error in /get_bot_data for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+@app.route("/manage_bot", methods=["POST"])
+@require_api_token
+@verify_telegram_user
+def manage_bot_api(tg_user_id):
+    try:
+        data = request.get_json()
+        action = data.get("action")
+        requested_ub_username = data.get("ub_username")
+        
+        if not action:
+            logger.warning("Missing 'action' in /api/manage_bot request for user %s", tg_user_id)
+            return jsonify({"success": False, "message": "Missing 'action' parameter"}), 400
+
+        logger.info(f"Processing '{action}' action for Telegram user ID: {tg_user_id} on userbot: {requested_ub_username}")
+
+        ub = db.get_userbot_by_tg_id_and_username(tg_user_id, requested_ub_username)
+        if not ub:
+            logger.warning(f"Userbot '{requested_ub_username}' not found for Telegram user ID: {tg_user_id} to manage.")
+            return jsonify({"success": False, "message": "Userbot not found or you don't have access to this userbot."}), 404
+
+        ub_username = ub['ub_username']
+        server_ip = ub['server_ip']
+        
+        logger.info(f"Managing userbot '{ub_username}' on server '{server_ip}' with action '{action}'")
+
+        result = {"success": False, "message": "Invalid action or unhandled state."}
+        
+        if action == "delete":
+            logger.info(f"Attempting to delete userbot {ub_username}...")
+            result = loop.run_until_complete(sm.delete_userbot_full(ub_username, server_ip))
+            if result["success"]:
+                db.delete_userbot_record(ub_username)
+                logger.info(f"Userbot {ub_username} successfully deleted and record removed from DB.")
+            else:
+                logger.error(f"Failed to delete userbot {ub_username} on server: {result.get('message', 'No error message')}")
+        elif action in ["start", "stop", "restart"]:
+            logger.info(f"Attempting to {action} userbot {ub_username} service...")
+            result = loop.run_until_complete(sm.manage_ub_service(ub_username, action, server_ip))
+            if result["success"]:
+                new_status = 'running' if action == 'start' else ('stopped' if action == 'stop' else 'restarting')
+                db.update_userbot_status(ub_username, new_status)
+                logger.info(f"Userbot {ub_username} status updated to '{new_status}' in DB.")
+            else:
+                 logger.error(f"Failed to {action} userbot {ub_username} service: {result.get('message', 'No error message')}")
+        else:
+            logger.warning(f"Received invalid action: {action} for user {tg_user_id}")
+            return jsonify({"success": False, "message": "Invalid action"}), 400
+
+        if not result["success"]:
+            return jsonify({"success": False, "message": result.get("message", "Action failed")}), 500
+
+        return jsonify({
+            "success": True, 
+            "message": f"Action '{action}' completed successfully."
+        })
+
+    except Exception as e:
+        logger.error(f"Error in /api/manage_bot for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+@app.route("/get_server_install_info", methods=["GET"])
+@require_api_token
+def get_server_install_info_api():
+    try:
+        servers = server_config.get_servers()
+        response_data = {}
+        dummy_user_id = 0
+        
+        for ip, details in servers.items():
+            installed_bots = len(db.get_userbots_by_server_ip(ip))
+            limit = details.get("user_limit", 0)
+            install_allowed = server_config.is_install_allowed(ip, dummy_user_id)
+            
+            response_data[ip] = {
+                "installed_bots": installed_bots,
+                "limit": limit,
+                "install_allowed": install_allowed
+            }
+        logger.info("Successfully served server install info via API.")
+        return jsonify(response_data)
+    except Exception as e:
+        logger.error(f"Error in /get_server_install_info: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+@app.route("/create_userbot", methods=["POST"])
+@require_api_token
+@verify_telegram_user
+def create_userbot_api(tg_user_id):
+    try:
+        data = request.get_json()
+        server_ip = data.get("server_ip")
+        ub_type = data.get("ub_type")
+        username_base = data.get("username_base")
+        
+        if not all([server_ip, ub_type, username_base]):
+            logger.warning("Missing required data in create_userbot request from user %s", tg_user_id)
+            return jsonify({"success": False, "message": "Missing server_ip, ub_type, or username_base"}), 400
+
+        logger.info(f"Attempting to create userbot '{username_base}' of type '{ub_type}' on server '{server_ip}' for user ID: {tg_user_id}")
+
+        server_details = server_config.get_servers().get(server_ip)
+        if not server_details:
+            return jsonify({"success": False, "message": "Selected server not found."}), 400
+
+        if not server_config.is_install_allowed(server_ip, tg_user_id):
+             return jsonify({"success": False, "message": "Installation on this server is currently restricted."}), 403
+
+        server_limit = server_details.get("user_limit", 0)
+        current_userbots_on_server = len(db.get_userbots_by_server_ip(server_ip))
+        if server_limit > 0 and current_userbots_on_server >= server_limit:
+            return jsonify({"success": False, "message": "The selected server has no free slots."}), 409
+        
+        user_total_limit = db.get_user_limit(tg_user_id)
+        user_current_bots = len(db.get_userbots_by_tg_id(tg_user_id))
+        if user_total_limit > 0 and user_current_bots >= user_total_limit:
+            return jsonify({"success": False, "message": "You have reached your userbot creation limit."}), 409
+
+        existing_bots = db.get_userbots_by_tg_id(tg_user_id)
+        for bot in existing_bots:
+            if bot['ub_username'] == username_base:
+                return jsonify({"success": False, "message": f"A userbot with username '{username_base}' already exists for your account."}), 409
+
+        creation_result = loop.run_until_complete(sm.create_server_user_and_setup_hikka(tg_user_id, username_base, ub_type, server_ip))
+
+        if creation_result["success"]:
+            db.add_userbot_record(tg_user_id, username_base, ub_type, creation_result.get("hikka_path", ""), server_ip)
+            logger.info(f"Userbot '{username_base}' created successfully for user {tg_user_id} and added to DB.")
+            return jsonify({"success": True, "message": "Userbot creation initiated. It will be online shortly."})
+        else:
+            logger.error(f"Failed to create userbot '{username_base}' for user {tg_user_id}: {creation_result.get('message')}")
+            return jsonify({"success": False, "message": creation_result.get("message", "Failed to create userbot.")}), 500
+
+    except Exception as e:
+        logger.error(f"Error in /api/create_userbot for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+@app.route("/get_user_profile", methods=["POST"])
+@require_api_token
+@verify_telegram_user
+def get_user_profile_api(tg_user_id):
+    try:
+        logger.info(f"Fetching profile data for user: {tg_user_id}")
+
+        user_record = db.get_user_data(tg_user_id)
+        userbots_list = db.get_userbots_by_tg_id(tg_user_id)
+
+        profile_info = {
+            "tg_user_id": tg_user_id,
+            "ub_limit": user_record.get("ub_limit", 1) if user_record else 1,
+            "registered_at": user_record.get("registered_at", "N/A") if user_record else "N/A",
+        }
+        
+        return jsonify({
+            "success": True,
+            "user": profile_info,
+            "userbots": userbots_list
+        })
+
+    except Exception as e:
+        logger.error(f"Error in /api/profile for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+@app.route("/userbots_for_menu", methods=["POST"])
+@require_api_token
+@verify_telegram_user
+def get_user_bots_for_menu_api(tg_user_id):
+    try:
+        logger.info(f"Fetching userbots for menu for Telegram user ID: {tg_user_id}")
+
+        userbots = db.get_userbots_by_tg_id(tg_user_id)
+        
+        return jsonify({
+            "success": True,
+            "userbots": userbots
+        })
+
+    except Exception as e:
+        logger.error(f"Error in /api/userbots_for_menu for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
+
+if __name__ == "__main__":
+    db.init_db()
+    
+    app.run(host="0.0.0.0",port=2000, debug=False)

@@ -1,0 +1,42 @@
+{
+    "158.160.194.137": [
+        {
+            "ssh_user": "root",
+            "ssh_pass": "mY>O3IQK$x7Z9X2VZmxW=dJ!{0::",
+            "name": "serv7",
+            "country": "Russia",
+            "city": "Moscow",
+            "regionName": "Moscow",
+            "flag": "\ud83c\uddf7\ud83c\uddfa",
+            "code": "M7",
+            "org": "Yandex.Cloud LLC",
+            "timezone": "Europe/Moscow",
+            "hosting": false,
+            "proxy": false,
+            "vpn": false,
+            "status": "true",
+            "slots": 20,
+            "deleted_at": "2025-07-24T13:47:55.710878"
+        }
+    ],
+    "158.160.183.103": [
+        {
+            "ssh_user": "root",
+            "ssh_pass": "h%-K)s.)&?X/-z{,mAaNJIG%t8CF",
+            "name": "serv7",
+            "country": "Russia",
+            "city": "Moscow",
+            "regionName": "Moscow",
+            "flag": "\ud83c\uddf7\ud83c\uddfa",
+            "code": "M7",
+            "org": "Yandex.Cloud LLC",
+            "timezone": "Europe/Moscow",
+            "hosting": false,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 19,
+            "deleted_at": "2025-07-26T12:14:14.046571"
+        }
+    ]
+}

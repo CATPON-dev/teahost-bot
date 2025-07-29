@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SharkHost Panel</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --ios-blue: #007AFF; --ios-gray: #F2F2F7; --ios-dark: #1C1C1E; --ios-light: #FFFFFF; --ios-green: #34C759; --ios-red: #FF3B30; --ios-orange: #FF9500; --ios-indigo: #5856D6; --ios-separator: #C6C6C8; --text-primary: #000000; --text-secondary: #666666;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body { background: var(--ios-gray); color: var(--text-primary); padding: 0; max-width: 100%; margin: 0 auto; min-height: 100vh; overflow-x: hidden; }
+    .container { max-width: 600px; margin: 0 auto; padding-bottom: 80px; transition: transform 0.3s ease; }
+    .header { background: var(--ios-light); padding: 16px 20px; text-align: center; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05); display: flex; align-items: center; justify-content: space-between; }
+    .header .menu-icon { font-size: 24px; color: var(--ios-blue); cursor: pointer; padding-right: 15px; }
+    .header h1 { font-size: 22px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 8px; flex-grow: 1; justify-content: center; padding-right: 24px; }
+    .header .logo { width: 24px; height: 24px; filter: var(--logo-filter, none); }
+    .card { background: var(--ios-light); border-radius: 12px; margin: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); }
+    .card-header { padding: 16px; font-size: 18px; font-weight: 500; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--ios-separator); }
+    .card-header i { color: var(--ios-blue); font-size: 20px; }
+    .info-row { display: flex; padding: 14px 16px; border-bottom: 1px solid var(--ios-separator); align-items: center; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { flex: 1; font-size: 16px; color: var(--text-primary); }
+    .info-value { font-size: 16px; color: var(--text-secondary); text-align: right; display: flex; align-items: center; gap: 8px; }
+    .status-indicator { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .status-online { background: var(--ios-green); box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.3); }
+    .status-offline { background: var(--ios-separator); }
+    .action-buttons { display: flex; gap: 8px; padding: 16px; background: var(--ios-light); position: fixed; bottom: 0; left: 0; right: 0; max-width: 600px; margin: 0 auto; box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.05); }
+    .action-btn { flex: 1; height: 50px; border-radius: 12px; border: none; font-size: 16px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: all 0.2s; }
+    .action-btn:active { transform: scale(0.98); opacity: 0.9; }
+    .action-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
+    .start-btn { background: var(--ios-green); color: white; }
+    .stop-btn { background: var(--ios-red); color: white; }
+    .restart-btn { background: var(--ios-blue); color: white; }
+    .progress-container { padding: 14px 16px; border-bottom: 1px solid var(--ios-separator); }
+    .progress-bar { height: 4px; border-radius: 2px; background: var(--ios-separator); overflow: hidden; margin-top: 4px; }
+    .progress-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease-out;}
+    .cpu-progress { background: var(--ios-indigo); }
+    .ram-progress { background: var(--ios-orange); }
+    .disk-progress { background: var(--ios-green); }
+    .error-message { background: rgba(255, 59, 48, 0.1); color: var(--ios-red); padding: 12px 16px; border-radius: 8px; margin: 16px; font-size: 14px; display: none; animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .error-message.show { display: block; }
+    .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .preloader { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--ios-light); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; opacity: 1; transition: opacity 0.3s; }
+    .preloader.hidden { opacity: 0; pointer-events: none; }
+    .shark-loader i { font-size: 60px; color: var(--ios-blue); animation: swim 2s infinite ease-in-out; }
+    @keyframes swim { 0%, 100% { transform: translateY(0) rotate(-5deg); } 50% { transform: translateY(-10px) rotate(5deg); } }
+    .preloader-text { margin-top: 20px; font-size: 16px; color: var(--text-primary); }
+    .server-info { display: flex; align-items: center; gap: 6px; }
+    .sidebar-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.4); z-index: 999; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+    .sidebar-overlay.show { opacity: 1; pointer-events: auto; }
+    .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 280px; background: var(--ios-light); box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1); transform: translateX(-100%); transition: transform 0.3s ease; z-index: 1000; display: flex; flex-direction: column; }
+    .sidebar.show { transform: translateX(0%); }
+    .sidebar-header { padding: 20px; font-size: 20px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--ios-separator); }
+    .sidebar-nav-list { list-style: none; padding: 0; flex-grow: 1; overflow-y: auto; }
+    .sidebar-nav-item { padding: 14px 20px; display: flex; align-items: center; gap: 12px; font-size: 17px; color: var(--text-primary); border-bottom: 1px solid var(--ios-separator); cursor: pointer; transition: background 0.2s ease; }
+    .sidebar-nav-item i { font-size: 20px; color: var(--ios-blue); }
+    .sidebar-nav-item.active { background: var(--ios-blue); color: white; }
+    .sidebar-nav-item.active i { color: white; }
+    .sidebar-footer { padding: 14px 20px; border-top: 1px solid var(--ios-separator); font-size: 13px; color: var(--text-secondary); text-align: center; }
+    @media (prefers-color-scheme: dark) {
+      :root { --ios-light: #2C2C2E; --ios-gray: #1C1C1E; --text-primary: #FFFFFF; --text-secondary: #AEAEB2; --logo-filter: invert(1); }
+      .header, .card, .action-buttons, .sidebar { background: var(--ios-light); }
+      .card-header, .info-row, .progress-container, .sidebar-nav-item, .sidebar-header, .sidebar-footer { border-color: #38383A; }
+      .preloader { background: var(--ios-gray); }
+    }
+  </style>
+</head>
+<body>
+  <div class="preloader animate__animated animate__fadeIn">
+    <div class="shark-loader"><i class="fas fa-fish"></i></div>
+    <p class="preloader-text">Аутентификация...</p>
+  </div>
+
+  <div class="container" id="main-container">
+    <div class="header">
+        <i class="fas fa-bars menu-icon" id="menu-icon"></i>
+        <h1><img src="https://img.icons8.com/fluency/48/shark.png" class="logo" alt="Shark">SharkHost</h1>
+        <div></div>
+    </div>
+    <div id="bot-info-container"></div>
+    <div id="server-stats-container"></div>
+    <div id="error-message" class="error-message"></div>
+  </div>
+  
+  <div id="action-buttons" class="action-buttons"></div>
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header"><i class="fas fa-robot"></i><span>Ваши юзерботы</span></div>
+    <ul class="sidebar-nav-list" id="sidebar-nav-list">
+       <li id="no-bots-message" class="sidebar-nav-item" style="display: none;"><span>Нет активных юзерботов.</span></li>
+    </ul>
+    <div class="sidebar-footer">SharkHost v1.0</div>
+  </div>
+
+  <script>
+    const tgWebApp = window.Telegram.WebApp;
+    const API_BASE_URL = "http://158.160.35.181:2000/api/v1";
+    let permanentApiToken = null;
+    
+    const botInfoContainer = document.getElementById('bot-info-container');
+    const serverStatsContainer = document.getElementById('server-stats-container');
+    const actionButtonsContainer = document.getElementById('action-buttons');
+    const errorElement = document.getElementById('error-message');
+    const preloader = document.querySelector('.preloader');
+    const preloaderText = document.querySelector('.preloader-text');
+    const menuIcon = document.getElementById('menu-icon');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const sidebarNavList = document.getElementById('sidebar-nav-list');
+    const noBotsMessage = document.getElementById('no-bots-message');
+
+    let currentUserbots = [];
+    let activeUserbotUsername = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      tgWebApp.expand();
+      tgWebApp.enableClosingConfirmation();
+      
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const loginToken = urlParams.get('login_token');
+        if (!loginToken) throw new Error("Login token отсутствует.");
+        
+        const authData = await authenticateWithLoginToken(loginToken);
+        permanentApiToken = authData.api_token;
+        if (!permanentApiToken) throw new Error("Не удалось получить постоянный API токен.");
+
+        preloaderText.textContent = "Загрузка данных...";
+        await loadInitialData();
+
+      } catch (error) {
+        showError(`Критическая ошибка: ${error.message}. Перезапустите панель.`);
+        preloaderText.textContent = "Ошибка аутентификации";
+      } finally {
+        hidePreloader();
+      }
+
+      setInterval(() => {
+        if (activeUserbotUsername) loadBotData(activeUserbotUsername, false);
+      }, 30000); 
+      
+      setInterval(loadUserbotsForMenu, 60000); 
+
+      menuIcon.addEventListener('click', toggleSidebar);
+      sidebarOverlay.addEventListener('click', hideSidebar);
+    });
+
+    function hidePreloader() {
+        setTimeout(() => {
+            preloader.classList.add('animate__fadeOut');
+            setTimeout(() => preloader.classList.add('hidden'), 300);
+        }, 500);
+    }
+    
+    async function authenticateWithLoginToken(loginToken) {
+        const response = await fetch(`${API_BASE_URL}/auth/webapp`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ login_token: loginToken })
+        });
+        if (!response.ok) {
+            const errorJson = await response.json().catch(() => ({}));
+            throw new Error(errorJson?.error?.message || `Ошибка сервера аутентификации: ${response.status}`);
+        }
+        const responseData = await response.json();
+        if (!responseData.success) {
+            throw new Error(responseData?.error?.message || 'API аутентификации вернуло ошибку');
+        }
+        return responseData.data;
+    }
+
+    async function callApi(endpoint, method = 'GET', body = null) {
+      if (!permanentApiToken) throw new Error("API токен не установлен.");
+      const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${permanentApiToken}` };
+      const options = { method, headers };
+      if (body) options.body = JSON.stringify(body);
+      
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+      if (!response.ok) {
+        const errorJson = await response.json().catch(() => ({}));
+        throw new Error(errorJson?.error?.message || `HTTP error! Status: ${response.status}`);
+      }
+      
+      const responseData = await response.json();
+      if (!responseData.success) {
+          throw new Error(responseData?.error?.message || 'API вернуло success=false');
+      }
+      return responseData.data;
+    }
+    
+    async function loadInitialData() {
+        try {
+            await loadUserbotsForMenu();
+            if (currentUserbots.length > 0) {
+                await loadBotData(currentUserbots[0].ub_username, true);
+            } else {
+                renderBotNotFound();
+            }
+        } catch (error) {
+            showError(`Ошибка загрузки: ${error.message}`);
+            renderBotNotFound();
+        }
+    }
+    
+    async function loadBotData(ubUsername, showMainLoading = true) {
+      try {
+        if (showMainLoading) showLoadingOnButtons(true);
+        const botToLoad = currentUserbots.find(b => b.ub_username === ubUsername);
+        if (!botToLoad) {
+            renderBotNotFound();
+            activeUserbotUsername = null;
+            return;
+        }
+
+        const serverCode = botToLoad.server.code;
+        const [botListData, serverData] = await Promise.all([
+            callApi('/userbots'),
+            callApi(`/servers/status?code=${serverCode}`)
+        ]);
+
+        const currentBotData = botListData.userbots.find(b => b.ub_username === ubUsername);
+        const currentServerData = serverData.servers[0];
+
+        if (!currentBotData || !currentServerData) throw new Error("Не удалось получить полные данные.");
+        
+        updateBotUI(currentBotData, currentServerData);
+        activeUserbotUsername = ubUsername;
+        showError(null);
+      } catch (error) {
+        showError('Ошибка загрузки данных: ' + error.message);
+        renderBotNotFound();
+        activeUserbotUsername = null;
+      } finally {
+        if (showMainLoading) showLoadingOnButtons(false);
+        updateSidebarActiveBot();
+      }
+    }
+
+    async function loadUserbotsForMenu() {
+        try {
+            const data = await callApi('/userbots');
+            currentUserbots = data.userbots || [];
+            renderUserbotsInSidebar(currentUserbots);
+        } catch (error) {
+            showError('Не удалось обновить список ботов: ' + error.message);
+            renderUserbotsInSidebar([]);
+        }
+    }
+
+    function renderUserbotsInSidebar(userbots) {
+        sidebarNavList.querySelectorAll('.sidebar-nav-item').forEach(item => item.remove());
+        if (userbots.length > 0) {
+            noBotsMessage.style.display = 'none';
+            userbots.forEach(bot => {
+                const li = document.createElement('li');
+                li.className = 'sidebar-nav-item';
+                li.innerHTML = `<i class="fas fa-robot"></i><span>${bot.ub_username}</span>`;
+                li.dataset.username = bot.ub_username;
+                li.addEventListener('click', () => {
+                    hideSidebar();
+                    loadBotData(bot.ub_username, true);
+                });
+                sidebarNavList.appendChild(li);
+            });
+        } else {
+            noBotsMessage.style.display = 'flex';
+        }
+        updateSidebarActiveBot();
+    }
+
+    function updateSidebarActiveBot() {
+        sidebarNavList.querySelectorAll('.sidebar-nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.username === activeUserbotUsername);
+        });
+    }
+
+    function renderBotNotFound() {
+      botInfoContainer.innerHTML = `<div class="card animate__animated animate__fadeIn"><div class="card-header"><i class="fas fa-exclamation-triangle" style="color: var(--ios-orange);"></i><span>ЮзерБот не найден</span></div><div class="info-row"><span style="color: var(--text-secondary); font-size: 14px;">Чтобы создать бота, отправьте команду <code>/start</code> в нашего Telegram бота.</span></div></div>`;
+      serverStatsContainer.innerHTML = '';
+      actionButtonsContainer.innerHTML = '';
+    }
+    
+    function formatServerName(server) { return `<div class="server-info"><span>${server.flag}</span><span class="server-code">${server.code}</span><span>(${server.location})</span></div>`; }
+
+    function updateBotUI(bot, server) {
+      botInfoContainer.innerHTML = `<div class="card animate__animated animate__fadeIn"><div class="card-header"><i class="fas fa-robot"></i><span>Информация</span></div><div class="info-row"><span class="info-label">Имя</span><span class="info-value">${bot.ub_username}</span></div><div class="info-row"><span class="info-label">Статус</span><span class="info-value"><span class="status-indicator ${getStatusClass(bot.status)}"></span><span>${getStatusText(bot.status)}</span></span></div><div class="info-row"><span class="info-label">Сервер</span><span class="info-value">${formatServerName(server)}</span></div><div class="info-row"><span class="info-label">Тип</span><span class="info-value">${bot.ub_type}</span></div></div>`;
+      serverStatsContainer.innerHTML = `<div class="card animate__animated animate__fadeIn"><div class="card-header"><i class="fas fa-server"></i><span>Статистика</span></div><div class="progress-container"><div class="progress-bar"><div class="progress-fill cpu-progress" style="width: ${parseFloat(server.cpu_usage) || 0}%"></div></div><div class="info-row"><span class="info-label">CPU</span><span class="info-value">${server.cpu_usage}</span></div></div><div class="progress-container"><div class="progress-bar"><div class="progress-fill ram-progress" style="width: ${parseFloat(server.ram_usage) || 0}%"></div></div><div class="info-row"><span class="info-label">RAM</span><span class="info-value">${server.ram_usage}</span></div></div><div class="progress-container"><div class="progress-bar"><div class="progress-fill disk-progress" style="width: ${parseFloat(server.disk_usage) || 0}%"></div></div><div class="info-row"><span class="info-label">Диск</span><span class="info-value">${server.disk_usage}</span></div></div></div>`;
+      const isRunning = bot.status === 'running';
+      actionButtonsContainer.innerHTML = `<button id="start-btn" class="action-btn start-btn" ${isRunning ? 'disabled' : ''}><i class="fas fa-play"></i><span>Старт</span></button><button id="stop-btn" class="action-btn stop-btn" ${!isRunning ? 'disabled' : ''}><i class="fas fa-stop"></i><span>Стоп</span></button><button id="restart-btn" class="action-btn restart-btn" ${!isRunning ? 'disabled' : ''}><i class="fas fa-redo"></i><span>Рестарт</span></button>`;
+      document.getElementById('start-btn')?.addEventListener('click', () => manageBot('start'));
+      document.getElementById('stop-btn')?.addEventListener('click', () => manageBot('stop'));
+      document.getElementById('restart-btn')?.addEventListener('click', () => manageBot('restart'));
+    }
+
+    function getStatusText(status) { return { 'running': 'Запущен', 'stopped': 'Остановлен' }[status] || status; }
+    function getStatusClass(status) { return { 'running': 'status-online', 'stopped': 'status-offline' }[status] || 'status-offline'; }
+    
+    function showLoadingOnButtons(show) {
+      document.querySelectorAll('.action-btn').forEach(btn => {
+        const icon = btn.querySelector('i');
+        btn.disabled = show;
+        if (icon) {
+          if (show) {
+            btn.dataset.originalIcon = icon.className;
+            icon.className = 'loading';
+          } else if (btn.dataset.originalIcon) {
+            icon.className = btn.dataset.originalIcon;
+          }
+        }
+      });
+    }
+    
+    function showError(message) {
+      errorElement.textContent = message;
+      errorElement.classList.toggle('show', !!message);
+    }
+    
+    async function manageBot(action) {
+      try {
+        if (!activeUserbotUsername) throw new Error("Юзербот не выбран.");
+        showLoadingOnButtons(true);
+        await callApi(`/userbots/${activeUserbotUsername}/manage`, 'POST', { action });
+        tgWebApp.showAlert(`✅ Команда "${action}" отправлена.`);
+        setTimeout(() => loadBotData(activeUserbotUsername, false), 2000);
+      } catch (error) {
+        showError('Ошибка: ' + error.message);
+        if (activeUserbotUsername) loadBotData(activeUserbotUsername, false);
+        else showLoadingOnButtons(false);
+      }
+    }
+
+    function toggleSidebar() {
+      sidebar.classList.toggle('show');
+      sidebarOverlay.classList.toggle('show');
+    }
+    function hideSidebar() {
+      sidebar.classList.remove('show');
+      sidebarOverlay.classList.remove('show');
+    }
+
+    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark-mode');
+    }
+  </script>
+</body>
+</html>

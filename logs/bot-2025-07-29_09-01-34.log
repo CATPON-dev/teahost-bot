@@ -1,0 +1,64 @@
+2025-07-29 09:01:34,114 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'users' already exists
+  await self._query(query)
+2025-07-29 09:01:34,163 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'userbots' already exists
+  await self._query(query)
+2025-07-29 09:01:34,200 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'commits' already exists
+  await self._query(query)
+2025-07-29 09:01:34,224 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'commit_votes' already exists
+  await self._query(query)
+2025-07-29 09:01:34,248 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'userbot_shared' already exists
+  await self._query(query)
+2025-07-29 09:03:54,206 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'ls .ssh'. Error: ls: cannot open directory '.ssh': Permission denied
+
+2025-07-29 09:03:54,383 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'ls .ss'. Error: ls: cannot access '.ss': No such file or directory
+
+2025-07-29 09:24:02,142 - WARNING - root - Could not edit message to panel. Re-sending. Error: Telegram server says - Bad Request: message to edit not found
+2025-07-29 09:24:16,814 - ERROR - root - Ошибка при создании/отправке Бекапа: Не найден файл config-<tg_id>.json или tg_id в /home/ub1742648077/Heroku
+Traceback (most recent call last):
+  File "/root/nh/user_handlers.py", line 1535, in cq_heroku_backup_type
+    backup_path, backup_name = await sm.make_heroku_backup_ssh(ub_username, server_ip, backup_type)
+  File "/root/nh/system_manager.py", line 1702, in make_heroku_backup_ssh
+    raise FileNotFoundError(f"Не найден файл config-<tg_id>.json или tg_id в {hikka_path}")
+FileNotFoundError: Не найден файл config-<tg_id>.json или tg_id в /home/ub1742648077/Heroku
+
+2025-07-29 09:25:09,673 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: la. Error: bash: line 1: la: command not found
+
+2025-07-29 09:25:24,205 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'rm -'. Error: rm: cannot remove '-': No such file or directory
+
+2025-07-29 09:25:24,208 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: rm. Error: rm: missing operand
+Try 'rm --help' for more information.
+
+2025-07-29 09:25:25,713 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'rm -r'. Error: rm: missing operand
+Try 'rm --help' for more information.
+
+2025-07-29 09:25:36,461 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: la. Error: bash: line 1: la: command not found
+
+2025-07-29 09:30:02,933 - ERROR - root - ❌ Ошибка автоматического бэкапа: Проверка зависимостей...
+Проверка подключения к базе данных...
+Создание дампа базы данных...
+Архивирование исходного кода...
+Создание полного архива...
+2025-07-29 09:30:04,778 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: pwd. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && pwd' as ub5448741148 on sharkhost.
+
+2025-07-29 09:30:24,263 - ERROR - root - Не удалось отправить уведомление админам: name 'bot' is not defined
+2025-07-29 09:30:25,842 - ERROR - root - Не удалось отправить уведомление админам: name 'bot' is not defined
+2025-07-29 09:30:55,165 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: pythone. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && pythone' as ub5448741148 on sharkhost.
+
+2025-07-29 09:30:55,374 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: python3. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && python3' as ub5448741148 on sharkhost.
+
+2025-07-29 09:30:59,905 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'python3 -V'. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && python3 -V' as ub5448741148 on sharkhost.
+
+2025-07-29 09:31:00,064 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'python3 -'. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && python3 -' as ub5448741148 on sharkhost.
+
+2025-07-29 09:32:09,183 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: which. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && which' as ub5448741148 on sharkhost.
+
+2025-07-29 09:32:12,430 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'which python3'. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && which python3' as ub5448741148 on sharkhost.
+
+2025-07-29 09:33:45,319 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: /. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && /' as ub5448741148 on sharkhost.
+
+2025-07-29 09:33:49,027 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'bash -c "'. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && bash -c "' as ub5448741148 on sharkhost.
+
+2025-07-29 09:33:53,067 - WARNING - system_manager - ProcessError on [47.129.252.19]. Command: 'bash -c "which python3"'. Error: Sorry, user root is not allowed to execute '/usr/bin/bash -c source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; cd /home/ub5448741148 && bash -c "which python3"' as ub5448741148 on sharkhost.
+
+2025-07-29 09:34:17,406 - WARNING - aiogram.dispatcher - Received SIGINT signal
+2025-07-29 09:34:17,658 - WARNING - root - Bot polling stopped. Shutting down...

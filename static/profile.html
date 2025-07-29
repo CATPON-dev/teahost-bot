@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Профиль | SharkHost</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/style.css"> 
+    <style>
+        /* Здесь можно добавить специфичные для профиля стили, если они не в /style.css */
+        :root {
+            --ios-blue: #007AFF;
+            --ios-gray: #F2F2F7;
+            --ios-dark: #1C1C1E;
+            --ios-light: #FFFFFF;
+            --ios-green: #34C759;
+            --ios-red: #FF3B30;
+            --ios-orange: #FF9500;
+            --ios-indigo: #5856D6;
+            --ios-separator: #C6C6C8;
+            --text-primary: #000000;
+            --text-secondary: #666666;
+        }
+
+        body {
+            background: var(--ios-gray);
+            color: var(--text-primary);
+            padding: 0;
+            max-width: 100%;
+            margin: 0 auto;
+            min-height: 100vh;
+            /* Добавлено для предотвращения горизонтальной прокрутки при открытии сайдбара */
+            overflow-x: hidden; 
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding-bottom: 80px;
+            /* Добавлено для эффекта сдвига контента при открытии сайдбара */
+            transition: transform 0.3s ease; 
+        }
+        .header {
+            background: var(--ios-light);
+            padding: 16px 20px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
+            /* Добавлено для размещения иконки меню и выравнивания заголовка */
+            display: flex; 
+            align-items: center;
+            justify-content: space-between; 
+        }
+        /* Новый стиль для иконки меню */
+        .header .menu-icon { 
+            font-size: 24px;
+            color: var(--ios-blue);
+            cursor: pointer;
+            padding-right: 15px; /* Отступ справа для центрирования заголовка */
+        }
+        .header h1 {
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-grow: 1; /* Позволяет h1 занять доступное пространство */
+            justify-content: center; /* Центрирует заголовок */
+            padding-right: 24px; /* Компенсация ширины иконки для центрирования текста */
+        }
+        .header .logo {
+            width: 24px;
+            height: 24px;
+            filter: var(--logo-filter, none);
+        }
+        .card {
+            background: var(--ios-light);
+            border-radius: 12px;
+            margin: 16px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+        .card-header {
+            padding: 16px;
+            font-size: 18px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--ios-separator);
+        }
+        .card-header i {
+            color: var(--ios-blue);
+            font-size: 20px;
+        }
+        .info-row {
+            display: flex;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--ios-separator);
+            align-items: center;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            flex: 1;
+            font-size: 16px;
+            color: var(--text-primary);
+        }
+        .info-value {
+            font-size: 16px;
+            color: var(--text-secondary);
+            text-align: right;
+        }
+        /* Dark mode for profile */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --ios-light: #2C2C2E;
+                --ios-gray: #1C1C1E;
+                --text-primary: #FFFFFF;
+                --text-secondary: #AEAEB2;
+                --logo-filter: invert(1);
+            }
+            .header, .card {
+                background: var(--ios-light);
+            }
+            .card-header, .info-row {
+                border-color: #38383A;
+            }
+        }
+        .sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 999;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+    }
+
+    .sidebar-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 280px; /* Adjust as needed */
+        background: var(--ios-light);
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar.show {
+        transform: translateX(0%);
+    }
+
+    .container.sidebar-open {
+        transform: translateX(280px); /* Push main content */
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid var(--ios-separator);
+    }
+
+    .sidebar-nav-list {
+        list-style: none;
+        padding: 0;
+        flex-grow: 1; /* Allow nav list to grow */
+        overflow-y: auto; /* Enable scroll for long bot lists */
+    }
+
+    .sidebar-nav-item {
+        padding: 14px 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 17px;
+        color: var(--text-primary);
+        border-bottom: 1px solid var(--ios-separator);
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }
+
+    .sidebar-nav-item:hover {
+        background: var(--ios-gray);
+    }
+
+    .sidebar-nav-item i {
+        font-size: 20px;
+        color: var(--ios-blue);
+    }
+
+    .sidebar-nav-item.bot-item .bot-name {
+        flex-grow: 1;
+    }
+
+    .sidebar-nav-item.bot-item .bot-status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-left: auto;
+    }
+
+    .sidebar-nav-item.bot-item .bot-status-online { background: var(--ios-green); }
+    .sidebar-nav-item.bot-item .bot-status-offline { background: var(--ios-separator); }
+    .sidebar-nav-item.bot-item .bot-status-error { background: var(--ios-red); }
+
+    .sidebar-nav-item.active {
+        background: var(--ios-blue);
+        color: white;
+    }
+    .sidebar-nav-item.active i {
+        color: white;
+    }
+
+    .sidebar-footer {
+        padding: 14px 20px;
+        border-top: 1px solid var(--ios-separator);
+        font-size: 13px;
+        color: var(--text-secondary);
+        text-align: center;
+    }
+        /* ВНИМАНИЕ: Стили для сайдбара (.sidebar-overlay, .sidebar, .sidebar-nav-item и т.д.)
+           должны быть в вашем файле /style.css для лучшей организации.
+           Если они не в /style.css, скопируйте их сюда из index.html */
+    </style>
+</head>
+<body>
+    <div class="container" id="main-container">
+        <div class="header">
+            <i class="fas fa-bars menu-icon" id="menu-icon"></i> 
+            <h1>
+                <img src="https://img.icons8.com/fluency/48/shark.png" class="logo" alt="Shark">
+                Мой Профиль
+            </h1>
+            <div></div> 
+        </div>
+
+        <div class="card animate__animated animate__fadeIn">
+            <div class="card-header">
+                <i class="fas fa-user-circle"></i>
+                <span>Информация о пользователе Telegram</span>
+            </div>
+
+            <div class="info-row">
+                <span class="info-label">Имя</span>
+                <span class="info-value" id="user-first-name">Загрузка...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Фамилия</span>
+                <span class="info-value" id="user-last-name">Загрузка...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Юзернейм</span>
+                <span class="info-value" id="user-username">Загрузка...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">ID Telegram</span>
+                <span class="info-value" id="user-id">Загрузка...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Дата регистрации</span>
+                <span class="info-value" id="user-registered-at">Загрузка...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Лимит юзерботов</span>
+                <span class="info-value" id="user-bot-limit">Загрузка...</span>
+            </div>
+        </div>
+
+        <div class="card animate__animated animate__fadeIn animate__delay-1s">
+            <div class="card-header">
+                <i class="fas fa-robot"></i>
+                <span>Мои Юзерботы</span>
+            </div>
+            <div id="user-bots-list">
+                <div class="info-row">
+                    <span class="info-label">Загрузка юзерботов...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <i class="fas fa-bars"></i>
+            <span>Навигация</span>
+        </div>
+        <ul class="sidebar-nav-list" id="sidebar-nav-list">
+            <li class="sidebar-nav-item" id="main-dashboard-link">
+                <i class="fas fa-home"></i>
+                <span>Главная</span>
+            </li>
+            <li class="sidebar-nav-item" id="profile-link">
+                <i class="fas fa-user-circle"></i>
+                <span>Профиль</span>
+            </li>
+            <li class="sidebar-nav-item" id="userbots-section-header" style="font-weight: 600; padding-top: 20px; color: var(--text-primary);">
+                <i class="fas fa-robot"></i>
+                <span>Ваши Юзерботы</span>
+            </li>
+            <li id="no-bots-message" class="sidebar-nav-item" style="font-size: 14px; color: var(--text-secondary); cursor: default; display: none;">
+                <span>Для управления юзерботами перейдите в главное меню.</span>
+            </li>
+            </ul>
+        <div class="sidebar-footer">
+            SharkHost v1.0
+        </div>
+    </div>
+    <script>
+        const tgWebApp = window.Telegram.WebApp;
+        const API_TOKEN = "b70b74c095435be2b74c02abf"; // Ваш API токен
+
+        // Новые DOM элементы для сайдбара
+        const mainContainer = document.querySelector('.container'); // Главный контейнер для сдвига
+        const menuIcon = document.getElementById('menu-icon');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const sidebarNavList = document.getElementById('sidebar-nav-list');
+        const profileLink = document.getElementById('profile-link');
+        const mainDashboardLink = document.getElementById('main-dashboard-link');
+        const noBotsMessage = document.getElementById('no-bots-message');
+
+        let currentUserbots = []; // Для хранения списка юзерботов для меню
+        let serverData = {}; // Для хранения данных о серверах (из ip.json)
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            tgWebApp.expand();
+            tgWebApp.enableClosingConfirmation();
+            await loadIpData(); // Загружаем данные IP для форматирования названий серверов
+            await loadProfileData();
+            await loadUserbotsForMenu(); // Загрузка юзерботов для бокового меню
+            setInterval(loadUserbotsForMenu, 60000); // Обновление списка ботов в меню каждые 60 секунд
+            updateSidebarActivePage(); // Подсветка текущей страницы в меню
+        });
+
+        async function callApi(url, method = 'GET', body = null) {
+            const headers = { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${API_TOKEN}`
+            };
+
+            const options = {
+                method: method,
+                headers: headers
+            };
+
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        }
+
+        // Функция для загрузки данных IP (аналогично index.html)
+        async function loadIpData() {
+            try {
+                const response = await callApi('/ip'); // Используем эндпоинт /ip
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                serverData = await response; // response.json() уже вызван в callApi
+                console.log("IP data loaded:", serverData);
+            } catch (e) {
+                console.error('Failed to load IP data:', e);
+                // На странице профиля можно не показывать ошибку крупно, т.к. она не критична
+            }
+        }
+
+        // Форматирование имени сервера (аналогично index.html)
+        function formatServerName(ip) {
+            const server = serverData[ip];
+            if (!server || !server.flag || !server.code) {
+                return `
+                    <div class="server-info">
+                        <i class="fas fa-question-circle" style="color: var(--ios-separator);"></i>
+                        <span class="server-code">${ip}</span>
+                        <span class="server-location">(Неизвестный сервер)</span>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="server-info">
+                    <span>${server.flag}</span>
+                    <span class="server-code">${server.code}</span>
+                    <span class="server-location">(${server.country || 'Unknown'}, ${server.city || 'Unknown'})</span>
+                </div>
+            `;
+        }
+
+        async function loadProfileData() {
+            try {
+                if (!tgWebApp.initData || !tgWebApp.initDataUnsafe.user?.id) {
+                    document.getElementById('user-first-name').textContent = 'Недоступно';
+                    document.getElementById('user-id').textContent = 'Недоступно';
+                    document.getElementById('user-bots-list').innerHTML = '<div class="info-row"><span class="info-label">Данные Telegram WebApp недоступны.</span></div>';
+                    return;
+                }
+
+                const userId = tgWebApp.initDataUnsafe.user.id;
+                const firstName = tgWebApp.initDataUnsafe.user.first_name || 'Не указано';
+                const lastName = tgWebApp.initDataUnsafe.user.last_name || 'Не указано';
+                const username = tgWebApp.initDataUnsafe.user.username || 'Не указано';
+
+                document.getElementById('user-first-name').textContent = firstName;
+                document.getElementById('user-last-name').textContent = lastName;
+                document.getElementById('user-username').textContent = username;
+                document.getElementById('user-id').textContent = userId;
+
+                // Fetch user-specific data from your backend
+                const profileResponse = await callApi('/get_user_profile', 'POST', {
+                    initData: tgWebApp.initData,
+                    userId: userId
+                });
+
+                if (profileResponse.success) {
+                    const user = profileResponse.user;
+                    const userbots = profileResponse.userbots;
+
+                    document.getElementById('user-registered-at').textContent = user.registered_at || 'Неизвестно';
+                    document.getElementById('user-bot-limit').textContent = user.ub_limit !== undefined ? user.ub_limit : 'Неизвестно';
+
+                    const botsListContainer = document.getElementById('user-bots-list');
+                    if (userbots.length > 0) {
+                        botsListContainer.innerHTML = ''; // Clear loading message
+                        userbots.forEach(bot => {
+                            const statusClass = getStatusClass(bot.status);
+                            const statusText = getStatusText(bot.status);
+                            botsListContainer.innerHTML += `
+                                <div class="info-row">
+                                    <span class="info-label">
+                                        <i class="fas fa-robot" style="color: var(--ios-blue);"></i>
+                                        <span>${bot.ub_username}</span>
+                                    </span>
+                                    <span class="info-value">
+                                        <span class="status-indicator ${statusClass}"></span>
+                                        <span>${statusText}</span>
+                                    </span>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        botsListContainer.innerHTML = `
+                            <div class="info-row">
+                                <span class="info-label">У вас пока нет юзерботов.</span>
+                            </div>
+                        `;
+                    }
+                } else {
+                    console.error('Failed to load profile data:', profileResponse.message);
+                    document.getElementById('user-registered-at').textContent = 'Ошибка загрузки';
+                    document.getElementById('user-bot-limit').textContent = 'Ошибка загрузки';
+                    document.getElementById('user-bots-list').innerHTML = '<div class="info-row"><span class="info-label">Ошибка загрузки данных о юзерботах.</span></div>';
+                }
+
+            } catch (error) {
+                console.error('Error loading profile data:', error);
+                document.getElementById('user-first-name').textContent = 'Ошибка';
+                document.getElementById('user-id').textContent = 'Ошибка';
+                document.getElementById('user-registered-at').textContent = 'Ошибка';
+                document.getElementById('user-bot-limit').textContent = 'Ошибка';
+                document.getElementById('user-bots-list').innerHTML = '<div class="info-row"><span class="info-label">Ошибка соединения: ' + error.message + '</span></div>';
+            }
+        }
+
+        function getStatusText(status) {
+            const statusMap = {
+                'running': 'Запущен',
+                'stopped': 'Остановлен',
+                'error': 'Ошибка',
+                'installing': 'Установка',
+                'restarting': 'Перезапуск',
+                'not_found': 'Не найден',
+                'unknown': 'Неизвестно'
+            };
+            return statusMap[status] || status;
+        }
+        
+        function getStatusClass(status) {
+            const classMap = {
+                'running': 'status-online',
+                'stopped': 'status-offline',
+                'error': 'status-error',
+                'installing': 'status-error',
+                'restarting': 'status-error',
+                'not_found': 'status-not-found',
+                'unknown': 'status-offline'
+            };
+            return classMap[status] || 'status-offline';
+        }
+
+        // --- Функции для сайдбара (скопированы из index.html) ---
+
+        async function loadUserbotsForMenu() {
+            try {
+                if (!tgWebApp.initData || !tgWebApp.initDataUnsafe.user?.id) {
+                    console.warn("Telegram WebApp data not available for menu load.");
+                    return;
+                }
+
+                const response = await callApi('/userbots_for_menu', 'POST', {
+                    initData: tgWebApp.initData,
+                    userId: tgWebApp.initDataUnsafe.user.id 
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success && Array.isArray(data.userbots)) {
+                    currentUserbots = data.userbots;
+                    renderUserbotsInSidebar(currentUserbots);
+                } else {
+                    console.error("Failed to load userbots for menu:", data.message);
+                    renderUserbotsInSidebar([]); // Render empty list
+                }
+            } catch (error) {
+                console.error('API Error fetching userbots for menu:', error);
+                renderUserbotsInSidebar([]); // Render empty list on error
+            }
+        }
+
+        function renderUserbotsInSidebar(userbots) {
+            sidebarNavList.querySelectorAll('.bot-item').forEach(item => item.remove());
+
+            if (userbots.length > 0) {
+                noBotsMessage.style.display = 'none';
+                userbots.forEach(bot => {
+                    const li = document.createElement('li');
+                    li.className = 'sidebar-nav-item bot-item';
+                    li.innerHTML = `
+                        <i class="fas fa-robot"></i>
+                        <span class="bot-name">${bot.ub_username}</span>
+                        <span class="bot-status-indicator ${getStatusClass(bot.status).replace('status-', 'bot-status-')}"></span>
+                    `;
+                    li.dataset.username = bot.ub_username;
+                    li.addEventListener('click', () => {
+                        hideSidebar();
+                        window.location.href = `/?ubUsername=${bot.ub_username}`;
+                    });
+                    sidebarNavList.insertBefore(li, noBotsMessage); 
+                });
+            } else {
+                noBotsMessage.style.display = 'flex';
+            }
+            updateSidebarActivePage();
+        }
+
+        // Функции открытия/закрытия сайдбара
+        function toggleSidebar() {
+            sidebar.classList.toggle('show');
+            sidebarOverlay.classList.toggle('show');
+            mainContainer.classList.toggle('sidebar-open');
+        }
+
+        function hideSidebar() {
+            sidebar.classList.remove('show');
+            sidebarOverlay.classList.remove('show');
+            mainContainer.classList.remove('sidebar-open');
+        }
+
+        // Обработчики событий для кнопок сайдбара
+        menuIcon.addEventListener('click', toggleSidebar);
+        sidebarOverlay.addEventListener('click', hideSidebar);
+
+        profileLink.addEventListener('click', () => {
+            window.location.href = '/profile';
+        });
+        mainDashboardLink.addEventListener('click', () => {
+            window.location.href = '/';
+        });
+
+        // Функция для подсветки активной страницы в сайдбаре
+        function updateSidebarActivePage() {
+            // Удаляем класс 'active' со всех элементов
+            sidebarNavList.querySelectorAll('.sidebar-nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            // Определяем текущую страницу по URL
+            const path = window.location.pathname;
+
+            if (path === '/' || path === '/index.html') {
+                document.getElementById('main-dashboard-link')?.classList.add('active');
+            } else if (path === '/profile' || path === '/profile.html') {
+                document.getElementById('profile-link')?.classList.add('active');
+            }
+            // На этой странице мы не будем подсвечивать конкретных юзерботов
+            // в списке меню, так как мы всегда отображаем данные текущего пользователя.
+            // Подсветка юзерботов будет актуальна только на главной странице.
+        }
+    </script>
+</body>
+</html>
