@@ -1,0 +1,10 @@
+2025-07-29 12:29:24,281 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'users' already exists
+  await self._query(query)
+2025-07-29 12:29:24,533 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'userbots' already exists
+  await self._query(query)
+2025-07-29 12:29:24,783 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'commits' already exists
+  await self._query(query)
+2025-07-29 12:29:24,908 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'commit_votes' already exists
+  await self._query(query)
+2025-07-29 12:29:25,034 - ERROR - root - /usr/local/lib/python3.10/dist-packages/aiomysql/cursors.py:239: Warning: Table 'userbot_shared' already exists
+  await self._query(query)

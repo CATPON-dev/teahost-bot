@@ -1,10 +1,10 @@
 {
     "3.8.181.249": {
         "name": "Main Server",
-        "country": "London",
-        "city": "London",
+        "country": "Russia",
+        "city": "Moscow",
         "flag": "\ud83c\uddf7\ud83c\uddfa",
-        "code": "L1",
+        "code": "M1",
         "status": "true",
         "slots": 22,
         "ssh_user": null,

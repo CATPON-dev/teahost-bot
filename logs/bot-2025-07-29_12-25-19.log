@@ -10,3 +10,6 @@
   await self._query(query)
 2025-07-29 12:25:38,211 - ERROR - system_manager - TIMEOUT on [51.250.123.60]. Command: echo 1
 2025-07-29 12:25:50,929 - ERROR - system_manager - TIMEOUT on [51.250.123.60]. Command: top -bn1 | awk '/^%Cpu/ {print $2+$4}' && echo '---' && free -m | awk 'NR==2{printf "%d|%d", $3, $2}' && echo '---' && df -h / | awk 'NR==2{printf "%s|%s|%s", $5, $3, $2}' && echo '---' && uptime -p && echo '---' && nproc
+2025-07-29 12:28:51,298 - ERROR - system_manager - TIMEOUT on [51.250.123.60]. Command: top -bn1 | awk '/^%Cpu/ {print $2+$4}' && echo '---' && free -m | awk 'NR==2{printf "%d|%d", $3, $2}' && echo '---' && df -h / | awk 'NR==2{printf "%s|%s|%s", $5, $3, $2}' && echo '---' && uptime -p && echo '---' && nproc
+2025-07-29 12:29:20,685 - WARNING - aiogram.dispatcher - Received SIGTERM signal
+2025-07-29 12:29:20,936 - WARNING - root - Bot polling stopped. Shutting down...
