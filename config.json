@@ -1,7 +1,7 @@
 {
   "bot_token": "7748911549:AAE-ifjrWLhcvquwVf_X0zFhzAylPRIfR48",
   "custom_bot_api_server": "http://localhost:8081",
-  "admin_user_id": [6136879235, 5774747794,  5448741148],
+  "admin_user_id": [6136879235, 5774747794,  5448741148, 7211704766],
   "test_mode": false,
   "log_channel_id": -1002846111407,
   "review_channel_id": -1002544009492,

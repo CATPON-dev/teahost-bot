@@ -215,7 +215,7 @@ async def create_server_user_and_setup_hikka(tg_user_id: int, username_base: str
         pip_install_cmd = f"sudo -u {ub_username} {venv_path}/bin/pip install --upgrade pip && sudo -u {ub_username} {venv_path}/bin/pip install -r {shlex.quote(req_path)}"
         res_pip = await run_command_async(pip_install_cmd, server_ip, check_output=False, timeout=600)
         if res_pip["exit_status"] != 0:
-            logging.warning(f"Команда установки зависимостей для {ub_username} завершилась с кодом {res_pip['exit_status']}. Ошибка: {res_pip['error']}")
+            logging.warning(f"Команда установки зависимостей для {ub_username} завершилась с ошибкой. Код возврата: {res_pip['exit_status']}; STDERR: {res_pip.get('error', '')}; STDOUT: {res_pip.get('output', '')}")
         
         if "exec_command" in r_info:
             exec_start_cmd = r_info["exec_command"].replace("python3", f"{venv_path}/bin/python")
@@ -457,7 +457,6 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
     try:
         if server_ip == LOCAL_IP:
             if user:
-                # Принудительно загружаем профиль пользователя для правильных переменных окружения
                 final_command = f'sudo -u {shlex.quote(user)} bash -c {shlex.quote("source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; " + command_str)}'
             else:
                 final_command = f'bash -c {shlex.quote("set -o pipefail; " + command_str)}'
@@ -469,9 +468,10 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
             
             stdout_str = stdout.decode('utf-8', 'ignore').strip() if stdout else ""
             stderr_str = stderr.decode('utf-8', 'ignore').strip() if stderr else ""
-            
+
             if check_output and process.returncode != 0:
-                err_msg = stderr_str or stdout_str or f"Команда завершилась с кодом {process.returncode}."
+                err_msg = f"RC={process.returncode}\nSTDERR:\n{stderr_str}\nSTDOUT:\n{stdout_str}"
+                logger_lm.warning(f"Локальная команда завершилась с ошибкой. {err_msg}")
                 return {"success": False, "output": stdout_str, "error": err_msg, "exit_status": process.returncode}
 
             return {"success": True, "output": stdout_str, "error": stderr_str, "exit_status": process.returncode}
@@ -483,7 +483,6 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
                 return {"success": False, "error": f"SSH details not found for server {server_ip}", "exit_status": -1}
 
             ssh_user = server_details.get("ssh_user")
-            # Использовать переданный пароль, если есть
             ssh_pass_final = ssh_pass or server_details.get("ssh_pass")
 
             if not ssh_user:
@@ -493,16 +492,20 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
                 if user:
                     safe_user = shlex.quote(user)
                     full_user_command = f"cd /home/{safe_user} && {command_str}"
-                    # Принудительно загружаем профиль пользователя для правильных переменных окружения
                     final_command = f"sudo -u {safe_user} bash -c {shlex.quote('source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; ' + full_user_command)}"
                 else:
                     final_command = f"bash -c {shlex.quote('set -o pipefail; ' + command_str)}"
                 
-                result = await asyncio.wait_for(conn.run(final_command, check=check_output), timeout=timeout)
+                result = await asyncio.wait_for(conn.run(final_command, check=False), timeout=timeout)
 
                 stdout_str = result.stdout.strip() if result.stdout else ""
                 stderr_str = result.stderr.strip() if result.stderr else ""
-                
+
+                if check_output and result.exit_status != 0:
+                    err_msg = f"RC={result.exit_status}\nSTDERR:\n{stderr_str}\nSTDOUT:\n{stdout_str}"
+                    logger_lm.warning(f"Удалённая команда завершилась с ошибкой. {err_msg}")
+                    return {"success": False, "output": stdout_str, "error": err_msg, "exit_status": result.exit_status}
+
                 return {"success": True, "output": stdout_str, "error": stderr_str, "exit_status": result.exit_status}
 
     except asyncio.TimeoutError:
@@ -767,7 +770,8 @@ async def create_server_user_and_setup_hikka(tg_user_id: int, username_base: str
     }
     
     r_info = repo_map.get(ub_type)
-    if not r_info: return {"success": False, "message": f"Неизвестный тип юзербота: {ub_type}"}
+    if not r_info: 
+        return {"success": False, "message": f"Неизвестный тип юзербота: {ub_type}"}
 
     home_dir = f"/home/{ub_username}"
     ub_path = os.path.join(home_dir, r_info['dir'])
@@ -820,7 +824,7 @@ async def create_server_user_and_setup_hikka(tg_user_id: int, username_base: str
         pip_install_cmd = f"sudo -u {ub_username} {venv_path}/bin/pip install --upgrade pip && sudo -u {ub_username} {venv_path}/bin/pip install -r {shlex.quote(req_path)}"
         res_pip = await run_command_async(pip_install_cmd, server_ip, check_output=False, timeout=600)
         if res_pip["exit_status"] != 0:
-            logging.warning(f"Команда установки зависимостей для {ub_username} завершилась с кодом {res_pip['exit_status']}. Ошибка: {res_pip['error']}")
+            logging.warning(f"Команда установки зависимостей для {ub_username} завершилась с ошибкой. Код возврата: {res_pip['exit_status']}; STDERR: {res_pip.get('error', '')}; STDOUT: {res_pip.get('output', '')}")
         
         if "exec_command" in r_info:
             exec_start_cmd = r_info["exec_command"].replace("python3", f"{venv_path}/bin/python")
@@ -828,24 +832,29 @@ async def create_server_user_and_setup_hikka(tg_user_id: int, username_base: str
             exec_start_cmd = f"{venv_path}/bin/python -m {r_info['module']}"
     else:
         wheels_path = f"/opt/pip_wheels/{ub_type}/"
-        install_deps_cmd = f"""
-        cd {shlex.quote(ub_path)} && [ -f requirements.txt ] && {{
-            mkdir -p /home/{ub_username}/.local/lib/python3.10/site-packages;
-            chown {ub_username}:{ub_username} /home/{ub_username}/.local/lib/python3.10/site-packages;
-            WHEELS_PATH="{wheels_path}";
-            if [ -d "$WHEELS_PATH" ]; then
-                echo "Installing dependencies using local wheels cache...";
-                {python_executable} -m pip install -q --find-links="file://$WHEELS_PATH" -r requirements.txt --target=/home/{ub_username}/.local/lib/python3.10/site-packages;
-            else
-                echo "Local wheels cache not found. Installing from PyPI...";
-                {python_executable} -m pip install -q -r requirements.txt --target=/home/{ub_username}/.local/lib/python3.10/site-packages;
-            fi
-        }}
-        """
+        logging.info(f"Тип юзербота: {ub_type}")
+        if ub_type == "fox":
+            install_deps_cmd = f'cd {shlex.quote(ub_path)} && ls -la && echo "Python:" && which {python_executable} && {python_executable} --version && echo "Req file:" && (cat requirements.txt || echo "requirements.txt not found")'
+        else:
+            install_deps_cmd = f"""
+            cd {shlex.quote(ub_path)} && [ -f requirements.txt ] && {{  
+                mkdir -p /home/{ub_username}/.local/lib/python3.10/site-packages;  
+                chown {ub_username}:{ub_username} /home/{ub_username}/.local/lib/python3.10/site-packages;  
+                WHEELS_PATH="{wheels_path}";  
+                if [ -d "$WHEELS_PATH" ]; then  
+                    echo "Installing dependencies using local wheels cache...";  
+                    {python_executable} -m pip install -q --find-links="file://$WHEELS_PATH" -r requirements.txt --target=/home/{ub_username}/.local/lib/python3.10/site-packages;  
+                else  
+                    echo "Local wheels cache not found. Installing from PyPI...";  
+                    {python_executable} -m pip install -q -r requirements.txt --target=/home/{ub_username}/.local/lib/python3.10/site-packages;  
+                fi  
+            }}
+            """
         install_res = await run_command_async(install_deps_cmd, server_ip, user=None, check_output=False, timeout=600)
+        logging.info(f"[DEBUG] Установка зависимостей — финальная команда:\n{install_deps_cmd}")
         
         if install_res["exit_status"] != 0:
-            logging.error(f"Команда установки зависимостей для {ub_username} завершилась с кодом {install_res['exit_status']}. Ошибка: {install_res['error']}")
+            logging.warning(install_res)
             await delete_userbot_full(ub_username, server_ip)
             return {"success": False, "message": f"Ошибка установки зависимостей: {install_res['error']}"}
 
@@ -858,7 +867,8 @@ async def create_server_user_and_setup_hikka(tg_user_id: int, username_base: str
         exec_start_cmd += f" --port {webui_port}"
 
     s_name = f"hikka-{ub_username}.service"
-    s_content = f"""[Unit]
+    s_content = f"""
+[Unit]
 Description={ub_type.capitalize()} UB for {ub_username}
 After=network.target
 [Service]
@@ -868,7 +878,7 @@ WorkingDirectory={ub_path}
 ExecStart={exec_start_cmd}
 Restart=always
 RestartSec=10
-Environment=\"PATH=/home/{ub_username}/.local/bin:/usr/bin:/bin:/usr/local/bin\"
+Environment="PATH=/home/{ub_username}/.local/bin:/usr/bin:/bin:/usr/local/bin"
 StandardOutput=journal
 StandardError=journal
 MemoryHigh=500M
