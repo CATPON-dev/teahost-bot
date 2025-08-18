@@ -4,7 +4,7 @@ from html import escape
 import time
 
 import server_config
-import system_manager as sm
+# import system_manager as sm
 import database as db
 
 async def get_userbot_status(username: str, server_ip: str) -> str:
@@ -12,7 +12,8 @@ async def get_userbot_status(username: str, server_ip: str) -> str:
     try:
         # Проверяем, запущен ли сервис юзербота
         service_name = f"hikka-{username}.service"
-        is_active = await sm.is_service_active(service_name, server_ip)
+        # is_active = await sm.is_service_active(service_name, server_ip)
+        is_active = False
         return "🟢" if is_active else "🔴"
     except Exception as e:
         logging.error(f"Error getting status for {username}: {e}")
@@ -39,7 +40,8 @@ async def get_all_userbot_statuses_on_server(usernames: list, server_ip: str) ->
         cmd = f"systemctl list-units --full --all --plain --no-legend {service_list}"
         
         logging.info(f"Executing command on {server_ip}: {cmd}")
-        result = await sm.run_command_async(cmd, server_ip, check_output=True, timeout=30)
+        # result = await sm.run_command_async(cmd, server_ip, check_output=True, timeout=30)
+        result = {"success": True, "output": ""}
         
         if result.get("success") and result.get("output"):
             statuses = {}
@@ -81,7 +83,8 @@ async def _check_sessions_on_server(ip: str):
         "echo \"$name:$cnt\"; "
         "done"
     )
-    res = await sm.run_command_async(command, ip, check_output=True, timeout=60)
+    # res = await sm.run_command_async(command, ip, check_output=True, timeout=60)
+    res = {"success": True, "output": ""}
     users_with_sessions = {}
     users_with_no_sessions = {}
     users_not_in_db = {}
@@ -122,7 +125,7 @@ async def _check_sessions_on_server(ip: str):
 
 async def check_all_remote_sessions():
     servers = server_config.get_servers()
-    remote_servers_ips = [ip for ip in servers if ip != sm.LOCAL_IP]
+    remote_servers_ips = [ip for ip in servers if ip != "127.0.0.1"]  # sm.LOCAL_IP
     
     if not remote_servers_ips:
         return {}

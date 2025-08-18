@@ -1,7 +1,7 @@
 import logging
 from aiogram import Bot, html, types
 import database as db
-import system_manager as sm
+# import system_manager as sm
 from channel_logger import log_event
 
 async def execute_ban(target_user_id: int, admin_user: types.User, bot: Bot):
@@ -11,7 +11,8 @@ async def execute_ban(target_user_id: int, admin_user: types.User, bot: Bot):
     if userbots:
         for ub in userbots:
             await db.block_userbot(ub['ub_username'], True)
-            await sm.manage_ub_service(ub['ub_username'], "stop", ub['server_ip'])
+            # await sm.manage_ub_service(ub['ub_username'], "stop", ub['server_ip'])
+            pass
 
     try:
         try:

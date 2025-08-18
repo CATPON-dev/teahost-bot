@@ -5,7 +5,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 import server_config
 import database as db
 from admin_manager import get_all_admins
-from system_manager import LOCAL_IP
+import system_manager as sm
 import datetime
 from config_manager import config
 
@@ -92,7 +92,7 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
     is_admin = user_id in get_all_admins()
     
     for ip, details in servers.items():
-        if ip == LOCAL_IP:
+        if ip == "127.0.0.1" or ip == sm.LOCAL_IP:  # LOCAL_IP
             emoji_status = "🔧"
             flag = details.get("flag", "🏳️")
             code = f"{details.get('code', 'N/A')}-service"
@@ -137,9 +137,11 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
     builder.button(text="🔙 Назад", callback_data="back_to_main_panel")
     builder.adjust(1)
     return builder.as_markup()
-
+    
 def get_main_panel_keyboard(has_bots: bool, user_id: int = None, chat_id: int = None, is_chat: bool = False):
     builder = InlineKeyboardBuilder()
+    is_admin = user_id in get_all_admins()
+
     if is_chat:
         if has_bots:
             builder.button(text="⚙️ Панель управления", callback_data="go_to_control_panel")
@@ -152,8 +154,10 @@ def get_main_panel_keyboard(has_bots: bool, user_id: int = None, chat_id: int = 
         builder.button(text="⚙️ Панель управления", callback_data="go_to_control_panel")
     else:
         builder.button(text="🚀 Установить юзербот", callback_data="create_userbot_start")
-
-    builder.button(text="🔑 API", callback_data="api_panel_show")
+    
+    if is_admin:
+        builder.button(text="🔑 API", callback_data="api_panel_show")
+    
     builder.button(text="🛠️ Статус серверов", url="https://t.me/shark_status")
     builder.button(text="💬 Поддержка", url="t.me/SharkHost_support")
     builder.adjust(1)
@@ -253,19 +257,19 @@ def get_management_keyboard(is_running: bool, ub_username: str, ub_type: str, is
             )
         if not is_inline:
             if is_private:
-                builder.row(InlineKeyboardButton(text="📜 Логи", callback_data=f"show_user_logs:systemd:{ub_username}:{owner_id_str}:1"))
-            if ub_type == 'heroku' and is_private:
-                builder.row(InlineKeyboardButton(text="💾 Бекап (experimental)", callback_data=f"heroku_backup:{ub_username}:{owner_id_str}"))
+                builder.row(InlineKeyboardButton(text="📜 Логи", callback_data=f"show_user_logs:docker:{ub_username}:{owner_id_str}:1"))
+            # if ub_type == 'heroku' and is_private:
+            #     builder.row(InlineKeyboardButton(text="💾 Бекап (experimental)", callback_data=f"heroku_backup:{ub_username}:{owner_id_str}"))
             if ub_type in ['fox', 'heroku']:
                 builder.row(InlineKeyboardButton(text="🔄 Переустановить", callback_data=f"reinstall_ub_start_request:{ub_username}:{owner_id_str}"))
             if is_private:
                 builder.row(InlineKeyboardButton(text="👥 Поделиться панелью", callback_data=f"share_panel_start:{ub_username}"))
             if is_super_admin:
-                builder.row(InlineKeyboardButton(text="🔄 Мигрировать на другой сервер", callback_data=f"migrate_ub_start:{ub_username}"))
+                builder.row(InlineKeyboardButton(text="🔄 Сменить сервер", callback_data=f"migrate_ub_start:{ub_username}"))
             builder.row(InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_ub_confirm_request:{ub_username}:{owner_id_str}"))
     else:
         if not is_inline:
-            builder.row(InlineKeyboardButton(text="📜 Логи", callback_data=f"show_user_logs:systemd:{ub_username}:{owner_id_str}:1"))
+            builder.row(InlineKeyboardButton(text="📜 Логи", callback_data=f"show_user_logs:docker:{ub_username}:{owner_id_str}:1"))
         if is_shared:
             builder.row(InlineKeyboardButton(text="🚫 Отказаться от доступа", callback_data=f"shared_reject_access:{ub_username}"))
 
@@ -314,7 +318,7 @@ def get_public_status_keyboard(installed_bots_map: dict, server_stats: dict, ser
     builder = InlineKeyboardBuilder()
     
     for ip, details in servers.items():
-        if ip == LOCAL_IP:
+        if ip == "127.0.0.1" or ip == sm.LOCAL_IP:  # LOCAL_IP
             continue
 
         status = details.get("status", "false")
@@ -375,7 +379,7 @@ def get_back_to_ub_panel_keyboard(ub_username: str):
 
 def get_log_type_choice_keyboard(ub_username: str, owner_id: int):
     builder = InlineKeyboardBuilder()
-    builder.button(text="⚙️ Systemd", callback_data=f"show_logs:systemd:{ub_username}:{owner_id}:1")
+    builder.button(text="🐳 Docker", callback_data=f"show_logs:docker:{ub_username}:{owner_id}:1")
     builder.button(text="📄 Log File", callback_data=f"show_logs:logfile:{ub_username}:{owner_id}:1")
     builder.adjust(2)
     builder.row(InlineKeyboardButton(text="🔙 Назад к управлению", callback_data=f"back_to_ub_info:{ub_username}:{owner_id}"))
@@ -456,12 +460,15 @@ def get_admin_ub_management_keyboard(ub_username: str, user_id: int, is_active: 
     builder = InlineKeyboardBuilder()
     
     if is_active:
-        builder.button(text="🔴 Выключить", callback_data=f"admin_manage_ub:stop:{ub_username}")
-        builder.button(text="🔄 Перезагрузить", callback_data=f"admin_manage_ub:restart:{ub_username}")
+        # builder.button(text="🔴 Выключить", callback_data=f"admin_manage_ub:stop:{ub_username}")
+        # builder.button(text="🔄 Перезагрузить", callback_data=f"admin_manage_ub:restart:{ub_username}")
+        builder.button(text="🔴 Выключить", callback_data="admin_noop")
+        builder.button(text="🔄 Перезагрузить", callback_data="admin_noop")
     else:
-        builder.button(text="🚀 Включить", callback_data=f"admin_manage_ub:start:{ub_username}")
+        # builder.button(text="🚀 Включить", callback_data=f"admin_manage_ub:start:{ub_username}")
+        builder.button(text="🚀 Включить", callback_data="admin_noop")
     
-    builder.button(text="📜 Логи", callback_data=f"admin_show_logs:systemd:{ub_username}:1")
+    builder.button(text="📜 Логи", callback_data=f"admin_show_logs:docker:{ub_username}:1")
     builder.button(text="🤝 Передать", callback_data=f"admin_transfer_start:{ub_username}")
     builder.button(text="🗑️ Удалить", callback_data=f"admin_delete_ub:{ub_username}")
     
@@ -601,5 +608,59 @@ def get_retry_login_link_keyboard(ub_username: str):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔄 Попробовать снова", callback_data=f"retry_login_link:{ub_username}")
     builder.button(text="⬅️ Назад", callback_data="back_to_main_panel")
+    return builder.as_markup()
+
+def get_stats_keyboard(current_view: str = "overall"):
+    builder = InlineKeyboardBuilder()
+    
+    views = {
+        "overall": "📊 Общая",
+        "servers": "🖥️ Серверы",
+        "userbots": "🤖 Юзерботы"
+    }
+    
+    buttons = []
+    for view, text in views.items():
+        button_text = f"✅ {text}" if current_view == view else text
+        buttons.append(
+            InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"stats_view:{view}"
+            )
+        )
+
+    builder.row(*buttons)
+    builder.row(InlineKeyboardButton(text="🔄 Обновить", callback_data=f"stats_refresh:{current_view}"))
+    return builder.as_markup()
+    
+def get_container_list_keyboard(page_containers: list, page: int, total_pages: int, expanded_container_name: str | None = None):
+    """Создает клавиатуру для пагинации и управления статистикой контейнеров."""
+    builder = InlineKeyboardBuilder()
+    
+    stat_buttons = []
+    for container in page_containers:
+        name = container['name']
+        if name == expanded_container_name:
+            stat_buttons.append(InlineKeyboardButton(text=f"🔼 Скрыть {name}", callback_data=f"container_stats:hide:{name}:{page}"))
+        else:
+            stat_buttons.append(InlineKeyboardButton(text=f"📊 Показать {name}", callback_data=f"container_stats:show:{name}:{page}"))
+    
+    if stat_buttons:
+        builder.row(*stat_buttons, width=2)
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"container_page:{page-1}"))
+    
+    nav_buttons.append(InlineKeyboardButton(text=f"• {page+1}/{total_pages} •", callback_data="noop"))
+
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"container_page:{page+1}"))
+    
+    if nav_buttons:
+        builder.row(*nav_buttons)
+        
+    builder.row(InlineKeyboardButton(text="🔄 Обновить всё", callback_data="container_page:refresh"))
+        
     return builder.as_markup()
 # --- END OF FILE keyboards.py ---

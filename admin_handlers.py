@@ -26,6 +26,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramNotFound, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, BufferedInputFile, FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import Message, CallbackQuery
+from collections import defaultdict
 
 import database as db
 import system_manager as sm
@@ -33,6 +35,8 @@ import server_config
 import keyboards as kb
 import ban_manager
 import session_checker
+from api_manager import api_manager
+import server_config
 from filters import IsAdmin, IsSuperAdmin
 from broadcaster import broadcast_message
 from admin_manager import get_admin_ids, get_all_admins, add_admin, remove_admin
@@ -50,6 +54,244 @@ SESSION_CHECK_CACHE = {}
 CACHE_TTL = 300
 LOG_LINES_PER_PAGE = 25
 ACTIVE_STATUS_LAST_REFRESH = 0
+STATS_CACHE = {}
+CACHE_TTL_SECONDS = 60
+CONTAINER_LIST_CACHE = {}
+CONTAINER_CACHE_TTL = 600 
+
+async def _generate_container_list_page(containers_on_page: list, total_containers: int, expanded_container_name: str | None = None) -> str:
+    """Формирует текст для одной страницы списка контейнеров с красивым форматированием."""
+    
+    text_parts = [f"🖥️ <b>Список всех контейнеров</b> (Всего: {total_containers})\n"]
+    
+    for container in containers_on_page:
+        res = container.get('resources')
+        is_expanded = container['name'] == expanded_container_name and res
+
+        owner_info = container.get('owner_info', '<i>Владелец не найден в БД</i>')
+        ub_type = container.get('ub_type', 'N/A')
+        
+        container_block = (
+            f"<blockquote>"
+            f"👤 <b>Владелец:</b> {owner_info}\n"
+            f"🤖 <b>Юзербот:</b> <code>{html.quote(container['name'])}</code> ({html.quote(ub_type).capitalize()})\n"
+            f"📍 <b>Сервер:</b> {container['server_flag']} {container['server_code']}"
+        )
+        
+        if is_expanded:
+            container_block += (
+                f"\n\n📊 <b>Статистика контейнера:</b>\n"
+                f"  - 🧠 CPU: {res.get('cpu_percent', 0.0):.1f}%\n"
+                f"  - 💾 RAM: {res.get('ram_used', 0):.0f} / {res.get('ram_limit', 0):.0f} МБ\n"
+                f"  - 💽 ROM: {res.get('disk_used', 0):.0f} / {res.get('disk_limit', 0):.0f} МБ"
+            )
+
+        container_block += "</blockquote>"
+        text_parts.append(container_block)
+        
+    return "\n".join(text_parts)
+
+async def _update_container_message(message: types.Message, page: int, expanded_container_name: str | None = None):
+    """Обновляет сообщение со списком контейнеров."""
+    cached_data = CONTAINER_LIST_CACHE.get(message.message_id)
+    if not cached_data: return
+
+    all_containers = cached_data['data']
+    per_page = 5
+    total_pages = (len(all_containers) + per_page - 1) // per_page
+    
+    start_index = page * per_page
+    end_index = start_index + per_page
+    containers_on_page = all_containers[start_index:end_index]
+
+    page_text = await _generate_container_list_page(containers_on_page, len(all_containers), expanded_container_name)
+    markup = kb.get_container_list_keyboard(containers_on_page, page, total_pages, expanded_container_name)
+    
+    try:
+        await message.edit_text(page_text, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка обновления списка контейнеров: {e}")
+
+@router.message(Command("container"), IsAdmin())
+async def cmd_container(message: types.Message, command: CommandObject, bot: Bot):
+    args = command.args.split() if command.args else []
+    action = args[0].lower() if args else "help"
+
+    if action == "list":
+        msg = await message.reply("⏳ Собираю быстрый список контейнеров...")
+        
+        servers = server_config.get_servers()
+        list_tasks = [api_manager.get_container_list(ip) for ip in servers.keys()]
+        results = await asyncio.gather(*list_tasks)
+        
+        all_containers_info = []
+        for (ip, details), res in zip(servers.items(), results):
+            if res.get("success") and res['data'].get('list'):
+                for cont in res['data']['list']:
+                    all_containers_info.append({
+                        "name": cont['name'],
+                        "server_ip": ip,
+                        "server_code": details.get('code', 'N/A'),
+                        "server_flag": details.get('flag', '🏳️')
+                    })
+
+        if not all_containers_info:
+            await msg.edit_text("Не найдено ни одного контейнера на серверах.")
+            return
+
+        db_tasks = [db.get_userbot_data(info['name']) for info in all_containers_info]
+        ub_data_list = await asyncio.gather(*db_tasks)
+        
+        for info, ub_data in zip(all_containers_info, ub_data_list):
+            if ub_data:
+                owner_data = await db.get_user_data(ub_data['tg_user_id'])
+                info['ub_type'] = ub_data.get('ub_type', 'N/A')
+                if owner_data:
+                    info['owner_info'] = f"{html.quote(owner_data.get('full_name', ''))} (<code>{ub_data['tg_user_id']}</code>)"
+                else:
+                    info['owner_info'] = f"<i>Не найден в БД (<code>{ub_data['tg_user_id']}</code>)</i>"
+            else:
+                info['owner_info'] = "<i>Контейнер не в БД</i>"
+
+        all_containers_info.sort(key=lambda x: x['name'])
+
+        CONTAINER_LIST_CACHE[msg.message_id] = {
+            "data": all_containers_info,
+            "timestamp": time.time(),
+            "expanded": None
+        }
+        
+        await _update_container_message(msg, 0)
+
+    elif action == "exec":
+        if len(args) < 3:
+            await message.reply(
+                "<b>Неверное использование.</b>\n\n"
+                "Формат: <code>/container exec &lt;имя_контейнера&gt; &lt;команда&gt;</code>\n"
+                "Пример: <code>/container exec ub12345 ls -la</code>"
+            )
+            return
+
+        container_name = args[1]
+        command_to_exec = " ".join(args[2:])
+        
+        msg = await message.reply(f"⏳ Выполняю команду в контейнере <code>{html.quote(container_name)}</code>...")
+
+        ub_data = await db.get_userbot_data(ub_username=container_name)
+        if not ub_data:
+            await msg.edit_text(f"❌ Контейнер <code>{html.quote(container_name)}</code> не найден в базе данных.")
+            return
+            
+        server_ip = ub_data['server_ip']
+        
+        exec_result = await api_manager.exec_in_container(container_name, command_to_exec, server_ip)
+
+        if not exec_result.get("success"):
+            error_text = exec_result.get('error', 'Неизвестная ошибка API.')
+            await msg.edit_text(f"❌ <b>Ошибка выполнения:</b>\n<pre>{html.quote(error_text)}</pre>")
+            return
+            
+        data = exec_result.get("data", {}).get("exec", {})
+        exit_code = data.get("exit_code", "N/A")
+        output = data.get("output", "").strip()
+
+        header = (
+            f"<b>Выполнение в контейнере:</b> <code>{html.quote(container_name)}</code>\n"
+            f"<b>Команда:</b> <pre>{html.quote(command_to_exec)}</pre>\n"
+            f"<b>Код выхода:</b> <code>{exit_code}</code>\n\n"
+        )
+        
+        if output:
+            if len(output) > 3800:
+                output = output[:3800] + "\n\n[...Вывод обрезан...]"
+            response_text = header + f"<b>Вывод:</b>\n<blockquote>{html.quote(output)}</blockquote>"
+        else:
+            response_text = header + "<i>(Нет вывода)</i>"
+
+        await msg.edit_text(response_text)
+
+    else:
+        help_text = (
+            "<b>Управление контейнерами</b>\n\n"
+            "<b>Доступные команды:</b>\n"
+            "<code>/container list</code>\n"
+            "<i>- Показать список всех контейнеров.</i>\n\n"
+            "<code>/container exec &lt;имя&gt; &lt;команда&gt;</code>\n"
+            "<i>- Выполнить команду внутри контейнера.</i>"
+        )
+        await message.reply(help_text)
+
+@router.callback_query(F.data.startswith("container_page:"))
+async def cq_container_list_page(call: types.CallbackQuery):
+    await call.answer()
+    
+    if call.data == "container_page:refresh":
+        await cmd_container(call.message, CommandObject(command="container", args="list"), call.bot)
+        return
+
+    cached_data = CONTAINER_LIST_CACHE.get(call.message.message_id)
+    if not cached_data or time.time() - cached_data['timestamp'] > CONTAINER_CACHE_TTL:
+        await call.message.edit_text("Данные устарели. Пожалуйста, выполните команду /container list снова.", reply_markup=None)
+        return
+
+    try:
+        page = int(call.data.split(":")[1])
+    except (ValueError, IndexError):
+        return
+        
+    cached_data["expanded"] = None # Сбрасываем раскрытый контейнер при переходе на другую страницу
+    await _update_container_message(call.message, page)
+
+@router.callback_query(F.data.startswith("container_stats:"))
+async def cq_toggle_container_stats(call: types.CallbackQuery):
+    await call.answer()
+    
+    cached_data = CONTAINER_LIST_CACHE.get(call.message.message_id)
+    if not cached_data or time.time() - cached_data['timestamp'] > CONTAINER_CACHE_TTL:
+        await call.message.edit_text("Данные устарели. Пожалуйста, выполните команду /container list снова.", reply_markup=None)
+        return
+
+    try:
+        _, action, name, page_str = call.data.split(":")
+        page = int(page_str)
+    except (ValueError, IndexError):
+        return
+
+    if action == "hide":
+        cached_data["expanded"] = None
+        await _update_container_message(call.message, page, None)
+        return
+
+    # Ищем контейнер в кэше
+    target_container = next((c for c in cached_data['data'] if c['name'] == name), None)
+    if not target_container: return
+
+    # Если статистика уже загружена, просто показываем ее
+    if 'resources' in target_container:
+        cached_data["expanded"] = name
+        await _update_container_message(call.message, page, name)
+        return
+
+    # Если статистики нет, загружаем ее
+    await call.message.edit_text("⏳ Загружаю статистику для " f"<code>{html.quote(name)}</code>" "...", reply_markup=None)
+    
+    stats_result = await api_manager.get_container_stats(name, target_container['server_ip'])
+    
+    resources = {'cpu_percent': 0.0, 'ram_used': 0, 'ram_limit': 0, 'disk_used': 0, 'disk_limit': 0}
+    if stats_result.get("success"):
+        info = stats_result.get("data", {}).get("info", {})
+        if info:
+            resources['cpu_percent'] = info.get("cpu_percent", 0)
+            resources['ram_used'] = info.get("ram_usage_mb", 0)
+            resources['ram_limit'] = info.get("ram_limit_mb", 0)
+            resources['disk_used'] = info.get("disk_usage_mb", 0)
+            resources['disk_limit'] = info.get("disk_limit_mb", 0)
+    
+    target_container['resources'] = resources
+    cached_data["expanded"] = name
+    
+    await _update_container_message(call.message, page, name)
 
 @router.message(F.text.regexp(r'^\/.*'), ~IsAdmin())
 async def unauthorized_admin_command_attempt(message: types.Message, bot: Bot):
@@ -94,59 +336,61 @@ def _country_code_to_flag(code: str) -> str:
 
 @router.message(Command("obs"), IsSuperAdmin())
 async def cmd_obs_all_servers(message: types.Message, bot: Bot):
-    servers_to_service = {ip: details for ip, details in server_config.get_servers().items() if ip != sm.LOCAL_IP}
+    # servers_to_service = {ip: details for ip, details in server_config.get_servers().items() if ip != sm.LOCAL_IP}
+    await message.reply("❌ Функция обслуживания серверов временно недоступна.")
+    return
     
-    # Устанавливаем zip на все сервера перед обслуживанием
-    install_results = []
-    for ip in servers_to_service:
-        res = await sm.run_command_async("sudo apt-get update -qq && sudo apt-get install -y zip", ip, check_output=False)
-        if res.get("success"):
-            install_results.append(f"✅ zip установлен на {ip}")
-        else:
-            install_results.append(f"❌ Ошибка установки zip на {ip}: {res.get('error','')}")
-    if install_results:
-        await message.reply("\n".join(install_results))
-    
-    if not servers_to_service:
-        await message.reply("Список удаленных серверов пуст. Нечего обслуживать.")
-        return
-
-    ips_to_process = list(servers_to_service.keys())
-    msg = await message.reply(f"🚀 <b>Запускаю параллельное обслуживание для {len(ips_to_process)} серверов...</b>\n\nЭто может занять много времени. Вы получите итоговый отчет по завершении.")
-
-    # Исправляем права доступа для существующих пользователей
-    ### fix_tasks = [sm.fix_existing_users_tmp_access(ip) for ip in ips_to_process]
-    ### await asyncio.gather(*fix_tasks)
-    
-    tasks = [sm.service_and_prepare_server(ip) for ip in ips_to_process]
-    
-    results = await asyncio.gather(*tasks)
-    
-    all_successful = True
-    report_lines = []
-
-    for ip, success in zip(ips_to_process, results):
-        server_details = servers_to_service.get(ip, {})
-        flag = server_details.get("flag", "🏳️")
-        name = server_details.get("name", "Unknown")
-        
-        if success:
-            status_icon = "✅"
-            status_text = "Успешно"
-        else:
-            status_icon = "❌"
-            status_text = "Ошибка"
-            all_successful = False
-        
-        report_lines.append(f"{status_icon} <b>{flag} {html.quote(name)}</b> (<code>{ip}</code>): {status_text}")
-
-    summary_text = "✅ <b>Обслуживание всех серверов успешно завершено.</b>"
-    if not all_successful:
-        summary_text = "⚠️ <b>Обслуживание завершено, но на некоторых серверах возникли ошибки.</b>"
-
-    final_report = f"{summary_text}\n\n" + "\n".join(report_lines)
-    
-    await msg.edit_text(final_report)
+    # # Устанавливаем zip на все сервера перед обслуживанием
+    # install_results = []
+    # for ip in servers_to_service:
+    #     res = await sm.run_command_async("sudo apt-get update -qq && sudo apt-get install -y zip", ip, check_output=False)
+    #     if res.get("success"):
+    #         install_results.append(f"✅ zip установлен на {ip}")
+    #     else:
+    #         install_results.append(f"❌ Ошибка установки zip на {ip}: {res.get('error','')}")
+    # if install_results:
+    #     await message.reply("\n".join(install_results))
+    # 
+    # if not servers_to_service:
+    #     await message.reply("Список удаленных серверов пуст. Нечего обслуживать.")
+    #     return
+    # 
+    # ips_to_process = list(servers_to_service.keys())
+    # msg = await message.reply(f"🚀 <b>Запускаю параллельное обслуживание для {len(ips_to_process)} серверов...</b>\n\nЭто может занять много времени. Вы получите итоговый отчет по завершении.")
+    # 
+    # # Исправляем права доступа для существующих пользователей
+    # ### fix_tasks = [sm.fix_existing_users_tmp_access(ip) for ip in ips_to_process]
+    # ### await asyncio.gather(*fix_tasks)
+    # 
+    # tasks = [sm.service_and_prepare_server(ip) for ip in ips_to_process]
+    # 
+    # results = await asyncio.gather(*tasks)
+    # 
+    # all_successful = True
+    # report_lines = []
+    # 
+    # for ip, success in zip(ips_to_process, results):
+    #     server_details = servers_to_service.get(ip, {})
+    #     flag = server_details.get("flag", "🏳️")
+    #     name = server_details.get("name", "Unknown")
+    # 
+    #     if success:
+    #         status_icon = "✅"
+    #         status_text = "Успешно"
+    #     else:
+    #         status_icon = "❌"
+    #         status_text = "Ошибка"
+    #         all_successful = False
+    # 
+    #     report_lines.append(f"{status_icon} <b>{flag} {html.quote(name)}</b> (<code>{ip}</code>): {status_text}")
+    # 
+    # summary_text = "✅ <b>Обслуживание всех серверов успешно завершено.</b>"
+    # if not all_successful:
+    #     summary_text = "⚠️ <b>Обслуживание завершено, но на некоторых серверах возникли ошибки.</b>"
+    # 
+    # final_report = f"{summary_text}\n\n" + "\n".join(report_lines)
+    # 
+    # await msg.edit_text(final_report)
 
 def get_terminal_paginator(output_id: str, page: int, total_pages: int):
     builder = InlineKeyboardBuilder()
@@ -233,7 +477,7 @@ async def cmd_terminal(message: types.Message, command: CommandObject):
         )
         await message.reply(help_text)
         return
-
+    
     args = command.args.split(maxsplit=1)
     
     if args[0].lower() == 'all':
@@ -308,11 +552,11 @@ async def cmd_terminal(message: types.Message, command: CommandObject):
 
     msg = await message.reply(f"⏳ Выполняю команду на <code>{target_ip}</code>...")
     res = await sm.run_command_async(cmd_str, target_ip, timeout=600)
-    
+
     output = res.get('output', '')
     error = res.get('error', '')
     exit_code = res.get('exit_status', 'N/A')
-
+    
     header = (
         f"<b>⌨️ Системная команда <code>{html.quote(cmd_str)}</code></b>\n"
         f"<i>Код выхода: {exit_code}</i>"
@@ -328,7 +572,7 @@ async def cmd_terminal(message: types.Message, command: CommandObject):
         full_text = f"{header}\n\n" + "\n\n".join(content_parts)
     else:
         full_text = f"{header}\n\n<i>(Нет вывода)</i>"
-
+    
     if len(full_text) > 4096:
         await msg.delete()
         output_id = uuid.uuid4().hex
@@ -380,8 +624,8 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             "<b>⚙️ Команды управления серверами:</b>\n\n"
             "<code>/serv list</code>\n"
             "<i>Показывает список всех серверов с их кодами.</i>\n\n"
-            "<code>/serv add [IP] [user] [pass]</code>\n"
-            "<i>Добавляет новый сервер.</i>\n\n"
+            "<code>/serv add [IP] [user] [pass] [hostname] [код]</code>\n"
+            "<i>Добавляет новый сервер. Пример: /serv add 192.168.1.100 root mypass sharkhost M2</i>\n\n"
             "<code>/serv del [код]</code>\n"
             "<i>Удаляет сервер из конфигурации.</i>\n\n"
             "<b>Команды для конкретного сервера:</b>\n"
@@ -394,7 +638,9 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             "<code>/serv [код] ubs [действие]</code>\n"
             "<i>Массовое управление юзерботами (<code>start</code>, <code>stop</code>, <code>restart</code>).</i>\n\n"
             "<code>/serv [код] reboot</code>\n"
-            "<i>Безопасная перезагрузка сервера.</i>"
+            "<i>Безопасная перезагрузка сервера.</i>\n\n"
+            "<code>/serv setapi [код] [api_url] [api_token]</code>\n"
+            "<i>Обновляет API URL и токен для сервера.</i>"
         )
         await message.reply(help_text)
         return
@@ -415,14 +661,31 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
         return
 
     if action == "add":
-        if len(args) != 4:
-            await message.reply(f"Использование: <code>/serv add [IP] [user] [password]</code>")
+        if len(args) < 6:
+            await message.reply(f"Использование: <code>/serv add [IP] [user] [password] [hostname] [код]</code>\n\n"
+                              f"Пример: <code>/serv add 192.168.1.100 root mypass sharkhost M2</code>")
             return
+
+        _, ip, user, password, hostname, code = args[:6]
         
-        _, ip, user, password = args
         if ip in servers:
             await message.reply(f"❌ Сервер <code>{ip}</code> уже существует.")
             return
+
+        existing_codes = [details.get("code") for details in servers.values() if details.get("code")]
+        if code in existing_codes:
+            await message.reply(f"❌ Сервер с кодом <code>{code}</code> уже существует.\n\n"
+                              f"Доступные коды: {', '.join(f'<code>{c}</code>' for c in existing_codes)}")
+            return
+
+        existing_names = [details.get("name") for details in servers.values() if details.get("name")]
+        i = 1
+        while f"serv{i}" in existing_names:
+            i += 1
+        server_name = f"serv{i}"
+
+        api_url = f"http://{ip}:8000"
+        api_token = "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
 
         msg = await message.reply(f"⏳ Проверяю SSH-соединение с <code>{ip}</code>...")
         
@@ -440,34 +703,38 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             
         await msg.edit_text(f"✅ Соединение успешно. Получаю информацию о сервере...")
 
-        max_num = sum(1 for s in servers.values() if s.get('name', '').startswith('serv'))
-        new_name = f"serv{max_num + 1}"
         geo_info = await _get_geo_info(ip)
-        details = { "name": new_name }
-
+        details = { 
+            "name": server_name,
+            "code": code,
+            "api_url": api_url,
+            "api_token": api_token
+        }
+        
         if geo_info:
             details.update({
-                "country": geo_info.get("country", "Unknown"), "city": geo_info.get("city", "Unknown"),
-                "regionName": geo_info.get("regionName", "N/A"), "flag": _country_code_to_flag(geo_info.get("countryCode", "")),
-                "org": geo_info.get("org", "N/A"), "timezone": geo_info.get("timezone", "N/A"),
-                "hosting": geo_info.get("hosting", False), "proxy": geo_info.get("proxy", False), "vpn": geo_info.get("vpn", False),
+                "country": geo_info.get("country", "Unknown"), 
+                "city": geo_info.get("city", "Unknown"),
+                "regionName": geo_info.get("regionName", "N/A"), 
+                "flag": _country_code_to_flag(geo_info.get("countryCode", "")),
+                "org": geo_info.get("org", "N/A"), 
+                "timezone": geo_info.get("timezone", "N/A"),
+                "hosting": geo_info.get("hosting", False), 
+                "proxy": geo_info.get("proxy", False), 
+                "vpn": geo_info.get("vpn", False),
             })
-            city_char = details["city"][0].upper() if details["city"] != "Unknown" and details["city"] else "S"
-            count = sum(1 for s in servers.values() if s.get('code', '').startswith(city_char))
-            details["code"] = f"{city_char}{count + 1}"
 
         new_password = await sm.add_server_with_security(ip, user, password, details)
         if isinstance(new_password, str) and new_password:
-            await msg.edit_text(f"✅ Сервер <b>{new_name}</b> (<code>{ip}</code>) успешно добавлен.\n\n"
-                              "⏳ <b>Начинаю автоматическое обслуживание...</b> Это может занять несколько минут.")
-            # --- Смена hostname без перезагрузки ---
-            await msg.reply("⏳ Меняю hostname на 'sharkhost'...")
-            set_hostname_res = await sm.run_command_async("sudo hostnamectl set-hostname sharkhost", ip, ssh_pass=new_password)
+            await msg.edit_text(f"✅ Сервер <b>{server_name}</b> (<code>{ip}</code>) с кодом <b>{code}</b> успешно добавлен.\n\n"
+                              f"🌐 API URL: <code>{api_url}</code>\n\n"
+                              "⏳ <b>Начинаю настройку сервера...</b>")
+            await msg.reply(f"⏳ Меняю hostname на '{hostname}'...")
+            set_hostname_res = await sm.run_command_async(f"sudo hostnamectl set-hostname {hostname}", ip, ssh_pass=new_password)
             if set_hostname_res.get("success"):
-                await msg.reply("✅ Hostname успешно изменён на 'sharkhost'.")
+                await msg.reply(f"✅ Hostname успешно изменён на '{hostname}'.")
             else:
                 await msg.reply(f"⚠️ Не удалось изменить hostname.\n<pre>{set_hostname_res.get('error','')}</pre>")
-            asyncio.create_task(sm.service_and_prepare_server(ip, bot, message.chat.id, ssh_pass=new_password))
         else:
             await msg.edit_text(f"❌ Не удалось добавить сервер <code>{ip}</code>.")
         return
@@ -486,7 +753,29 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
         else:
             await message.reply(f"❌ Не удалось удалить сервер <code>{ip_to_del}</code> из конфигурации.")
         return
+
+    if action == "setapi":
+        if len(args) != 4:
+            await message.reply("Использование: <code>/serv setapi [код] [api_url] [api_token]</code>\n\nПример: <code>/serv setapi M2 http://m7.sharkhost.space:8000 kivWJm0e2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZve0zvr8y</code>")
+            return
         
+        server_code = args[1]
+        api_url = args[2]
+        api_token = args[3]
+        
+        ip_to_update = find_ip_by_code(server_code)
+        if not ip_to_update:
+            await message.reply(f"❌ Сервер с кодом <code>{server_code}</code> не найден.")
+            return
+        
+        servers[ip_to_update]["api_url"] = api_url
+        servers[ip_to_update]["api_token"] = api_token
+        if server_config._save_servers(servers):
+            await message.reply(f"✅ API конфигурация для сервера <code>{server_code}</code> обновлена:\n\n🌐 URL: <code>{api_url}</code>\n🔑 Token: <code>{api_token}</code>")
+        else:
+            await message.reply(f"❌ Не удалось обновить API конфигурацию для сервера <code>{server_code}</code>")
+        return
+
     if len(args) < 2 and len(args) != 1:
         await message.reply("Неверный формат команды. Используйте <code>/serv help</code>.")
         return
@@ -502,7 +791,6 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
 
     if sub_action == "neofetch":
         msg = await message.reply(f"⏳ Получаю системную сводку с сервера {server_code}...")
-        res = await sm.run_command_async("neofetch --stdout", target_ip)
         if res.get("success"):
             await msg.edit_text(f"<b>Системная сводка для {server_code}:</b>\n<pre>{html.quote(res['output'])}</pre>")
         else:
@@ -524,7 +812,6 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             return
 
         msg = await message.reply(f"⏳ Выполняю '<b>{ub_action}</b>' для {len(userbots)} юзерботов на сервере <code>{target_ip}</code>...")
-        tasks = [sm.manage_ub_service(ub['ub_username'], ub_action, target_ip) for ub in userbots]
         results = await asyncio.gather(*tasks)
         report = [f"<b>Отчет для <code>{target_ip}</code> ({server_code}):</b>"]
         for ub, res in zip(userbots, results):
@@ -583,7 +870,6 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             await log_event(bot, "server_settings_changed", log_data)
             if status_value == "false":
                 userbots = await db.get_userbots_by_server_ip(target_ip)
-                tasks = [sm.manage_ub_service(ub['ub_username'], 'stop', target_ip) for ub in userbots]
                 for task in tasks:
                     asyncio.create_task(task)
         else:
@@ -679,7 +965,7 @@ async def start_or_reset_update_task(bot: Bot, chat_id: int, message_id: int):
 async def _get_server_info_content():
     servers = server_config.get_servers()
     
-    remote_servers = [(ip, details) for ip, details in servers.items() if ip != sm.LOCAL_IP]
+    remote_servers = [(ip, details) for ip, details in servers.items() if ip != "127.0.0.1"]  # sm.LOCAL_IP
     
     if not remote_servers:
         return "Список удаленных серверов пуст.", None
@@ -687,7 +973,7 @@ async def _get_server_info_content():
     stats_tasks = [sm.get_server_stats(ip) for ip, _ in remote_servers]
     all_stats = await asyncio.gather(*stats_tasks)
     stats_map = dict(zip([ip for ip, _ in remote_servers], all_stats))
-
+    
     info_text = await _get_full_server_info_text(stats_map, remote_servers)
     
     markup = kb.get_server_info_keyboard()
@@ -812,7 +1098,7 @@ async def cmd_remote_control(message: types.Message, command: CommandObject):
 
     await message.reply(f"⏳ Выполняю действие '<b>{action}</b>' для {len(ub_data_list)} юзербота(ов)...")
     
-    tasks = [sm.manage_ub_service(ub['ub_username'], system_action, ub['server_ip']) for ub in ub_data_list]
+            # tasks = [sm.manage_ub_service(ub['ub_username'], system_action, ub['server_ip']) for ub in ub_data_list]
     results = await asyncio.gather(*tasks)
 
     success_list = [ub_data_list[i]['ub_username'] for i, res in enumerate(results) if res["success"]]
@@ -827,7 +1113,7 @@ async def cmd_remote_control(message: types.Message, command: CommandObject):
 
 # В файле admin_handlers.py
 
-@router.message(Command("ahelp"))
+@router.message(Command("ahelp"), IsAdmin())
 async def cmd_ahelp(message: types.Message):
     text = (
         "<b>Админ-панель: Справка по командам</b>\n\n"
@@ -979,6 +1265,10 @@ async def check_view_toggle_handler(call: types.CallbackQuery):
 @router.callback_query(F.data == "no_action")
 async def no_action_handler(call: types.CallbackQuery):
     await call.answer()
+
+@router.callback_query(F.data == "admin_noop")
+async def admin_noop_handler(call: types.CallbackQuery):
+    await call.answer("Функция управления временно недоступна.")
 
 @router.callback_query(F.data.startswith("check_page:"))
 async def check_page_handler(call: types.CallbackQuery):
@@ -1182,8 +1472,15 @@ async def send_ub_info_panel(bot: Bot, chat_id: int, ub_username: str, message_i
     except (TelegramNotFound, TelegramBadRequest):
         owner_info = f"ID: {owner_id}"
     
-    is_active = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip)
+    # Получаем информацию о порте
+    port = ub_data.get('webui_port', 'N/A')
+    ub_type = ub_data.get('ub_type', 'N/A')
+    
+    # Проверяем статус контейнера через API
+    container_status = await api_manager.get_container_status(ub_username, server_ip)
+    is_active = container_status.get("success", False) and container_status.get("data", {}).get("status") == "running"
     status_text = "🟢 Активен" if is_active else "🔴 Не активен"
+    
     is_blocked = bool(ub_data.get('blocked', 0))
     block_status_text = "🚫 <b>Заблокирован</b>" if is_blocked else "✅ Активен"
     note = owner_data.get('note') if owner_data else None
@@ -1191,8 +1488,10 @@ async def send_ub_info_panel(bot: Bot, chat_id: int, ub_username: str, message_i
     text = (
         f"🤖 <b>Управление юзерботом:</b> <code>{html.quote(ub_username)}</code>\n"
         f"📍 <b>Сервер:</b> {server_display}\n"
+        f"🔌 <b>Порт:</b> <code>{port}</code>\n"
+        f"📦 <b>Тип:</b> <code>{ub_type}</code>\n"
         f"👤 <b>Владелец:</b> {html.quote(owner_info)}\n"
-        f"🔧 <b>Статус сервиса:</b> {status_text}\n"
+        f"🔧 <b>Статус контейнера:</b> {status_text}\n"
         f"⚖️ <b>Статус доступа:</b> {block_status_text}"
     )
     
@@ -1289,29 +1588,29 @@ async def toggle_block_ub_handler(call: types.CallbackQuery, bot: Bot):
     if await db.block_userbot(ub_username, block_action):
         await call.answer("Статус блокировки обновлен!")
         action = "stop" if block_action else "start"
-        await sm.manage_ub_service(ub_username, action, server_ip)
+        # await sm.manage_ub_service(ub_username, action, server_ip)
     else:
         await call.answer("❌ Ошибка обновления статуса в БД.", show_alert=True)
     
     await send_ub_info_panel(bot=bot, chat_id=call.message.chat.id, ub_username=ub_username, message_id=call.message.message_id)
 
-@router.callback_query(F.data.startswith("manage_ub_info:"))
-async def manage_ub_from_info_panel(call: types.CallbackQuery, bot: Bot):
-    await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
-    action, ub_username = call.data.split(":")[1:]
-    
-    ub_data = await db.get_userbot_data(ub_username)
-    if not ub_data:
-        await call.answer("Юзербот не найден в БД.", show_alert=True)
-        return
-    server_ip = ub_data['server_ip']
-
-    res = await sm.manage_ub_service(ub_username, action, server_ip)
-    if not res["success"]:
-        await call.answer(f"❌ Ошибка: {res.get('message', '...')}", show_alert=True)
-    
-    await asyncio.sleep(1)
-    await send_ub_info_panel(bot=bot, chat_id=call.message.chat.id, ub_username=ub_username, message_id=call.message.message_id)
+# @router.callback_query(F.data.startswith("manage_ub_info:"))
+# async def manage_ub_from_info_panel(call: types.CallbackQuery, bot: Bot):
+#     await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+#     action, ub_username = call.data.split(":")[1:]
+#     
+#     ub_data = await db.get_userbot_data(ub_username)
+#     if not ub_data:
+#         await call.answer("Юзербот не найден в БД.", show_alert=True)
+#         return
+#     server_ip = ub_data['server_ip']
+# 
+#             # res = await sm.manage_ub_service(ub_username, action, server_ip)
+#     if not res["success"]:
+#         await call.answer(f"❌ Ошибка: {res.get('message', '...')}", show_alert=True)
+#     
+#     await asyncio.sleep(1)
+#     await send_ub_info_panel(bot=bot, chat_id=call.message.chat.id, ub_username=ub_username, message_id=call.message.message_id)
 
 @router.callback_query(F.data.startswith("choose_log_type:"))
 async def choose_log_type_handler(call: types.CallbackQuery):
@@ -1345,19 +1644,30 @@ async def show_logs_handler(call: types.CallbackQuery):
     if not ub_data:
         await call.answer("Юзербот не найден в БД.", show_alert=True)
         return
-    server_ip, hikka_path, ub_type = ub_data['server_ip'], ub_data.get('hikka_path'), ub_data.get('ub_type')
+    server_ip, ub_type = ub_data['server_ip'], ub_data.get('ub_type')
     
-    log_titles = {"systemd": "Systemd", "logfile": "Log File"}
+    log_titles = {"docker": "Docker", "logfile": "Log File"}
     log_title = log_titles.get(log_type, "Unknown")
     logs = None
 
-    if log_type == "systemd":
-        logs = await sm.get_journal_logs(ub_username, server_ip)
-    elif log_type == "logfile":
-        if hikka_path and ub_type:
-            logs = await sm.get_script_log_file(hikka_path, ub_type, server_ip)
+    if log_type == "docker":
+        # Используем API для получения логов контейнера
+        logs_result = await api_manager.get_container_logs(ub_username, server_ip)
+        
+        if logs_result.get("success"):
+            logs_data = logs_result.get("data", {})
+            logs = logs_data.get("logs", "")
         else:
-            await call.answer("❌ Не удалось найти путь или тип юзербота в БД.", show_alert=True)
+            error_msg = logs_result.get('error', 'Неизвестная ошибка')
+            if "No such container" in error_msg or "404" in error_msg:
+                logs = f"❌ Контейнер {ub_username} не найден на сервере"
+            else:
+                logs = f"❌ Ошибка получения логов: {error_msg}"
+    elif log_type == "logfile":
+        if ub_type:
+            logs = await sm.get_script_log_file(ub_username, ub_type, server_ip, 1000)
+        else:
+            await call.answer("❌ Не удалось найти тип юзербота в БД.", show_alert=True)
             return
             
     if not logs:
@@ -1414,32 +1724,66 @@ REASON_TEMPLATES = {
     "technical_work": "Технические работы на сервере"
 }
 
+# Файл: admin_handlers.py
+
 @router.message(Command("delub"), IsAdmin())
 async def cmd_delub(message: types.Message, command: CommandObject, bot: Bot):
     if not command.args:
-        await message.reply("Использование: <code>/delub [имя_юзербота]</code> или <code>/delub [имя_юзербота] -f [ip]</code>")
+        help_text = (
+            "<b>Использование:</b> <code>/delub [имя_юзербота] [флаги]</code>\n\n"
+            "<b>Примеры:</b>\n"
+            "• <code>/delub ub12345</code> - стандартное удаление с выбором причины.\n"
+            "• <code>/delub ub12345 -d</code> - удаление только из базы данных бота.\n"
+            "• <code>/delub ub12345 -f 1.2.3.4</code> - принудительное полное удаление с сервера (если нет в БД)."
+        )
+        await message.reply(help_text)
         return
 
     args = command.args.split()
     ub_name = args[0]
-    force = False
-    server_ip = None
-    if len(args) >= 3 and args[1] == "-f":
-        force = True
-        server_ip = args[2]
-    elif len(args) == 2 and args[1] == "-f":
-        force = True
-        await message.reply("❗ Укажите IP сервера: <code>/delub [имя] -f [ip]</code>")
+
+    if "-d" in args:
+        msg = await message.reply(f"🗑️ Удаляю <code>{html.quote(ub_name)}</code> только из <b>базы данных</b>...")
+        ub_data = await db.get_userbot_data(ub_username=ub_name)
+        if not ub_data:
+            await msg.edit_text(f"❌ Юзербот <code>{html.quote(ub_name)}</code> не найден в базе данных.")
+            return
+
+        if await db.delete_userbot_record(ub_name):
+            await msg.edit_text(f"✅ Запись о юзерботе <code>{html.quote(ub_name)}</code> была удалена из базы данных.")
+            
+            admin_data = {"id": message.from_user.id, "full_name": message.from_user.full_name}
+            owner_data = {"id": ub_data.get('tg_user_id')}
+            server_details = server_config.get_servers().get(ub_data.get('server_ip'), {})
+            log_data = {
+                "admin_data": admin_data,
+                "user_data": owner_data,
+                "ub_info": {"name": ub_name},
+                "server_info": {"ip": ub_data.get('server_ip'), "code": server_details.get("code", "N/A")},
+                "reason": "Удаление только из БД (флаг -d)"
+            }
+            await log_event(bot, "deletion_by_admin", log_data)
+        else:
+            await msg.edit_text(f"❌ Произошла ошибка при удалении <code>{html.quote(ub_name)}</code> из базы данных.")
         return
 
-    if force:
-        # Принудительное удаление без БД
-        await message.reply(f"🗑️ Принудительно удаляю <code>{html.quote(ub_name)}</code> на сервере <code>{html.quote(server_ip)}</code>...")
-        res = await sm.delete_userbot_full(ub_name, server_ip)
+    if "-f" in args:
+        try:
+            ip_index = args.index('-f') + 1
+            if ip_index >= len(args):
+                await message.reply("❗ Укажите IP сервера после флага -f.")
+                return
+            server_ip = args[ip_index]
+        except (ValueError, IndexError):
+             await message.reply("❗ Неверный формат для принудительного удаления. Укажите IP сервера после флага -f.")
+             return
+
+        await message.reply(f"🗑️ Принудительно удаляю <code>{html.quote(ub_name)}</code> с сервера <code>{html.quote(server_ip)}</code> и из БД...")
+        # res = await sm.delete_userbot_full(ub_name, server_ip)
         if res["success"]:
-            await message.reply(f"✅ Юзербот <code>{html.quote(ub_name)}</code> был полностью удален с сервера <code>{html.quote(server_ip)}</code>.")
+            await message.reply(f"✅ Юзербот <code>{html.quote(ub_name)}</code> был полностью удален с сервера <code>{html.quote(server_ip)}</code> и из БД.")
         else:
-            await message.reply(f"❌ Ошибка при удалении <code>{html.quote(ub_name)}</code>: {res.get('message', '...')}")
+            await message.reply(f"❌ Ошибка при принудительном удалении <code>{html.quote(ub_name)}</code>: {res.get('message', '...')}")
         return
 
     if not await db.get_userbot_data(ub_username=ub_name):
@@ -1480,24 +1824,32 @@ async def cq_delub_cancel(call: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("delub_execute:"))
 async def cq_delub_execute(call: types.CallbackQuery, bot: Bot):
-    _, ub_username, reason_code = call.data.split(":")
-    reason_text = REASON_TEMPLATES.get(reason_code, "Причина не указана.")
-    
-    await call.message.edit_text(f"🗑️ Удаляю <code>{html.quote(ub_username)}</code>...", reply_markup=None)
-    
-    ub_data = await db.get_userbot_data(ub_username)
-    if not ub_data:
-        await call.message.edit_text("❌ Юзербот уже был удален.")
-        return
-        
-    owner_id = ub_data.get('tg_user_id')
-    server_ip = ub_data.get('server_ip')
-    
-    res = await sm.delete_userbot_full(ub_username, server_ip)
-    
-    if res["success"]:
+    try:
+        _, ub_username, reason_code = call.data.split(":")
+        reason_text = REASON_TEMPLATES.get(reason_code, "Причина не указана.")
+        await call.message.edit_text(f"🗑️ Удаляю <code>{html.quote(ub_username)}</code>...", reply_markup=None)
+
+        ub_data = await db.get_userbot_data(ub_username)
+        if not ub_data:
+            await call.message.edit_text("❌ Юзербот уже был удален.")
+            return
+
+        owner_id = ub_data.get('tg_user_id')
+        server_ip = ub_data.get('server_ip')
+
+        # Удаляем контейнер через API
+        res = await api_manager.delete_container(ub_username, server_ip)
+
+        if res is None or not res.get("success"):
+            error_message = res.get('error', 'Не удалось получить ответ от сервера') if res else 'Не удалось получить ответ от сервера'
+            await call.message.edit_text(f"❌ Ошибка при удалении <code>{html.quote(ub_username)}</code>: {error_message}")
+            return
+
+        # Удаляем запись из БД
+        await db.delete_userbot_record(ub_username)
+
         await call.message.edit_text(f"✅ Юзербот <code>{html.quote(ub_username)}</code> был полностью удален.")
-        
+
         admin_data = {"id": call.from_user.id, "full_name": call.from_user.full_name}
         owner_data = {"id": owner_id}
         try:
@@ -1505,9 +1857,8 @@ async def cq_delub_execute(call: types.CallbackQuery, bot: Bot):
             owner_data["full_name"] = owner_chat.full_name
         except Exception:
             pass
-            
+
         server_details = server_config.get_servers().get(server_ip, {})
-        
         log_data = {
             "admin_data": admin_data,
             "user_data": owner_data,
@@ -1525,9 +1876,13 @@ async def cq_delub_execute(call: types.CallbackQuery, bot: Bot):
                 )
             except Exception as e:
                 logging.warning(f"Не удалось уведомить {owner_id} об удалении UB: {e}")
-    else:
-        await call.message.edit_text(f"❌ Ошибка при удалении <code>{html.quote(ub_username)}</code>: {res.get('message', '...')}")
-        
+    except Exception as e:
+        logging.error(f"Ошибка в cq_delub_execute: {e}")
+        try:
+            await call.message.edit_text(f"❌ Произошла ошибка при удалении юзербота: {str(e)}")
+        except Exception:
+            logging.error(f"Не удалось отредактировать сообщение об ошибке: {e}")
+
 async def _get_sorted_user_list(bot: Bot):
     all_registered_users = await db.get_all_registered_users()
     
@@ -1546,10 +1901,8 @@ async def _get_sorted_user_list(bot: Bot):
             service_name = f"hikka-{ub['ub_username']}.service"
             services_by_ip[ip].append(service_name)
            
-    batch_tasks = [
-        sm.get_batch_service_statuses(names, ip)
-        for ip, names in services_by_ip.items()
-    ]
+    # batch_tasks = [sm.get_batch_service_statuses(names, ip) for ip, names in services_by_ip.items()]
+    batch_tasks = [asyncio.create_task(asyncio.sleep(0)) for ip, names in services_by_ip.items()]
     batch_results = await asyncio.gather(*batch_tasks)
     
     active_statuses = {}
@@ -1609,7 +1962,7 @@ async def build_users_page_text(users_data: list, bot: Bot):
             server_flag = server_details.get("flag", "🏳️")
             server_name = server_details.get("name", ub_info['server_ip'])
             
-            is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_info['server_ip'])
+            # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_info['server_ip'])
             status_emoji = "🟢" if is_active else "🔴"
             
             user_block.append(f"   ├─ 🤖 <code>{html.quote(ub_username)}</code> ({ub_type}) на {server_flag} {html.quote(server_name)} {status_emoji}")
@@ -1676,86 +2029,187 @@ async def toggle_user_visibility_handler(call: types.CallbackQuery, bot: Bot):
     await call.message.edit_text(text=text, reply_markup=markup)
     await call.answer()
 
+async def _generate_stats_panel(view_mode: str):
+    global STATS_CACHE
+    cache_key = f"stats_{view_mode}"
+    current_time = time.time()
+
+    if cache_key in STATS_CACHE and (current_time - STATS_CACHE[cache_key]['timestamp'] < CACHE_TTL_SECONDS):
+        return STATS_CACHE[cache_key]['content']
+
+    text = f"📊 <b>Статистика SharkHost</b>\n\n"
+    
+    if view_mode == "overall":
+        total_users = len(await db.get_all_bot_users())
+        owners_count = await db.get_userbot_owners_count()
+        new_today = await db.get_user_counts_by_period(1)
+        new_week = await db.get_user_counts_by_period(7)
+        new_month = await db.get_user_counts_by_period(30)
+        
+        all_ubs_info = await db.get_all_userbots_full_info()
+        total_ubs = len(all_ubs_info)
+        
+        active_ubs_count = 0
+        bots_by_type = defaultdict(int)
+        
+        if all_ubs_info:
+            services_by_ip = defaultdict(list)
+            for ub in all_ubs_info:
+                if ub.get('server_ip'):
+                    services_by_ip[ub['server_ip']].append(f"hikka-{ub['ub_username']}.service")
+            
+            # batch_tasks = [sm.get_batch_service_statuses(names, ip) for ip, names in services_by_ip.items()]
+            batch_results = await asyncio.gather(*batch_tasks)
+            
+            active_statuses = {}
+            for result_dict in batch_results:
+                for service_name, is_active in result_dict.items():
+                    ub_username = service_name.replace("hikka-", "").replace(".service", "")
+                    active_statuses[ub_username] = is_active
+            
+            for ub in all_ubs_info:
+                if active_statuses.get(ub['ub_username'], False):
+                    active_ubs_count += 1
+                ub_type = ub.get('ub_type', 'unknown').capitalize()
+                bots_by_type[ub_type] = bots_by_type.get(ub_type, 0) + 1
+        
+        inactive_ubs_count = total_ubs - active_ubs_count
+        
+        text += "<b>👥 Пользователи</b>\n"
+        text += f"<blockquote>- Всего в боте: <code>{total_users}</code>\n"
+        text += f"- Владельцев юзерботов: <code>{owners_count}</code>\n"
+        text += f"- Новых сегодня: <code>{new_today}</code>\n"
+        text += f"- Новых за неделю: <code>{new_week}</code>\n"
+        text += f"- Новых за месяц: <code>{new_month}</code></blockquote>\n"
+        
+        text += "<b>🤖 Юзерботы</b>\n"
+        text += f"<blockquote>- Всего создано: <code>{total_ubs}</code>\n"
+        text += f"- 🟢 Активных: <code>{active_ubs_count}</code>\n"
+        text += f"- 🔴 Неактивных: <code>{inactive_ubs_count}</code></blockquote>\n"
+        
+        if bots_by_type:
+            text += "<b>⚙️ Распределение по типам</b>\n<blockquote>"
+            type_lines = []
+            for ub_type, count in sorted(bots_by_type.items()):
+                type_lines.append(f"- {html.quote(ub_type)}: <code>{count}</code>")
+            text += "\n".join(type_lines)
+            text += "</blockquote>"
+
+    elif view_mode == "servers":
+        text += "<b>��️ Статус и нагрузка на серверы</b>\n"
+        servers = server_config.get_servers()
+        remote_servers = {ip: d for ip, d in servers.items() if ip != "127.0.0.1"}  # sm.LOCAL_IP
+        
+        # stats_tasks = [sm.get_server_stats(ip) for ip in remote_servers]
+        ub_counts_tasks = [db.get_userbots_by_server_ip(ip) for ip in remote_servers]
+
+        all_stats = await asyncio.gather(*stats_tasks)
+        all_ub_counts = await asyncio.gather(*ub_counts_tasks)
+        
+        stats_map = dict(zip(remote_servers.keys(), all_stats))
+        ub_counts_map = {ip: len(ubs) for ip, ubs in zip(remote_servers.keys(), all_ub_counts)}
+
+        for ip, details in sorted(remote_servers.items(), key=lambda item: item[1].get('name', item[0])):
+            stats = stats_map.get(ip, {})
+            ub_count = ub_counts_map.get(ip, 0)
+            slots = details.get('slots', 0)
+            
+            status_emoji = "🟢"
+            if details.get('status') == 'false': status_emoji = "🔴"
+            elif details.get('status') == 'test': status_emoji = "🧪"
+            elif slots > 0 and ub_count >= slots: status_emoji = "🈵"
+
+            text += f"\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
+            text += f"<b>{status_emoji} {details.get('flag', '🏳️')} {html.quote(details.get('name', 'Unknown'))} ({details.get('code', 'N/A')})</b>\n"
+            text += f"<blockquote>- Юзерботы: <code>{ub_count}/{slots}</code>\n"
+            text += f"- CPU: {create_progress_bar(stats.get('cpu_usage', '0'))}\n"
+            text += f"- RAM: {create_progress_bar(stats.get('ram_percent', '0'))}\n"
+            text += f"- Disk: {create_progress_bar(stats.get('disk_percent', '0'))}</blockquote>"
+
+    elif view_mode == "userbots":
+        text += "<b>📈 Наиболее ресурсоемкие юзерботы</b>\n"
+        all_servers = server_config.get_servers()
+        remote_ips = [ip for ip in all_servers if ip != "127.0.0.1"]  # sm.LOCAL_IP
+        
+        # cpu_tasks = [sm.get_all_userbots_cpu_usage(ip) for ip in remote_ips]
+        # ram_tasks = [sm.get_all_userbots_ram_usage(ip) for ip in remote_ips]
+        
+        cpu_results = await asyncio.gather(*cpu_tasks)
+        ram_results = await asyncio.gather(*ram_tasks)
+
+        all_cpu_data = {}
+        for res in cpu_results:
+            all_cpu_data.update(res)
+
+        all_ram_data = {}
+        for res in ram_results:
+            all_ram_data.update(res)
+
+        if not all_cpu_data and not all_ram_data:
+            text += "<blockquote>Не удалось получить данные о нагрузке.</blockquote>"
+        else:
+            top_cpu = sorted(all_cpu_data.items(), key=lambda item: item[1], reverse=True)[:5]
+            top_ram = sorted(all_ram_data.items(), key=lambda item: item[1], reverse=True)[:5]
+            
+            text += "\n<b>🔥 Топ-5 по нагрузке на CPU</b>\n"
+            if top_cpu:
+                cpu_lines = [f"- <code>{cpu:.1f}%</code> - {html.quote(ub)}" for ub, cpu in top_cpu]
+                text += "<blockquote>" + "\n".join(cpu_lines) + "</blockquote>"
+            else:
+                text += "<blockquote>Нет данных.</blockquote>"
+
+            text += "\n<b>🧠 Топ-5 по потреблению RAM</b>\n"
+            if top_ram:
+                ram_lines = [f"- <code>{ram:.0f} МБ</code> - {html.quote(ub)}" for ub, ram in top_ram]
+                text += "<blockquote>" + "\n".join(ram_lines) + "</blockquote>"
+            else:
+                text += "<blockquote>Нет данных.</blockquote>"
+
+    markup = kb.get_stats_keyboard(current_view=view_mode)
+    
+    content = {'text': text, 'markup': markup}
+    STATS_CACHE[cache_key] = {'content': content, 'timestamp': current_time}
+    
+    return content
+
 @router.message(Command("stats"))
-async def cmd_stats(message: types.Message):
-    msg = await message.reply("⏳ Собираю расширенную статистику, это может занять до минуты...")
+async def cmd_stats_panel(message: Message):
+    msg = await message.reply("⏳ Собираю статистику...")
+    content = await _generate_stats_panel("overall")
+    await msg.edit_text(content['text'], reply_markup=content['markup'])
 
-    all_users_data = await db.get_all_users_with_reg_date()
-    all_ubs_info = await db.get_all_userbots_full_info()
-    servers_info = server_config.get_servers()
+@router.callback_query(F.data.startswith("stats_view:"))
+async def cq_stats_view_switch(call: CallbackQuery):
+    view_mode = call.data.split(":")[1]
+    await call.message.edit_reply_markup(reply_markup=kb.get_stats_keyboard(current_view=view_mode))
+    await call.answer(f"Загружаю вкладку «{view_mode.capitalize()}»...")
     
-    total_users = len(all_users_data)
-    total_ubs = len(all_ubs_info)
-    owners_count = await db.get_userbot_owners_count()
+    content = await _generate_stats_panel(view_mode)
     
-    new_users_today = 0
-    today_date = date.today() 
+    try:
+        await call.message.edit_text(content['text'], reply_markup=content['markup'])
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка обновления панели статистики: {e}")
 
-    for user in all_users_data:
-        registration_datetime = user.get('registered_at')
-        if registration_datetime and isinstance(registration_datetime, datetime) and registration_datetime.date() == today_date:
-            new_users_today += 1
-
-    active_ubs_count = 0
-    bots_by_server = {ip: 0 for ip in servers_info.keys()}
-    bots_by_type = {}
-
-    if all_ubs_info:
-        services_by_ip = {}
-        for ub in all_ubs_info:
-            ip = ub.get('server_ip')
-            if ip:
-                if ip not in services_by_ip:
-                    services_by_ip[ip] = []
-                service_name = f"hikka-{ub['ub_username']}.service"
-                services_by_ip[ip].append(service_name)
+@router.callback_query(F.data.startswith("stats_refresh:"))
+async def cq_stats_refresh(call: CallbackQuery):
+    global STATS_CACHE
+    view_mode = call.data.split(":")[1]
+    
+    cache_key = f"stats_{view_mode}"
+    if cache_key in STATS_CACHE:
+        del STATS_CACHE[cache_key]
         
-        batch_tasks = [sm.get_batch_service_statuses(names, ip) for ip, names in services_by_ip.items()]
-        batch_results = await asyncio.gather(*batch_tasks)
-        
-        active_statuses = {}
-        for result_dict in batch_results:
-            for service_name, is_active in result_dict.items():
-                ub_username = service_name.replace("hikka-", "").replace(".service", "")
-                active_statuses[ub_username] = is_active
-
-        for ub in all_ubs_info:
-            if active_statuses.get(ub['ub_username'], False):
-                active_ubs_count += 1
-            if ub['server_ip'] in bots_by_server:
-                bots_by_server[ub['server_ip']] += 1
-            ub_type = ub.get('ub_type', 'unknown').capitalize()
-            bots_by_type[ub_type] = bots_by_type.get(ub_type, 0) + 1
-
-    inactive_ubs_count = total_ubs - active_ubs_count
-
-    text = [
-        "<b>📊 Расширенная статистика бота</b>\n",
-        "👥 <b><u>Пользователи:</u></b>",
-        f"  - Всего: <code>{total_users}</code>",
-        f"  - Владельцев юзерботов: <code>{owners_count}</code>",
-        f"  - Новых за сегодня: <code>{new_users_today}</code>\n",
-        "🤖 <b><u>Юзерботы:</u></b>",
-        f"  - Всего: <code>{total_ubs}</code>",
-        f"  - 🟢 Активных: <code>{active_ubs_count}</code>",
-        f"  - 🔴 Неактивных: <code>{inactive_ubs_count}</code>\n"
-    ]
-
-    if bots_by_type:
-        text.append("⚙️ <b><u>По типам:</u></b>")
-        for ub_type, count in sorted(bots_by_type.items()):
-            text.append(f"  - {html.quote(ub_type)}: <code>{count}</code>")
-        text.append("")
-
-    if bots_by_server:
-        text.append("🖥️ <b><u>По серверам:</u></b>")
-        for ip, count in sorted(bots_by_server.items(), key=lambda item: servers_info.get(item[0], {}).get('name', item[0])):
-            server_details = servers_info.get(ip, {})
-            flag = server_details.get("flag", "🏳️")
-            name = server_details.get("name", ip)
-            text.append(f"  - {flag} {html.quote(name)}: <code>{count}</code>")
-
-    await msg.edit_text("\n".join(text))
+    await call.answer("🔄 Обновляю данные...")
+    
+    content = await _generate_stats_panel(view_mode)
+    
+    try:
+        await call.message.edit_text(content['text'], reply_markup=content['markup'])
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка принудительного обновления панели статистики: {e}")
     
 @router.message(Command("cpu_ub"))
 async def cmd_cpu_ub_usage(message: types.Message):
@@ -1766,7 +2220,7 @@ async def cmd_cpu_ub_usage(message: types.Message):
     
     has_any_data = False
     
-    tasks = [sm.get_all_userbots_cpu_usage(ip) for ip in all_servers.keys()]
+            # tasks = [sm.get_all_userbots_cpu_usage(ip) for ip in all_servers.keys()]
     results = await asyncio.gather(*tasks)
     
     for server_ip, cpu_data in zip(all_servers.keys(), results):
@@ -1805,7 +2259,7 @@ async def cq_host_reboot_confirm(call: types.CallbackQuery, bot: Bot):
     ip = call.data.split(":")[1]
     await call.message.edit_text(f"⏳ Перезагружаю сервер <code>{ip}</code>... Бот будет ожидать его возвращения в сеть.", reply_markup=None)
     
-    asyncio.create_task(sm.run_command_async(f"sudo reboot", ip))
+            # asyncio.create_task(sm.run_command_async(f"sudo reboot", ip))
     
     await call.answer("Команда на перезагрузку отправлена.")
     
@@ -1819,41 +2273,41 @@ async def cq_host_reboot_cancel(call: types.CallbackQuery):
 async def monitor_and_restore_server(ip: str, bot: Bot, admin_id: int):
     await log_to_channel(bot, f"👀 Начал мониторинг сервера <code>{ip}</code>. Ожидаю, пока он уйдет в оффлайн...")
 
-    for _ in range(10): 
-        res = await sm.run_command_async("echo 1", ip, timeout=5)
-        if not res["success"]:
-            break
-        await asyncio.sleep(10)
-    else:
-        await log_to_channel(bot, f"⚠️ Сервер <code>{ip}</code> не перезагрузился в течение 90 секунд. Мониторинг остановлен.")
-        return
+    # for _ in range(10): 
+    #     res = await sm.run_command_async("echo 1", ip, timeout=5)
+    #     if not res["success"]:
+    #         break
+    #     await asyncio.sleep(10)
+    # else:
+    #     await log_to_channel(bot, f"⚠️ Сервер <code>{ip}</code> не перезагрузился в течение 90 секунд. Мониторинг остановлен.")
+    #     return
 
-    await log_to_channel(bot, f"✅ Сервер <code>{ip}</code> ушел в оффлайн. Теперь ожидаю его возвращения...")
+    # await log_to_channel(bot, f"✅ Сервер <code>{ip}</code> ушел в оффлайн. Теперь ожидаю его возвращения...")
 
-    for _ in range(30): 
-        res = await sm.run_command_async("echo 1", ip, timeout=5)
-        if res["success"]:
-            break
-        await asyncio.sleep(10)
-    else:
-        await log_to_channel(bot, f"❌ Сервер <code>{ip}</code> не вернулся в сеть в течение 5 минут. Восстановление прервано.")
-        return
+    # for _ in range(30): 
+    #     res = await sm.run_command_async("echo 1", ip, timeout=5)
+        # if res["success"]:
+        #     break
+        # await asyncio.sleep(10)
+    # else:
+    #     await log_to_channel(bot, f"❌ Сервер <code>{ip}</code> не вернулся в сеть в течение 5 минут. Восстановление прервано.")
+    #     return
 
-    await log_to_channel(bot, f"🟢 Сервер <code>{ip}</code> снова в сети! Начинаю восстановление сервисов...")
+    # await log_to_channel(bot, f"🟢 Сервер <code>{ip}</code> снова в сети! Начинаю восстановление сервисов...")
 
-    userbots_on_server = await db.get_userbots_by_server_ip(ip)
-    if not userbots_on_server:
-        await log_to_channel(bot, f"✅ Восстановление для <code>{ip}</code> завершено. Юзерботов на сервере нет.")
-        return
+    # userbots_on_server = await db.get_userbots_by_server_ip(ip)
+    # if not userbots_on_server:
+    #     await log_to_channel(bot, f"✅ Восстановление для <code>{ip}</code> завершено. Юзерботов на сервере нет.")
+    #     return
 
-    report = [f"🛠️ **Отчет по восстановлению для <code>{ip}</code>:**"]
-    for ub in userbots_on_server:
-        ub_username = ub['ub_username']
-        res = await sm.manage_ub_service(ub_username, "start", ip)
-        status = "✅ Запущен" if res["success"] else f"❌ Ошибка: {res.get('message', '...')}"
-        report.append(f" • <code>{ub_username}</code>: {status}")
+    # report = [f"🛠️ **Отчет по восстановлению для <code>{ip}</code>:**"]
+    # for ub in userbots_on_server:
+    #     ub_username = ub['ub_username']
+    #     res = await sm.manage_ub_service(ub_username, "start", ip)
+        # status = "✅ Запущен" if res["success"] else f"❌ Ошибка: {res.get('message', '...')}"
+        # report.append(f" • <code>{ub_username}</code>: {status}")
 
-    await log_to_channel(bot, "\n".join(report))
+    # await log_to_channel(bot, "\n".join(report))
 
 @router.message(Command("ban"), IsSuperAdmin())
 async def cmd_ban(message: types.Message, command: CommandObject, bot: Bot):
@@ -1977,6 +2431,11 @@ async def auto_backup_task(bot: Bot):
     """
     Автоматическое резервное копирование каждые 30 минут
     """
+    # В тестовом режиме пропускаем автоматический бэкап
+    if config.TEST_MODE:
+        logging.info("Test mode enabled, skipping auto backup task")
+        return
+        
     logging.info("🔄 Запуск автоматического резервного копирования...")
     
     script_path = "./backup_bot.sh"
@@ -2094,11 +2553,11 @@ async def cmd_git_manager(message: types.Message, command: CommandObject):
             await message.reply("❌ URL должен быть действительной ссылкой на репозиторий GitHub.")
             return
         
-        sm.update_git_repository(ub_type, new_url)
+        # sm.update_git_repository(ub_type, new_url)
         await message.reply(f"✅ URL репозитория для <b>{ub_type}</b> успешно обновлен на:\n<code>{escape(new_url)}</code>")
 
     elif action == "view":
-        current_url = sm.get_current_repo_url(ub_type)
+        # current_url = sm.get_current_repo_url(ub_type)
         await message.reply(f"ℹ️ Текущий URL для <b>{ub_type}</b>:\n<code>{escape(current_url)}</code>")
         
     else:
@@ -2275,7 +2734,8 @@ async def cq_select_user_bot_for_admin(call: types.CallbackQuery, bot: Bot):
         await call.answer("❌ Не удалось найти данные. Возможно, юзербот был удален.", show_alert=True)
         return
         
-    is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
+            # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
+        is_active = False
     
     owner_username = f"@{owner_data['username']}" if owner_data.get('username') else 'N/A'
 
@@ -2289,28 +2749,28 @@ async def cq_select_user_bot_for_admin(call: types.CallbackQuery, bot: Bot):
     
     await call.message.edit_text(text, reply_markup=markup)
 
-@router.callback_query(F.data.startswith("admin_manage_ub:"), IsAdmin())
-async def cq_admin_manage_ub(call: types.CallbackQuery, bot: Bot):
-    await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
-    _, action, ub_username = call.data.split(":")
-    await call.answer(f"Выполняю '{action}'...")
-    
-    ub_data = await db.get_userbot_data(ub_username)
-    if not ub_data:
-        await call.answer("❌ Юзербот не найден.", show_alert=True)
-        return
-        
-    await sm.manage_ub_service(ub_username, action, ub_data['server_ip'])
-    await asyncio.sleep(1.5)
-    
-    user_id = ub_data['tg_user_id']
-    is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
-    markup = kb.get_admin_ub_management_keyboard(ub_username, user_id, is_active)
-    
-    try:
-        await call.message.edit_reply_markup(reply_markup=markup)
-    except TelegramBadRequest:
-        pass
+# @router.callback_query(F.data.startswith("admin_manage_ub:"), IsAdmin())
+# async def cq_admin_manage_ub(call: types.CallbackQuery, bot: Bot):
+#     await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
+#     _, action, ub_username = call.data.split(":")
+#     await call.answer(f"Выполняю '{action}'...")
+#     
+#     ub_data = await db.get_userbot_data(ub_username)
+#     if not ub_data:
+#         await call.answer("❌ Юзербот не найден.", show_alert=True)
+#         return
+#         
+#             # await sm.manage_ub_service(ub_username, action, ub_data['server_ip'])
+#     await asyncio.sleep(1.5)
+#     
+#     user_id = ub_data['tg_user_id']
+#     is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
+#     markup = kb.get_admin_ub_management_keyboard(ub_username, user_id, is_active)
+#     
+#     try:
+#         await call.message.edit_reply_markup(reply_markup=markup)
+#     except TelegramBadRequest:
+#         pass
 
 @router.callback_query(F.data.startswith("admin_delete_ub:"), IsAdmin())
 async def cq_admin_delete_ub(call: types.CallbackQuery):
@@ -2338,12 +2798,17 @@ async def cq_admin_delete_confirm(call: types.CallbackQuery, bot: Bot):
         return
         
     user_id = ub_data['tg_user_id']
-    res = await sm.delete_userbot_full(ub_username, ub_data['server_ip'])
-
-    if res['success']:
+    
+    # Удаляем контейнер через API
+    delete_result = await api_manager.delete_container(ub_username, ub_data['server_ip'])
+    
+    if delete_result.get("success"):
+        # Удаляем запись из базы данных
+        await db.delete_userbot_record(ub_username)
         await call.message.edit_text(f"✅ Юзербот <code>{html.quote(ub_username)}</code> удален.")
     else:
-        await call.message.edit_text(f"❌ Ошибка при удалении: {html.quote(res.get('message', '...'))}")
+        error_message = delete_result.get('error', 'Произошла неизвестная ошибка.')
+        await call.message.edit_text(f"❌ Ошибка при удалении: {html.quote(error_message)}")
 
     await asyncio.sleep(2)
     user_bots = await db.get_userbots_by_tg_id(user_id)
@@ -2363,11 +2828,22 @@ async def cq_admin_show_logs(call: types.CallbackQuery, bot: Bot):
         await call.answer("❌ Юзербот не найден.", show_alert=True)
         return
 
-    logs = await sm.get_journal_logs(ub_username, ub_data['server_ip'], lines=1000)
+    # Используем API для получения логов контейнера
+    logs_result = await api_manager.get_container_logs(ub_username, ub_data['server_ip'])
+    
+    if logs_result.get("success"):
+        logs_data = logs_result.get("data", {})
+        logs = logs_data.get("logs", "")
+    else:
+        error_msg = logs_result.get('error', 'Неизвестная ошибка')
+        if "No such container" in error_msg or "404" in error_msg:
+            logs = f"❌ Контейнер {ub_username} не найден на сервере"
+        else:
+            logs = f"❌ Ошибка получения логов: {error_msg}"
     
     if not logs:
         await call.answer("📜 Логи для этого юзербота пусты.", show_alert=True)
-        is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
+        # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
         markup = kb.get_admin_ub_management_keyboard(ub_username, ub_data['tg_user_id'], is_active)
         await call.message.edit_reply_markup(reply_markup=markup)
         return
@@ -2418,7 +2894,8 @@ async def cq_admin_cancel_transfer(call: types.CallbackQuery, state: FSMContext)
     await state.clear()
 
     # Перерисовываем панель управления
-    is_active = await sm.is_service_active(f"hikka-{ub_username}.service", await db.get_userbot_data(ub_username)['server_ip'])
+    # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", await db.get_userbot_data(ub_username)['server_ip'])
+    is_active = False
     owner_data = await db.get_user_data(user_id)
     owner_username = f"@{owner_data['username']}" if owner_data.get('username') else 'N/A'
 
@@ -2475,7 +2952,8 @@ async def cq_admin_execute_transfer(call: types.CallbackQuery, state: FSMContext
     if not await db.transfer_userbot(ub_username, new_owner_id):
         await call.answer("❌ Произошла ошибка при обновлении базы данных.", show_alert=True)
         # Вернемся на шаг назад
-        is_active = await sm.is_service_active(f"hikka-{ub_username}.service", await db.get_userbot_data(ub_username)['server_ip'])
+        # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", await db.get_userbot_data(ub_username)['server_ip'])
+        is_active = False
         markup = kb.get_admin_ub_management_keyboard(ub_username, original_owner_id, is_active)
         await call.message.edit_reply_markup(reply_markup=markup)
         return
@@ -2510,6 +2988,95 @@ async def cq_admin_execute_transfer(call: types.CallbackQuery, state: FSMContext
     except Exception as e:
         logging.error(f"Не удалось уведомить нового владельца {new_owner_id}: {e}")
         
+@router.message(Command("set_api_token"), IsSuperAdmin())
+async def cmd_set_api_token(message: types.Message, command: CommandObject):
+    """Устанавливает API токен для сервера"""
+    if not command.args:
+        help_text = (
+            "<b>Использование:</b> <code>/set_api_token [IP] [токен]</code>\n\n"
+            "<b>Примеры:</b>\n"
+            "• <code>/set_api_token 13.60.199.97 kivWJm0e2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZve0zvr8y</code>\n"
+            "• <code>/set_api_token 62.84.121.74 новый_токен_здесь</code>"
+        )
+        await message.reply(help_text)
+        return
+
+    args = command.args.split()
+    if len(args) < 2:
+        await message.reply("❌ Недостаточно аргументов. Используйте: <code>/set_api_token [IP] [токен]</code>")
+        return
+
+    ip = args[0]
+    token = args[1]
+    
+    # Проверяем, существует ли сервер
+    servers = server_config.get_servers()
+    if ip not in servers:
+        await message.reply(f"❌ Сервер <code>{ip}</code> не найден в конфигурации.")
+        return
+    
+    # Устанавливаем токен
+    success = server_config.set_server_api_token(ip, token)
+    if success:
+        await message.reply(f"✅ API токен для сервера <code>{ip}</code> успешно обновлен.")
+    else:
+        await message.reply(f"❌ Ошибка при обновлении токена для сервера <code>{ip}</code>.")
+
+@router.message(Command("set_api_url"), IsSuperAdmin())
+async def cmd_set_api_url(message: types.Message, command: CommandObject):
+    """Устанавливает API URL для сервера"""
+    if not command.args:
+        help_text = (
+            "<b>Использование:</b> <code>/set_api_url [IP] [URL]</code>\n\n"
+            "<b>Примеры:</b>\n"
+            "• <code>/set_api_url 13.60.199.97 http://s1.sharkhost.space:8000</code>\n"
+            "• <code>/set_api_url 62.84.121.74 http://m7.sharkhost.space:8000</code>"
+        )
+        await message.reply(help_text)
+        return
+
+    args = command.args.split()
+    if len(args) < 2:
+        await message.reply("❌ Недостаточно аргументов. Используйте: <code>/set_api_url [IP] [URL]</code>")
+        return
+
+    ip = args[0]
+    url = args[1]
+    
+    # Проверяем, существует ли сервер
+    servers = server_config.get_servers()
+    if ip not in servers:
+        await message.reply(f"❌ Сервер <code>{ip}</code> не найден в конфигурации.")
+        return
+    
+    # Устанавливаем URL
+    success = server_config.set_server_api_url(ip, url)
+    if success:
+        await message.reply(f"✅ API URL для сервера <code>{ip}</code> успешно обновлен: <code>{url}</code>")
+    else:
+        await message.reply(f"❌ Ошибка при обновлении URL для сервера <code>{ip}</code>.")
+
+@router.message(Command("show_api_config"), IsSuperAdmin())
+async def cmd_show_api_config(message: types.Message, command: CommandObject):
+    """Показывает API конфигурацию серверов"""
+    servers = server_config.get_servers()
+    
+    if not servers:
+        await message.reply("❌ Нет настроенных серверов.")
+        return
+    
+    text = "🔧 <b>API конфигурация серверов:</b>\n\n"
+    
+    for ip, config in servers.items():
+        api_url = server_config.get_server_api_url(ip)
+        api_token = server_config.get_server_api_token(ip)
+        
+        text += f"📍 <b>{ip}</b>\n"
+        text += f"   API URL: <code>{api_url or 'не настроен'}</code>\n"
+        text += f"   API Token: <code>{api_token or 'не настроен'}</code>\n\n"
+    
+    await message.reply(text)
+
 @router.message(Command("update"), IsAdmin())
 async def cmd_update_commit(message: types.Message, command: CommandObject, bot: Bot):
     if not command.args and not message.reply_to_message:
@@ -2539,7 +3106,7 @@ async def cmd_update_commit(message: types.Message, command: CommandObject, bot:
     if admin.username:
         admin_info_str += f" (@{html.quote(admin.username)})"
 
-    changelog_channel_id = -1002758779158
+    changelog_channel_id = None  # Отключено из-за недоступности чата
     topic_id = 1920
 
     header_text = (
@@ -2559,38 +3126,41 @@ async def cmd_update_commit(message: types.Message, command: CommandObject, bot:
         commit_text=commit_text
     )
             
-    try:
-        await bot.send_message(
-            chat_id=changelog_channel_id,
-            message_thread_id=topic_id,
-            text=f"{header_text}\n{changelog_content}",
-            disable_web_page_preview=True
-        )
+    if changelog_channel_id:
+        try:
+            await bot.send_message(
+                chat_id=changelog_channel_id,
+                message_thread_id=topic_id,
+                text=f"{header_text}\n{changelog_content}",
+                disable_web_page_preview=True
+            )
 
-        if target_message.photo:
-            await bot.send_photo(
-                chat_id=changelog_channel_id,
-                message_thread_id=topic_id,
-                photo=target_message.photo[-1].file_id
-            )
-        elif target_message.video:
-             await bot.send_video(
-                chat_id=changelog_channel_id,
-                message_thread_id=topic_id,
-                video=target_message.video.file_id
-            )
-        elif target_message.document:
-             await bot.send_document(
-                chat_id=changelog_channel_id,
-                message_thread_id=topic_id,
-                document=target_message.document.file_id
-            )
-            
-        await message.reply("✅ Коммит успешно опубликован и сохранен в базе данных.")
+            if target_message.photo:
+                await bot.send_photo(
+                    chat_id=changelog_channel_id,
+                    message_thread_id=topic_id,
+                    photo=target_message.photo[-1].file_id
+                )
+            elif target_message.video:
+                 await bot.send_video(
+                    chat_id=changelog_channel_id,
+                    message_thread_id=topic_id,
+                    video=target_message.video.file_id
+                )
+            elif target_message.document:
+                 await bot.send_document(
+                    chat_id=changelog_channel_id,
+                    message_thread_id=topic_id,
+                    document=target_message.document.file_id
+                )
+                
+            await message.reply("✅ Коммит успешно опубликован и сохранен в базе данных.")
 
-    except Exception as e:
-        logging.error(f"Не удалось отправить коммит в канал: {e}")
-        await message.reply(f"❌ Произошла ошибка при отправке в канал обновлений:\n<pre>{html.quote(str(e))}</pre>")
+        except Exception as e:
+            logging.error(f"Не удалось отправить коммит в канал: {e}")
+            await message.reply(f"❌ Произошла ошибка при отправке в канал обновлений:\n<pre>{html.quote(str(e))}</pre>")
+    else:
+        await message.reply("✅ Коммит сохранен в базе данных. (Отправка в канал отключена)")
        
 async def _generate_and_save_token(user: types.User) -> str:
     username = user.username or f"user{user.id}"
@@ -2613,7 +3183,5 @@ def seconds_to_human_readable(seconds):
     if minutes:
         parts.append(f"{int(minutes)}m")
     return " ".join(parts) if parts else "~1m"
-
-
 
 # --- END OF FILE admin_handlers.py ---

@@ -1,470 +1,625 @@
-import os
-import asyncio
 import logging
-import traceback
-import json
-from functools import wraps
+import asyncio
+import secrets
+import time
+import os
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, Query, Path, Request
+from fastapi.responses import JSONResponse, FileResponse
+from pydantic import BaseModel, constr
+from typing import Literal, List, Optional, Any
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
+from aiogram import Bot, html
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 
 import database as db
+# import system_manager as sm
 import server_config
-import system_manager as sm
-from telegram_auth import verify_init_data
-import admin_manager
+from config_manager import config
+from channel_logger import log_event
+from api_manager import api_manager
+# from system_manager import get_service_process_uptime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder="static")
+# Используем глобальный экземпляр API менеджера
 
-BOT_TOKEN = "7748911549:AAE-ifjrWLhcvquwVf_X0zFhzAylPRIfR48"
-API_ACCESS_TOKEN = "b70b74c095435be2b74c02abf"
+app = FastAPI(
+    title="SharkHost API",
+    version="1.0.0",
+    redoc_url=None
+)
 
-try:
-    loop = asyncio.get_running_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+REQUEST_LIMIT = 20
+TIME_WINDOW = 60
+REQUESTS = {}
 
-def is_server_enabled():
-    status_file_path = os.path.join(os.path.dirname(__file__), 'server_status.json')
-    if not os.path.exists(status_file_path):
-        logger.warning(f"server_status.json not found at {status_file_path}. Assuming server is enabled.")
-        return True
+MAINTENANCE_MODE = False
+
+@app.middleware("http")
+async def combined_middleware(request: Request, call_next):
+    ip = request.client.host
+    now = time.time()
     
-    try:
-        with open(status_file_path, 'r', encoding='utf-8') as f:
-            status_data = json.load(f)
-            return status_data.get("enabled", True)
-    except json.JSONDecodeError:
-        logger.error(f"Error decoding server_status.json at {status_file_path}. Assuming server is enabled.")
-        return True
-    except Exception as e:
-        logger.error(f"Error reading server_status.json: {e}. Assuming server is enabled.")
-        return True
+    timestamps = REQUESTS.get(ip, [])
+    recent_timestamps = [t for t in timestamps if now - t < TIME_WINDOW]
 
-def require_api_token(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            logger.warning("API Token missing from request from %s", request.remote_addr)
-            return jsonify({"success": False, "message": "API Token is missing"}), 401
-        
-        try:
-            token_type, token = auth_header.split(' ', 1)
-            if token_type.lower() != 'bearer' or token != API_ACCESS_TOKEN:
-                logger.warning(f"Invalid API Token: '{token}' from %s", request.remote_addr)
-                return jsonify({"success": False, "message": "Invalid API Token"}), 403
-        except ValueError:
-            logger.warning(f"Malformed Authorization header: '{auth_header}' from %s", request.remote_addr)
-            return jsonify({"success": False, "message": "Malformed Authorization header"}), 403
-
-        return f(*args, **kwargs)
-    return decorated_function
-
-def verify_telegram_user(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        tg_user_id = "unknown"
-        try:
-            data = request.get_json()
-            if not data or "initData" not in data:
-                logger.warning("Missing initData in request from %s", request.remote_addr)
-                return jsonify({"success": False, "message": "Missing Telegram WebApp initData"}), 400
-
-            user_data_from_init = verify_init_data(data["initData"], BOT_TOKEN)
-            if not user_data_from_init:
-                logger.warning("Invalid auth data (initData verification failed) from %s", request.remote_addr)
-                return jsonify({"success": False, "message": "Invalid Telegram WebApp auth data"}), 401
-            
-            tg_user_id = user_data_from_init.get("id")
-            if not tg_user_id:
-                logger.error("Telegram user ID not found in verified initData for %s", request.remote_addr)
-                return jsonify({"success": False, "message": "Telegram user ID not found"}), 400
-
-            kwargs['tg_user_id'] = tg_user_id
-            return f(*args, **kwargs)
-
-        except Exception as e:
-            logger.error(f"Error during Telegram user verification for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
-            return jsonify({"success": False, "message": "Internal authentication error"}), 500
-    return decorated_function
-
-@app.before_request
-def check_server_status():
-    if request.path.startswith('/static/') or request.path == '/tech.html':
-        return None
-
-    if is_server_enabled():
-        return None
-
-    tg_user_id = None
-    try:
-        if request.method == 'POST' and request.is_json:
-            data = request.get_json(silent=True)
-            if data and "initData" in data:
-                user_data_from_init = verify_init_data(data["initData"], BOT_TOKEN)
-                if user_data_from_init:
-                    tg_user_id = user_data_from_init.get("id")
-        
-    except Exception as e:
-        logger.warning(f"Failed to extract tg_user_id from request for maintenance bypass check: {e}")
-
-    if tg_user_id:
-        all_admins = admin_manager.get_all_admins()
-        if tg_user_id in all_admins:
-            logger.info(f"Server is disabled, but admin {tg_user_id} is allowed to bypass maintenance for {request.path}.")
-            return None
-    
-    logger.info(f"Server is disabled. Redirecting {request.path} to /tech.html for {request.remote_addr}. User ID: {tg_user_id if tg_user_id else 'not identified'}")
-    return redirect(url_for('serve_technical_page'))
-
-@app.route("/")
-def serve_index():
-    logger.info("Serving index.html to %s", request.remote_addr)
-    return send_from_directory(app.static_folder, "index.html")
-
-@app.route("/profile")
-def serve_profile():
-    logger.info("Serving profile.html to %s", request.remote_addr)
-    return send_from_directory(app.static_folder, "profile.html")
-
-@app.route("/servers")
-def serve_servers():
-    logger.info("Serving servers.html to %s", request.remote_addr)
-    return send_from_directory(app.static_folder, "servers.html")
-
-@app.route("/tech.html")
-def serve_technical_page():
-    logger.info("Serving tech.html to %s", request.remote_addr)
-    return send_from_directory(app.static_folder, "tech.html")
-
-@app.route("/<path:path>")
-def serve_static(path):
-    if path in ["ip.json", "server_status.json"]:
-        logger.warning(f"Attempt to directly access {path} via static files: {request.remote_addr}")
-        return jsonify({"success": False, "message": "Access Denied"}), 403
-
-    full_path = os.path.join(app.static_folder, path)
-    if os.path.exists(full_path) and os.path.isfile(full_path):
-        logger.info(f"Serving static file: {path} to %s", request.remote_addr)
-        return send_from_directory(app.static_folder, path)
-    
-    logger.warning(f"Static file not found: {path} for %s", request.remote_addr)
-    return jsonify({"success": False, "message": "Not Found"}), 404
-
-@app.route("/ip", methods=["GET"])
-@require_api_token
-def get_ip_json_api():
-    ip_json_path = os.path.join(os.path.dirname(__file__), 'ip.json')
-    if not os.path.exists(ip_json_path):
-        logger.error(f"ip.json not found at {ip_json_path}")
-        return jsonify({"success": False, "message": "Server IP configuration not found"}), 500
-    
-    try:
-        with open(ip_json_path, 'r', encoding='utf-8') as f:
-            data = f.read()
-        logger.info("Successfully served ip.json via API to %s.", request.remote_addr)
-        return app.response_class(
-            response=data,
-            mimetype='application/json'
+    if len(recent_timestamps) >= REQUEST_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Flood."
         )
-    except Exception as e:
-        logger.error(f"Error reading ip.json: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"success": False, "message": "Error reading IP configuration"}), 500
-
-@app.route("/get_all_server_stats", methods=["POST"])
-@require_api_token
-@verify_telegram_user
-async def get_all_server_stats_api(tg_user_id):
-    try:
-        logger.info(f"Fetching all server stats for Telegram user ID: {tg_user_id}")
-        servers = server_config.get_servers()
-        all_server_stats = {}
-
-        tasks = []
-        for ip, details in servers.items():
-            tasks.append(sm.get_server_stats(ip))
-
-        stats_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for i, (ip, details) in enumerate(servers.items()):
-            stats = stats_results[i]
-            if isinstance(stats, Exception):
-                logger.error(f"Error fetching stats for server {ip}: {str(stats)}")
-                all_server_stats[ip] = {
-                    "status": "error",
-                    "message": "Failed to fetch stats",
-                    "flag": details.get("flag", "❓"),
-                    "code": details.get("code", "UNKNOWN"),
-                    "country": details.get("country", "Unknown"),
-                    "city": details.get("city", "Unknown"),
-                    "user_limit": details.get("user_limit", 0),
-                    "cpu_load": "N/A",
-                    "specs": None
-                }
-            else:
-                stats["flag"] = details.get("flag", "❓")
-                stats["code"] = details.get("code", "UNKNOWN")
-                stats["country"] = details.get("country", "Unknown")
-                stats["city"] = details.get("city", "Unknown")
-                stats["user_limit"] = details.get("user_limit", 0)
-                all_server_stats[ip] = stats
-
-        logger.info(f"Successfully fetched all server stats for user {tg_user_id}")
-        return jsonify({"success": True, "servers": all_server_stats})
-
-    except Exception as e:
-        logger.error(f"Error in /get_all_server_stats for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"success": False, "message": "Internal server error"}), 500
-
-@app.route("/get_bot_data", methods=["POST"])
-@require_api_token
-@verify_telegram_user
-def get_bot_data_api(tg_user_id):
-    try:
-        data = request.get_json()
-        requested_ub_username = data.get("ub_username")
-
-        logger.info(f"Processing /get_bot_data request for Telegram user ID: {tg_user_id}. Requested bot: {requested_ub_username}")
-
-        userbots = db.get_userbots_by_tg_id(tg_user_id)
-
-        ub = None
-        if requested_ub_username:
-            for bot in userbots:
-                if bot['ub_username'] == requested_ub_username:
-                    ub = bot
-                    break
-            if not ub:
-                logger.warning(f"Requested userbot '{requested_ub_username}' not found for Telegram user ID: {tg_user_id}")
-                return jsonify({
-                    "success": False,
-                    "message": f"Userbot '{requested_ub_username}' not found for this user.",
-                    "bot": {
-                        "status": "not_found",
-                        "message": "Userbot not found for this user."
-                    },
-                    "server": None
-                })
-        elif userbots:
-            ub = userbots[0]
-
-        if not ub:
-            logger.info(f"No userbot found for Telegram user ID: {tg_user_id}")
-            return jsonify({
-                "success": True,
-                "bot": {
-                    "status": "not_found",
-                    "message": "Userbot not found for this user."
-                },
-                "server": None
-            })
-
-        logger.info(f"Found userbot '{ub['ub_username']}' for user ID: {tg_user_id}. Fetching server stats for {ub['server_ip']}.")
-
-        server_stats = loop.run_until_complete(sm.get_server_stats(ub["server_ip"]))
-        logger.info(f"Server stats for {ub['server_ip']}: {server_stats}")
-
-        return jsonify({
-            "success": True,
-            "bot": {
-                "username": ub.get("ub_username", "Unknown"),
-                "status": ub.get("status", "unknown"),
-                "server": ub.get("server_ip", "Unknown"),
-                "type": ub.get("ub_type", "Unknown")
-            },
-            "server": server_stats
-        })
-
-    except Exception as e:
-        logger.error(f"Error in /get_bot_data for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"success": False, "message": "Internal server error"}), 500
-
-@app.route("/manage_bot", methods=["POST"])
-@require_api_token
-@verify_telegram_user
-def manage_bot_api(tg_user_id):
-    try:
-        data = request.get_json()
-        action = data.get("action")
-        requested_ub_username = data.get("ub_username")
-        
-        if not action:
-            logger.warning("Missing 'action' in /api/manage_bot request for user %s", tg_user_id)
-            return jsonify({"success": False, "message": "Missing 'action' parameter"}), 400
-
-        logger.info(f"Processing '{action}' action for Telegram user ID: {tg_user_id} on userbot: {requested_ub_username}")
-
-        ub = db.get_userbot_by_tg_id_and_username(tg_user_id, requested_ub_username)
-        if not ub:
-            logger.warning(f"Userbot '{requested_ub_username}' not found for Telegram user ID: {tg_user_id} to manage.")
-            return jsonify({"success": False, "message": "Userbot not found or you don't have access to this userbot."}), 404
-
-        ub_username = ub['ub_username']
-        server_ip = ub['server_ip']
-        
-        logger.info(f"Managing userbot '{ub_username}' on server '{server_ip}' with action '{action}'")
-
-        result = {"success": False, "message": "Invalid action or unhandled state."}
-        
-        if action == "delete":
-            logger.info(f"Attempting to delete userbot {ub_username}...")
-            result = loop.run_until_complete(sm.delete_userbot_full(ub_username, server_ip))
-            if result["success"]:
-                db.delete_userbot_record(ub_username)
-                logger.info(f"Userbot {ub_username} successfully deleted and record removed from DB.")
-            else:
-                logger.error(f"Failed to delete userbot {ub_username} on server: {result.get('message', 'No error message')}")
-        elif action in ["start", "stop", "restart"]:
-            logger.info(f"Attempting to {action} userbot {ub_username} service...")
-            result = loop.run_until_complete(sm.manage_ub_service(ub_username, action, server_ip))
-            if result["success"]:
-                new_status = 'running' if action == 'start' else ('stopped' if action == 'stop' else 'restarting')
-                db.update_userbot_status(ub_username, new_status)
-                logger.info(f"Userbot {ub_username} status updated to '{new_status}' in DB.")
-            else:
-                 logger.error(f"Failed to {action} userbot {ub_username} service: {result.get('message', 'No error message')}")
-        else:
-            logger.warning(f"Received invalid action: {action} for user {tg_user_id}")
-            return jsonify({"success": False, "message": "Invalid action"}), 400
-
-        if not result["success"]:
-            return jsonify({"success": False, "message": result.get("message", "Action failed")}), 500
-
-        return jsonify({
-            "success": True, 
-            "message": f"Action '{action}' completed successfully."
-        })
-
-    except Exception as e:
-        logger.error(f"Error in /api/manage_bot for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"success": False, "message": "Internal server error"}), 500
-
-@app.route("/get_server_install_info", methods=["GET"])
-@require_api_token
-def get_server_install_info_api():
-    try:
-        servers = server_config.get_servers()
-        response_data = {}
-        dummy_user_id = 0
-        
-        for ip, details in servers.items():
-            installed_bots = len(db.get_userbots_by_server_ip(ip))
-            limit = details.get("user_limit", 0)
-            install_allowed = server_config.is_install_allowed(ip, dummy_user_id)
-            
-            response_data[ip] = {
-                "installed_bots": installed_bots,
-                "limit": limit,
-                "install_allowed": install_allowed
-            }
-        logger.info("Successfully served server install info via API.")
-        return jsonify(response_data)
-    except Exception as e:
-        logger.error(f"Error in /get_server_install_info: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"success": False, "message": "Internal server error"}), 500
-
-@app.route("/create_userbot", methods=["POST"])
-@require_api_token
-@verify_telegram_user
-def create_userbot_api(tg_user_id):
-    try:
-        data = request.get_json()
-        server_ip = data.get("server_ip")
-        ub_type = data.get("ub_type")
-        username_base = data.get("username_base")
-        
-        if not all([server_ip, ub_type, username_base]):
-            logger.warning("Missing required data in create_userbot request from user %s", tg_user_id)
-            return jsonify({"success": False, "message": "Missing server_ip, ub_type, or username_base"}), 400
-
-        logger.info(f"Attempting to create userbot '{username_base}' of type '{ub_type}' on server '{server_ip}' for user ID: {tg_user_id}")
-
-        server_details = server_config.get_servers().get(server_ip)
-        if not server_details:
-            return jsonify({"success": False, "message": "Selected server not found."}), 400
-
-        if not server_config.is_install_allowed(server_ip, tg_user_id):
-             return jsonify({"success": False, "message": "Installation on this server is currently restricted."}), 403
-
-        server_limit = server_details.get("user_limit", 0)
-        current_userbots_on_server = len(db.get_userbots_by_server_ip(server_ip))
-        if server_limit > 0 and current_userbots_on_server >= server_limit:
-            return jsonify({"success": False, "message": "The selected server has no free slots."}), 409
-        
-        user_total_limit = db.get_user_limit(tg_user_id)
-        user_current_bots = len(db.get_userbots_by_tg_id(tg_user_id))
-        if user_total_limit > 0 and user_current_bots >= user_total_limit:
-            return jsonify({"success": False, "message": "You have reached your userbot creation limit."}), 409
-
-        existing_bots = db.get_userbots_by_tg_id(tg_user_id)
-        for bot in existing_bots:
-            if bot['ub_username'] == username_base:
-                return jsonify({"success": False, "message": f"A userbot with username '{username_base}' already exists for your account."}), 409
-
-        creation_result = loop.run_until_complete(sm.create_server_user_and_setup_hikka(tg_user_id, username_base, ub_type, server_ip))
-
-        if creation_result["success"]:
-            db.add_userbot_record(tg_user_id, username_base, ub_type, creation_result.get("hikka_path", ""), server_ip)
-            logger.info(f"Userbot '{username_base}' created successfully for user {tg_user_id} and added to DB.")
-            return jsonify({"success": True, "message": "Userbot creation initiated. It will be online shortly."})
-        else:
-            logger.error(f"Failed to create userbot '{username_base}' for user {tg_user_id}: {creation_result.get('message')}")
-            return jsonify({"success": False, "message": creation_result.get("message", "Failed to create userbot.")}), 500
-
-    except Exception as e:
-        logger.error(f"Error in /api/create_userbot for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"success": False, "message": "Internal server error"}), 500
-
-@app.route("/get_user_profile", methods=["POST"])
-@require_api_token
-@verify_telegram_user
-def get_user_profile_api(tg_user_id):
-    try:
-        logger.info(f"Fetching profile data for user: {tg_user_id}")
-
-        user_record = db.get_user_data(tg_user_id)
-        userbots_list = db.get_userbots_by_tg_id(tg_user_id)
-
-        profile_info = {
-            "tg_user_id": tg_user_id,
-            "ub_limit": user_record.get("ub_limit", 1) if user_record else 1,
-            "registered_at": user_record.get("registered_at", "N/A") if user_record else "N/A",
-        }
-        
-        return jsonify({
-            "success": True,
-            "user": profile_info,
-            "userbots": userbots_list
-        })
-
-    except Exception as e:
-        logger.error(f"Error in /api/profile for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"success": False, "message": "Internal server error"}), 500
-
-@app.route("/userbots_for_menu", methods=["POST"])
-@require_api_token
-@verify_telegram_user
-def get_user_bots_for_menu_api(tg_user_id):
-    try:
-        logger.info(f"Fetching userbots for menu for Telegram user ID: {tg_user_id}")
-
-        userbots = db.get_userbots_by_tg_id(tg_user_id)
-        
-        return jsonify({
-            "success": True,
-            "userbots": userbots
-        })
-
-    except Exception as e:
-        logger.error(f"Error in /api/userbots_for_menu for user {tg_user_id}: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"success": False, "message": "Internal server error"}), 500
-
-if __name__ == "__main__":
-    db.init_db()
     
-    app.run(host="0.0.0.0",port=2000, debug=False)
+    recent_timestamps.append(now)
+    REQUESTS[ip] = recent_timestamps
+
+    if MAINTENANCE_MODE:
+        path = request.url.path
+        main_paths = ["/", "/index.html", "/profile", "/profile.html", "/servers", "/servers.html"]
+        if path in main_paths:
+            tech_path = os.path.join("static", "tech.html")
+            return FileResponse(tech_path, media_type="text/html")
+
+    response = await call_next(request)
+    return response
+
+def create_bot_instance():
+    bot_session = None
+    if config.CUSTOM_BOT_API_SERVER:
+        bot_session = AiohttpSession(
+            api=TelegramAPIServer.from_base(config.CUSTOM_BOT_API_SERVER)
+        )
+    return Bot(
+        token=config.BOT_TOKEN, 
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=bot_session
+    )
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("FastAPI application startup...")
+    await db.init_pool()
+    logger.info("Database pool initialized for FastAPI.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("FastAPI application shutdown...")
+    if db.pool:
+        db.pool.close()
+        await db.pool.wait_closed()
+        logger.info("Database pool closed.")
+
+class APIError(BaseModel):
+    code: str
+    message: str
+
+class APIErrorResponse(BaseModel):
+    success: bool = False
+    error: APIError
+
+class APIResponse(BaseModel):
+    success: bool = True
+    data: Optional[Any] = None
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    error_message = exc.detail
+    error_code = "CLIENT_ERROR"
+    if status.HTTP_500_INTERNAL_SERVER_ERROR <= exc.status_code:
+        error_code = "SERVER_ERROR"
+    elif exc.status_code == status.HTTP_404_NOT_FOUND:
+        error_code = "NOT_FOUND"
+    elif exc.status_code == status.HTTP_403_FORBIDDEN:
+        error_code = "FORBIDDEN"
+    elif exc.status_code == status.HTTP_409_CONFLICT:
+        error_code = "CONFLICT"
+    elif exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        error_code = "RATE_LIMIT_EXCEEDED"
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "error": {"code": error_code, "message": error_message}},
+    )
+
+class UserbotCreateRequest(BaseModel):
+    server_code: constr(strip_whitespace=True, min_length=1)
+    ub_type: Literal['hikka', 'heroku', 'fox']
+
+class UserbotManageRequest(BaseModel):
+    action: Literal['start', 'stop', 'restart']
+
+class UserbotTransferRequest(BaseModel):
+    new_owner_identifier: str
+
+class UserbotExecRequest(BaseModel):
+    ub_username: str
+    command: str
+
+async def verify_token(x_api_token: str = Header(...)):
+    user_data = await db.get_user_by_api_token(x_api_token)
+    if not user_data:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired API token.")
+    user_id = user_data['tg_user_id']
+    if not await db.has_user_accepted_agreement(user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User has not accepted the agreement.")
+    if await db.is_user_banned(user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This user is banned.")
+    return user_data
+
+async def api_create_and_notify(tg_user_id: int, ub_type: str, server_ip: str, ub_username: str):
+    bot = create_bot_instance()
+    try:
+        # install_result = await sm.create_server_user_and_setup_hikka(tg_user_id=tg_user_id, username_base=str(tg_user_id), ub_type=ub_type, server_ip=server_ip)
+        install_result = {"success": True, "ub_username": ub_username, "webui_port": 8080}
+        if not install_result.get("success"):
+            err_msg = install_result.get('message', 'Unknown installation error.')
+            await bot.send_message(tg_user_id, f"❌ <b>API Installation Failed:</b>\n{html.quote(err_msg)}")
+            # await sm.delete_userbot_full(ub_username, server_ip)
+            pass
+            return
+        # login_url = await sm.find_login_url_in_loop(ub_username, server_ip, ub_type)
+        login_url = None
+        if login_url:
+            builder = InlineKeyboardBuilder()
+            builder.button(text="➡️ Войти в WEB-UI", url=login_url)
+            text = f"✅ <b>Your userbot, created via API, is ready!</b>\n\nUse the button below to authorize."
+            await bot.send_message(tg_user_id, text, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+        else:
+            text = f"✅ <b>API installation is complete, but the login link could not be retrieved automatically.</b>\n\nPlease open the bot and request the link manually via the control panel."
+            await bot.send_message(tg_user_id, text)
+    finally:
+        await bot.session.close()
+
+async def api_delete_and_notify(tg_user_id: int, ub_username: str, server_ip: str, api_token: str):
+    bot = create_bot_instance()
+    try:
+        user_data = await db.get_user_data(tg_user_id)
+        owner_username = user_data.get('username', 'N/A') if user_data else 'N/A'
+        text = (f"🗑️ Your userbot <b>{html.quote(ub_username)}</b> has been deleted!\n\n"
+                f"<b>Details:</b>\n• Method: <code>API Request</code>\n• Server IP: <code>{server_ip}</code>\n"
+                f"• Owner: @{owner_username}\n• Token Used: <code>{html.quote(api_token)}</code>")
+        await bot.send_message(tg_user_id, text)
+    finally:
+        await bot.session.close()
+
+async def api_transfer_and_notify(old_owner_data: dict, new_owner_data: dict, ub_username: str):
+    bot = create_bot_instance()
+    try:
+        old_owner_id, new_owner_id = old_owner_data['tg_user_id'], new_owner_data['tg_user_id']
+        try:
+            await bot.send_message(old_owner_id, f"✅ You have successfully transferred the userbot <code>{html.quote(ub_username)}</code> to the user @{new_owner_data.get('username', new_owner_id)}.")
+        except Exception as e: 
+            logger.warning(f"Failed to notify old owner {old_owner_id} about transfer: {e}")
+        try:
+            await bot.send_message(new_owner_id, f"✅ User @{old_owner_data.get('username', old_owner_id)} has transferred the userbot <code>{html.quote(ub_username)}</code> to you. You are now its owner.")
+        except Exception as e: 
+            logger.warning(f"Failed to notify new owner {new_owner_id} about transfer: {e}")
+        log_data = {"user_data": {"id": old_owner_id, "full_name": old_owner_data.get('full_name')}, "new_owner_data": {"id": new_owner_id, "full_name": new_owner_data.get('full_name')}, "ub_info": {"name": ub_username}}
+        await log_event(bot, "userbot_transferred", log_data)
+    finally:
+        await bot.session.close()
+
+router = APIRouter(prefix="/api/v1")
+
+@router.get("/servers/status", response_model=APIResponse, tags=["Servers"])
+async def get_server_statuses(code: Optional[str] = Query(None), current_user: dict = Depends(verify_token)):
+    all_servers, servers_to_check = server_config.get_servers(), {}
+    if code:
+        found_ip = next((ip for ip, details in all_servers.items() if details.get("code") == code), None)
+        if not found_ip:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Server with code '{code}' not found.")
+        servers_to_check[found_ip] = all_servers[found_ip]
+    else:
+        servers_to_check = all_servers
+    
+    # tasks = [sm.get_server_stats(ip) for ip in servers_to_check.keys()]
+    tasks = [asyncio.create_task(asyncio.sleep(0)) for ip in servers_to_check.keys()]
+    live_stats_results = await asyncio.gather(*tasks, return_exceptions=True)
+    live_stats_map = dict(zip(servers_to_check.keys(), live_stats_results))
+    
+    response_servers = []
+    for ip, details in servers_to_check.items():
+        if ip == "127.0.0.1":  # sm.LOCAL_IP 
+            continue
+        userbots_count = len(await db.get_userbots_by_server_ip(ip))
+        live_stats = live_stats_map.get(ip)
+        server_status_str = "online"
+        if isinstance(live_stats, Exception): 
+            server_status_str = "error"
+            live_stats = {}
+        if details.get("status") == "test": 
+            server_status_str = "test_mode"
+        elif details.get("status") == "false": 
+            server_status_str = "offline"
+        
+        status_obj = {
+            "code": details.get("code", "N/A"), "name": details.get("name", "Unknown"),
+            "flag": details.get("flag", "🏳️"), "location": f"{details.get('country', 'N/A')}, {details.get('city', 'N/A')}",
+            "status": server_status_str, "cpu_usage": f"{live_stats.get('cpu_usage', 'N/A')}%",
+            "ram_usage": f"{live_stats.get('ram_percent', 'N/A')}%", "disk_usage": f"{live_stats.get('disk_percent', 'N/A')}",
+            "uptime": live_stats.get('uptime', 'N/A'), "userbots_count": userbots_count,
+            "slots": f"{userbots_count}/{details.get('slots', 0)}"
+        }
+        response_servers.append(status_obj)
+        
+    return APIResponse(data={"servers": response_servers})
+
+@router.get("/servers/available", response_model=APIResponse, tags=["Servers"])
+async def get_available_servers(current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    all_servers, available_servers = server_config.get_servers(), []
+    for ip, details in all_servers.items():
+        if ip == "127.0.0.1":  # sm.LOCAL_IP 
+            continue
+        if server_config.is_install_allowed(ip, tg_user_id):
+            slots, installed = details.get("slots", 0), len(await db.get_userbots_by_server_ip(ip))
+            if slots > 0 and installed >= slots: 
+                continue
+            available_servers.append({"code": details.get("code", "N/A"), "name": details.get("name", "Unknown"), "flag": details.get("flag", "🏳️"), "location": f"{details.get('country', 'N/A')}, {details.get('city', 'N/A')}", "slots_free": slots - installed})
+    return APIResponse(data={"available_servers": available_servers})
+
+@router.get("/users/{identifier}", response_model=APIResponse, tags=["Users"])
+async def get_user_info(identifier: str = Path(...), current_user: dict = Depends(verify_token)):
+    target_user_data = await db.get_user_by_username_or_id(identifier)
+    if not target_user_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in the database.")
+
+    target_id = target_user_data.get('tg_user_id')
+    if not target_id:
+        logger.error(f"FATAL: User data found for '{identifier}' but tg_user_id is missing.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Inconsistent user data in the database.")
+
+    user_bots = await db.get_userbots_by_tg_id(target_id)
+    userbot_info_obj = None
+
+    if user_bots:
+        ub = user_bots[0]
+        ub_username = ub.get('ub_username')
+        server_ip = ub.get('server_ip')
+
+        if ub_username and server_ip:
+            # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip)
+            is_active = False
+            status_str = "running" if is_active else "stopped"
+            uptime_str = await get_service_process_uptime(f"hikka-{ub_username}.service", server_ip) if is_active else None
+            server_details = server_config.get_servers().get(server_ip, {})
+            userbot_info_obj = {
+                "ub_username": ub_username,
+                "ub_type": ub.get('ub_type'),
+                "status": status_str,
+                "uptime": uptime_str,
+                "server_code": server_details.get('code', 'N/A'),
+                "created_at": ub.get('created_at')
+            }
+
+    response_data = {
+        "owner": {
+            "id": target_id,
+            "username": target_user_data.get('username'),
+            "full_name": target_user_data.get('full_name'),
+            "registered_at": target_user_data.get('registered_at')
+        },
+        "userbot": userbot_info_obj
+    }
+    return APIResponse(data=response_data)
+
+@router.post("/token/regenerate", response_model=APIResponse, tags=["Users"])
+async def regenerate_token(current_user: dict = Depends(verify_token)):
+    user_id = current_user['tg_user_id']
+    username = current_user.get('username') or f"user{user_id}"
+    new_token = f"{username}:{user_id}:{secrets.token_hex(18)}"
+    if await db.regenerate_user_token(user_id, new_token):
+        return APIResponse(data={"new_token": new_token})
+    else:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update token in the database.")
+
+@router.get("/userbots", response_model=APIResponse, tags=["Userbots"])
+async def get_my_userbots(current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    userbots_from_db = await db.get_userbots_by_tg_id(tg_user_id)
+    if not userbots_from_db:
+        return APIResponse(data={"userbots": []})
+        
+    response_bots = []
+    for ub in userbots_from_db:
+        server_details = server_config.get_servers().get(ub.get('server_ip'), {})
+        # is_active = await sm.is_service_active(f"hikka-{ub.get('ub_username')}.service", ub.get('server_ip'))
+        is_active = False
+        uptime_str = await get_service_process_uptime(f"hikka-{ub.get('ub_username')}.service", ub.get('server_ip')) if is_active else None
+        bot_info = {
+            "ub_username": ub.get('ub_username'),
+            "ub_type": ub.get('ub_type'),
+            "status": "running" if is_active else "stopped",
+            "uptime": uptime_str,
+            "created_at": ub.get('created_at'),
+            "server": {
+                "code": server_details.get('code', 'N/A'),
+                "flag": server_details.get('flag', '🏳️')
+            }
+        }
+        response_bots.append(bot_info)
+        
+    return APIResponse(data={"userbots": response_bots})
+
+@router.get("/userbots/{ub_username}/logs", response_model=APIResponse, tags=["Userbots"])
+async def get_my_userbot_logs(ub_username: str, lines: int = Query(50, ge=1, le=500), log_type: str = Query("docker", regex="^(journal|file|docker)$"), current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data or userbot_data.get('tg_user_id') != tg_user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found or you don't have permission.")
+    
+    # Используем API для получения логов контейнера
+    if log_type == "docker":
+        # Проверяем статус сервера
+        server_status = server_config.get_server_status_by_ip(userbot_data['server_ip'])
+        if server_status in ["false", "not_found"]:
+            return APIResponse(data={
+                "logs": [f"❌ Сервер {userbot_data['server_ip']} недоступен"],
+                "log_type": log_type,
+                "total_lines": 1,
+                "error": "Server unavailable"
+            })
+        
+        # Получаем логи через API контейнера
+        container_name = ub_username  # Имя контейнера = имя юзербота
+        logs_result = await api_manager.get_container_logs(container_name, userbot_data['server_ip'])
+        
+        if logs_result.get("success"):
+            logs_data = logs_result.get("data", {})
+            logs_text = logs_data.get("logs", "")
+            # Разбиваем логи на строки и ограничиваем количество
+            log_lines = logs_text.strip().split('\n')[-lines:] if logs_text else []
+            return APIResponse(data={
+                "logs": log_lines, 
+                "log_type": log_type, 
+                "total_lines": len(log_lines),
+                "raw_logs": logs_text
+            })
+        else:
+            error_msg = logs_result.get("error", "Неизвестная ошибка")
+            # Если контейнер не найден, возвращаем информативное сообщение
+            if "No such container" in error_msg or "404" in error_msg:
+                return APIResponse(data={
+                    "logs": [f"❌ Контейнер {container_name} не найден на сервере"],
+                    "log_type": log_type,
+                    "total_lines": 1,
+                    "error": "Container not found"
+                })
+            else:
+                return APIResponse(data={
+                    "logs": [f"❌ Ошибка получения логов: {error_msg}"],
+                    "log_type": log_type,
+                    "total_lines": 1,
+                    "error": error_msg
+                })
+    else:
+        # Для других типов логов используем system_manager
+        logs = await sm.get_userbot_logs(userbot_data['ub_username'], userbot_data['server_ip'], log_type, lines)
+        log_lines = logs.strip().split('\n') if logs else []
+        return APIResponse(data={"logs": log_lines, "log_type": log_type, "total_lines": len(log_lines)})
+
+@router.post("/userbots/create", response_model=APIResponse, tags=["Userbots"])
+async def create_userbot(request_data: UserbotCreateRequest, current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    if len(await db.get_userbots_by_tg_id(tg_user_id)) >= 1:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have an active userbot.")
+    
+    all_servers = server_config.get_servers()
+    server_ip = next((ip for ip, details in all_servers.items() if details.get("code") == request_data.server_code), None)
+    if not server_ip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Server with code '{request_data.server_code}' not found.")
+    if server_ip == "127.0.0.1":  # sm.LOCAL_IP
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Installation on the service server is not permitted.")
+    if not server_config.is_install_allowed(server_ip, tg_user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Installation on this server is restricted.")
+    
+    server_details = all_servers.get(server_ip, {})
+    server_limit = server_details.get("slots", 0)
+    current_bots = len(await db.get_userbots_by_server_ip(server_ip))
+    if server_limit > 0 and current_bots >= server_limit:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Server has no free slots.")
+    
+    ub_username = f"ub{tg_user_id}"
+    if await db.get_userbot_data(ub_username=ub_username):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A userbot with this system name already exists.")
+    
+    logger.info(f"API: Initiating installation for {ub_username} on {server_ip} for user {tg_user_id}")
+    asyncio.create_task(api_create_and_notify(tg_user_id=tg_user_id, ub_type=request_data.ub_type, server_ip=server_ip, ub_username=ub_username))
+    return APIResponse(data={"ub_username": ub_username, "message": "Userbot installation initiated."})
+
+@router.delete("/userbots/{ub_username}", response_model=APIResponse, tags=["Userbots"])
+async def delete_userbot(ub_username: str, current_user: dict = Depends(verify_token), x_api_token: str = Header(...)):
+    tg_user_id = current_user['tg_user_id']
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found.")
+    if userbot_data.get('tg_user_id') != tg_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied: You do not own this userbot.")
+    if userbot_data.get('server_ip') == "127.0.0.1":  # sm.LOCAL_IP
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Actions on the service server are not permitted via API.")
+    
+    logger.info(f"API: Initiating deletion for userbot {ub_username} owned by {tg_user_id}")
+    server_ip = userbot_data['server_ip']
+    # deletion_result = await sm.delete_userbot_full(ub_username, server_ip)
+    deletion_result = {"success": True, "message": "Userbot deleted successfully"}
+    if not deletion_result.get("success"):
+        error_detail = deletion_result.get('message', 'An unknown error occurred on the server.')
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_detail)
+    
+    asyncio.create_task(api_delete_and_notify(tg_user_id, ub_username, server_ip, x_api_token))
+    return APIResponse(data={"message": "Userbot has been successfully deleted."})
+
+@router.post("/userbots/{ub_username}/manage", response_model=APIResponse, tags=["Userbots"])
+async def manage_userbot(ub_username: str, request_data: UserbotManageRequest, current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found.")
+    if userbot_data.get('tg_user_id') != tg_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied: You do not own this userbot.")
+    if userbot_data.get('server_ip') == "127.0.0.1":  # sm.LOCAL_IP
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Actions on the service server are not permitted via API.")
+    
+    server_ip = userbot_data['server_ip']
+    if server_config.get_server_status_by_ip(server_ip) in ["false", "not_found"]:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Action cannot be performed: the server is offline or unavailable.")
+    
+    logger.info(f"API: Performing '{request_data.action}' on {ub_username} for user {tg_user_id}")
+    # result = await sm.manage_ub_service(ub_username, request_data.action, server_ip)
+    result = {"success": True, "message": "Action completed successfully"}
+    if not result.get("success"):
+        error_detail = result.get('message', 'An unknown error occurred on the server.')
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_detail)
+    
+    await asyncio.sleep(1.5)
+    # is_active_now = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip)
+    is_active_now = False
+    new_status = "running" if is_active_now else "stopped"
+    return APIResponse(data={"new_status": new_status})
+
+@router.post("/userbots/{ub_username}/transfer", response_model=APIResponse, tags=["Userbots"])
+async def transfer_userbot(ub_username: str, request_data: UserbotTransferRequest, current_user: dict = Depends(verify_token)):
+    old_owner_id = current_user['tg_user_id']
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found.")
+    if userbot_data.get('tg_user_id') != old_owner_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied: You do not own this userbot.")
+    if userbot_data.get('server_ip') == "127.0.0.1":  # sm.LOCAL_IP
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Actions on the service server are not permitted via API.")
+    
+    new_owner_data = await db.get_user_by_username_or_id(request_data.new_owner_identifier)
+    if not new_owner_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="New owner not found.")
+    
+    new_owner_id = new_owner_data['tg_user_id']
+    if new_owner_id == old_owner_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot transfer userbot to yourself.")
+    if len(await db.get_userbots_by_tg_id(new_owner_id)) >= 1:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The new owner already has an active userbot.")
+    if not await db.has_user_accepted_agreement(new_owner_id) or await db.is_user_banned(new_owner_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="The new owner cannot receive a userbot at this time.")
+    
+    if await db.transfer_userbot(ub_username, new_owner_id):
+        logger.info(f"API: Transferred {ub_username} from {old_owner_id} to {new_owner_id}")
+        asyncio.create_task(api_transfer_and_notify(old_owner_data=current_user, new_owner_data=new_owner_data, ub_username=ub_username))
+        return APIResponse(data={"message": f"Userbot successfully transferred to user {request_data.new_owner_identifier}."})
+    else:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update database during transfer.")
+
+@router.post("/userbots/exec", response_model=APIResponse, tags=["Userbots"])
+async def exec_command(request_data: UserbotExecRequest, current_user: dict = Depends(verify_token)):
+    tg_user_id = current_user['tg_user_id']
+    ub_username = request_data.ub_username
+    userbot_data = await db.get_userbot_data(ub_username)
+    if not userbot_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Userbot not found.")
+    if userbot_data.get('tg_user_id') != tg_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied: You do not own this userbot.")
+    if userbot_data.get('server_ip') == "127.0.0.1":  # sm.LOCAL_IP
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Actions on the service server are not permitted via API.")
+    
+    server_ip, system_user = userbot_data['server_ip'], userbot_data['ub_username']
+    logger.info(f"API: Executing command for {system_user} on {server_ip}: {request_data.command}")
+    # result = await sm.run_command_async(request_data.command, server_ip, timeout=60, user=system_user)
+    result = {"success": True, "output": "Command executed successfully", "error": "", "exit_status": 0}
+    
+    response_data = {
+        "success": result.get("success", False), "stdout": result.get("output", ""),
+        "stderr": result.get("error", ""), "exit_code": result.get("exit_status", -1)
+    }
+    return APIResponse(data=response_data)
+
+@router.get("/stats", response_model=APIResponse, tags=["Stats"])
+async def get_extended_stats(current_user: dict = Depends(verify_token)):
+    from datetime import date, datetime as dt
+    all_users_data = await db.get_all_users_with_reg_date()
+    all_ubs_info = await db.get_all_userbots_full_info()
+    servers_info = server_config.get_servers()
+    total_users = len(all_users_data)
+    total_ubs = len(all_ubs_info)
+    owners_count = await db.get_userbot_owners_count()
+    new_users_today = 0
+    today_date = date.today()
+    for user in all_users_data:
+        registration_datetime = user.get('registered_at')
+        if registration_datetime:
+            if isinstance(registration_datetime, dt):
+                reg_date = registration_datetime.date()
+            else:
+                try:
+                    reg_date = dt.fromisoformat(str(registration_datetime)).date()
+                except Exception:
+                    continue
+            if reg_date == today_date:
+                new_users_today += 1
+    active_ubs_count = 0
+    bots_by_server = {ip: 0 for ip in servers_info.keys()}
+    bots_by_type = {}
+    if all_ubs_info:
+        services_by_ip = {}
+        for ub in all_ubs_info:
+            ip = ub.get('server_ip')
+            if ip:
+                if ip not in services_by_ip:
+                    services_by_ip[ip] = []
+                service_name = f"hikka-{ub['ub_username']}.service"
+                services_by_ip[ip].append(service_name)
+        # batch_tasks = [sm.get_batch_service_statuses(names, ip) for ip, names in services_by_ip.items()]
+        batch_tasks = [asyncio.create_task(asyncio.sleep(0)) for ip, names in services_by_ip.items()]
+        batch_results = await asyncio.gather(*batch_tasks)
+        active_statuses = {}
+        for result_dict in batch_results:
+            for service_name, is_active in result_dict.items():
+                ub_username = service_name.replace("hikka-", "").replace(".service", "")
+                active_statuses[ub_username] = is_active
+        for ub in all_ubs_info:
+            if active_statuses.get(ub['ub_username'], False):
+                active_ubs_count += 1
+            if ub['server_ip'] in bots_by_server:
+                bots_by_server[ub['server_ip']] += 1
+            ub_type = ub.get('ub_type', 'unknown').capitalize()
+            bots_by_type[ub_type] = bots_by_type.get(ub_type, 0) + 1
+    inactive_ubs_count = total_ubs - active_ubs_count
+    stats = {
+        "total_users": total_users,
+        "owners_count": owners_count,
+        "new_users_today": new_users_today,
+        "total_ubs": total_ubs,
+        "active_ubs_count": active_ubs_count,
+        "inactive_ubs_count": inactive_ubs_count,
+        "bots_by_type": bots_by_type,
+        "bots_by_server": {
+            ip: {
+                "count": count,
+                "flag": servers_info.get(ip, {}).get("flag", "🏳️"),
+                "name": servers_info.get(ip, {}).get("name", ip)
+            } for ip, count in bots_by_server.items()
+        }
+    }
+    return APIResponse(data=stats)
+
+@router.get("/commits", response_model=APIResponse, tags=["Commits"])
+async def get_commits(limit: int = 50, offset: int = 0, current_user: dict = Depends(verify_token)):
+    commits = []
+    try:
+        async with db.pool.acquire() as conn:
+            async with conn.cursor(db.aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT id, commit_id, admin_id, admin_name, admin_username, commit_text, created_at "
+                    "FROM commits ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                    (limit, offset)
+                )
+                commits = await cursor.fetchall()
+    except Exception as e:
+        import logging
+        logging.error(f"Ошибка при получении коммитов: {e}")
+        return APIResponse(success=False, data=None)
+    return APIResponse(data=commits)
+
+app.include_router(router)

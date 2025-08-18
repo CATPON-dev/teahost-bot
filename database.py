@@ -1,6 +1,7 @@
 # --- START OF FILE database.py ---
 import aiomysql
 import logging
+import random
 from typing import Dict, Any, List, Optional
 import datetime
 from config_manager import config
@@ -44,6 +45,8 @@ async def init_db():
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
+                # Подавляем предупреждения о существующих таблицах
+                await cursor.execute("SET sql_notes = 0")
                 await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     tg_user_id BIGINT PRIMARY KEY,
@@ -69,7 +72,6 @@ async def init_db():
                     ub_username VARCHAR(255) NOT NULL UNIQUE,
                     server_ip VARCHAR(255) NOT NULL,
                     ub_type TEXT,
-                    hikka_path TEXT,
                     status VARCHAR(50) DEFAULT 'stopped',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     blocked BOOLEAN NOT NULL DEFAULT FALSE,
@@ -79,12 +81,21 @@ async def init_db():
                     started_at DATETIME,
                     webui_port INT DEFAULT NULL,
                     FOREIGN KEY (tg_user_id) REFERENCES users (tg_user_id) ON DELETE CASCADE,
-                    INDEX(tg_user_id)
+                    INDEX(tg_user_id),
+                    INDEX(webui_port)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 """)
 
+                # Добавляем столбцы, если их нет
                 await _add_column_if_not_exists(cursor, 'userbots', 'webui_port', 'INT DEFAULT NULL')
                 await _add_column_if_not_exists(cursor, 'userbots', 'is_test_mode', 'BOOLEAN NOT NULL DEFAULT FALSE')
+                
+                # Удаляем старый столбец hikka_path, если он существует
+                try:
+                    await cursor.execute("ALTER TABLE userbots DROP COLUMN hikka_path")
+                    logger.info("Столбец hikka_path удален из таблицы userbots")
+                except:
+                    pass  # Столбец уже не существует
 
                 await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS commits (
@@ -122,6 +133,14 @@ async def init_db():
     except aiomysql.Error as e:
         logger.error(f"Ошибка инициализации БД MySQL: {e}", exc_info=True)
         raise
+    finally:
+        # Восстанавливаем настройки SQL
+        try:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SET sql_notes = 1")
+        except:
+            pass
 
 async def update_token_regen_info(user_id: int, count: int, timestamp: Optional[datetime.datetime]):
     try:
@@ -233,15 +252,77 @@ async def get_user_data(tg_user_id: int) -> Optional[Dict[str, Any]]:
         logger.error(f"SQL ошибка в get_user_data: {e}", exc_info=True)
         return None
 
-async def add_userbot_record(tg_user_id: int, ub_username: str, ub_type: str, hikka_path: str, server_ip: str, webui_port: Optional[int] = None) -> bool:
+async def generate_random_port() -> int:
+    """Генерирует случайный порт, избегая важных системных портов и красивых чисел"""
+    # Избегаем важные порты: 1-1023, 3306, 5432, 6379, 8080, 9000, 9090
+    # Избегаем красивые числа: 1000, 2000, 3000, 10000, 20000, 30000
+    # Избегаем порты с повторяющимися цифрами: 1111, 2222, 3333, 4444, 5555, 6666, 7777, 8888, 9999
+    forbidden_ranges = [
+        (1, 1023),      # Системные порты
+        (3306, 3306),   # MySQL
+        (5432, 5432),   # PostgreSQL
+        (6379, 6379),   # Redis
+        (8080, 8080),   # HTTP альтернативный
+        (9000, 9000),   # Jenkins
+        (9090, 9090),   # Prometheus
+        (1000, 1000),   # Красивые числа
+        (2000, 2000),
+        (3000, 3000),
+        (10000, 10000),
+        (20000, 20000),
+        (30000, 30000),
+        (1111, 1111),   # Повторяющиеся цифры
+        (2222, 2222),
+        (3333, 3333),
+        (4444, 4444),
+        (5555, 5555),
+        (6666, 6666),
+        (7777, 7777),
+        (8888, 8888),
+        (9999, 9999),
+    ]
+    
+    # Получаем все занятые порты
+    occupied_ports = await get_all_occupied_ports()
+    
+    max_attempts = 100
+    for _ in range(max_attempts):
+        # Генерируем порт в диапазоне 5000-65000
+        port = random.randint(5000, 65000)
+        
+        # Проверяем, что порт не в запрещенных диапазонах
+        is_forbidden = any(start <= port <= end for start, end in forbidden_ranges)
+        if is_forbidden:
+            continue
+            
+        # Проверяем, что порт не занят
+        if port not in occupied_ports:
+            return port
+    
+    # Если не удалось найти свободный порт, возвращаем None
+    return None
+
+async def get_all_occupied_ports() -> List[int]:
+    """Получает список всех занятых портов из базы данных"""
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT webui_port FROM userbots WHERE webui_port IS NOT NULL")
+                result = await cursor.fetchall()
+                return [row[0] for row in result]
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка получения занятых портов: {e}", exc_info=True)
+        return []
+
+async def add_userbot_record(tg_user_id: int, ub_username: str, ub_type: str, server_ip: str, webui_port: int) -> bool:
     sql = """
-        INSERT INTO userbots (tg_user_id, ub_username, ub_type, hikka_path, server_ip, status, blocked, webui_port)
-        VALUES (%s, %s, %s, %s, %s, 'installing', FALSE, %s)
+        INSERT INTO userbots (tg_user_id, ub_username, ub_type, server_ip, status, blocked, webui_port)
+        VALUES (%s, %s, %s, %s, 'installing', FALSE, %s)
     """
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(sql, (tg_user_id, ub_username, ub_type, hikka_path, server_ip, webui_port))
+                await cursor.execute(sql, (tg_user_id, ub_username, ub_type, server_ip, webui_port))
                 return True
     except aiomysql.IntegrityError:
         logger.warning(f"Попытка добавить существующего UB: {ub_username}", exc_info=True)
@@ -596,19 +677,16 @@ async def update_userbot_server(ub_username: str, new_server_ip: str) -> bool:
     except aiomysql.Error as e:
         logger.error(f"Ошибка обновления сервера для UB {ub_username}: {e}", exc_info=True)
         return False
-        
-        
-async def set_userbot_test_mode(ub_username: str, is_test: bool) -> bool:
-    """Устанавливает или снимает флаг тестового режима для юзербота."""
+
+async def get_user_counts_by_period(days: int) -> int:
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "UPDATE userbots SET is_test_mode = %s WHERE ub_username = %s",
-                    (is_test, ub_username)
-                )
-                return cursor.rowcount > 0
+                query = "SELECT COUNT(tg_user_id) FROM users WHERE registered_at >= NOW() - INTERVAL %s DAY"
+                await cursor.execute(query, (days,))
+                result = await cursor.fetchone()
+                return result[0] if result else 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка установки тестового режима для {ub_username}: {e}")
-        return False
+        logger.error(f"Ошибка подсчета пользователей за период {days} дней: {e}")
+        return 0
 # --- END OF FILE database.py ---

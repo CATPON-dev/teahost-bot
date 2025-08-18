@@ -16,20 +16,16 @@ class IsBotEnabled(BaseFilter):
         if not user:
             return False
 
-        # Администраторы всегда имеют доступ
         if user.id in get_all_admins():
             return True
             
-        # Если режим техработ включен
         if maintenance_manager.is_maintenance_mode():
-            # Определяем чат, в котором произошло событие
             chat = None
             if isinstance(update, types.Message):
                 chat = update.chat
             elif isinstance(update, types.CallbackQuery):
                 chat = update.message.chat
             
-            # Если это личные сообщения, отправляем уведомление о техработах
             if chat and chat.type == "private":
                 text = (
                     "<b>⚠️ SharkHost is undergoing maintenance</b>\n\n"
@@ -47,10 +43,8 @@ class IsBotEnabled(BaseFilter):
                 elif isinstance(update, types.Message):
                     await update.answer(text, reply_markup=markup)
             
-            # В любом случае (и в ЛС, и в чате) блокируем дальнейшую обработку
             return False
             
-        # Если техработы выключены, разрешаем обработку
         return True
 
 class IsAdmin(BaseFilter):

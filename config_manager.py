@@ -19,16 +19,23 @@ class Config:
         
         self.CHANNEL_ID = "@Shark_Host"
         
-        self.STATUS_CHANNEL_ID = -1002536796447
-        
-        self.SUPPORT_CHAT_ID = "@SharkHost_support" 
-        self.SUPPORT_TOPIC_ID = 22 
-
-        self.LOG_CHANNEL_ID = self._config.get("log_channel_id")
-        self.REVIEW_CHANNEL_ID = self._config.get("review_channel_id")
-        
-        self.STATS_CHAT_ID = self._config.get("stats_chat_id")
-        self.STATS_TOPIC_ID = self._config.get("stats_topic_id")
+        # В тестовом режиме не используем рабочие каналы
+        if self.TEST_MODE:
+            self.STATUS_CHANNEL_ID = None
+            self.SUPPORT_CHAT_ID = None
+            self.SUPPORT_TOPIC_ID = None
+            self.LOG_CHANNEL_ID = None
+            self.REVIEW_CHANNEL_ID = None
+            self.STATS_CHAT_ID = None
+            self.STATS_TOPIC_ID = None
+        else:
+            self.STATUS_CHANNEL_ID = -1002536796447
+            self.SUPPORT_CHAT_ID = "@SharkHost_support" 
+            self.SUPPORT_TOPIC_ID = 22 
+            self.LOG_CHANNEL_ID = self._config.get("log_channel_id")
+            self.REVIEW_CHANNEL_ID = self._config.get("review_channel_id")
+            self.STATS_CHAT_ID = self._config.get("stats_chat_id")
+            self.STATS_TOPIC_ID = self._config.get("stats_topic_id")
         
         admin_ids = self._config.get("admin_user_id")
         if admin_ids is None:

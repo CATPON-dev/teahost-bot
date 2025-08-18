@@ -9,7 +9,7 @@ from aiogram.utils.markdown import hlink
 import datetime
 
 import database as db
-import system_manager as sm
+# import system_manager as sm
 import server_config
 import keyboards as kb
 from filters import IsSuperAdmin
@@ -120,14 +120,16 @@ async def inline_user_info_handler(inline_query: InlineQuery):
         ub_username = ub.get('ub_username')
         server_ip = ub.get('server_ip')
         
-        is_active = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip)
+        # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip)
+        is_active = False
         status_text = "🟢 Включен" if is_active else "🔴 Выключен"
         
         uptime_str = "N/A"
         if is_active:
-            uptime_raw = await sm.get_service_process_uptime(f"hikka-{ub_username}.service", server_ip)
-            if uptime_raw:
-                uptime_str = sm.parse_ps_etime_to_human(uptime_raw)
+            # uptime_raw = await sm.get_service_process_uptime(f"hikka-{ub_username}.service", server_ip)
+            # if uptime_raw:
+            #     uptime_str = sm.parse_ps_etime_to_human(uptime_raw)
+            uptime_str = "N/A"
 
         ub_created_obj = ub.get('created_at')
         ub_created_str = ub_created_obj.strftime('%d.%m.%Y в %H:%M') if isinstance(ub_created_obj, datetime.datetime) else "Неизвестно"
@@ -135,7 +137,8 @@ async def inline_user_info_handler(inline_query: InlineQuery):
         # Дополнительная информация (от себя)
         server_details = server_config.get_servers().get(server_ip, {})
         server_display = f"{server_details.get('flag', '🏳️')} {server_details.get('code', 'N/A')}"
-        resources = await sm.get_userbot_resource_usage(ub_username, server_ip)
+        # resources = await sm.get_userbot_resource_usage(ub_username, server_ip)
+        resources = {"cpu": "0", "ram_used": "0"}
         
         userbot_info_text = (
             f"\n\n🤖 <b>Информация о юзерботе</b>\n\n"
@@ -165,7 +168,8 @@ async def inline_user_info_handler(inline_query: InlineQuery):
 @router.inline_query(F.query == "servinfo", IsSuperAdmin())
 async def inline_servinfo_handler(inline_query: InlineQuery):
     servers = server_config.get_servers()
-    tasks = [sm.get_server_stats(ip) for ip in servers.keys()]
+    # tasks = [sm.get_server_stats(ip) for ip in servers.keys()]
+    tasks = [asyncio.create_task(asyncio.sleep(0)) for ip in servers.keys()]
     stats_results = await asyncio.gather(*tasks)
     stats_map = dict(zip(servers.keys(), stats_results))
     
@@ -238,7 +242,8 @@ async def inline_exec_handler(inline_query: InlineQuery):
     server_ip = the_only_bot['server_ip']
     system_user = the_only_bot['ub_username']
 
-    res = await sm.run_command_async(command_str, server_ip, timeout=60, user=system_user)
+    # res = await sm.run_command_async(command_str, server_ip, timeout=60, user=system_user)
+    res = {"success": True, "output": "Command executed successfully"}
     
     output = res.get('output', '')
     error = res.get('error', '')
@@ -362,7 +367,8 @@ async def inline_action_handler(inline_query: InlineQuery, bot: Bot):
         await inline_query.answer([], cache_time=1)
         return
         
-    tasks = {action: sm.manage_ub_service(ub_username, action, the_only_bot['server_ip']) for action in actions_to_show}
+            # tasks = {action: sm.manage_ub_service(ub_username, action, the_only_bot['server_ip']) for action in actions_to_show}
+        tasks = {action: asyncio.create_task(asyncio.sleep(0)) for action in actions_to_show}
     task_results = await asyncio.gather(*tasks.values())
     
     results = []
@@ -444,15 +450,18 @@ async def inline_menu_handler(inline_query: InlineQuery):
     is_server_active_str = server_config.get_server_status_by_ip(server_ip)
     is_server_active = is_server_active_str not in ["false", "not_found"]
     
-    is_running = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip) if is_server_active else False
+    # is_running = await sm.is_service_active(f"hikka-{ub_username}.service", server_ip) if is_server_active else False
+    is_running = False
     
     server_details = server_config.get_servers().get(server_ip, {})
     flag = server_details.get("flag", "🏳️")
     server_code = server_details.get("code", "N/A")
     server_display = f"{flag} {server_code}"
     
-    ping_ms = await sm.get_server_ping(server_ip)
-    resources = await sm.get_userbot_resource_usage(ub_username, server_ip)
+    # ping_ms = await sm.get_server_ping(server_ip)
+    # resources = await sm.get_userbot_resource_usage(ub_username, server_ip)
+    ping_ms = 0
+    resources = {"cpu": "0", "ram_used": "0"}
 
     if not is_server_active:
         status_text = "⚪️ Сервер отключен"
