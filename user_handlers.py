@@ -351,7 +351,6 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
         f"💡 Статус: {status_text}\n"
         f"⚙️ Тип: {ub_data.get('ub_type', 'N/A').capitalize()}\n"
         f"📅 Создан: {creation_date_str}"
-        + (f"\n\n🌐 <b>WebUI:</b> <code>http://{server_ip}:{webui_port}</code>" if webui_port else "") +
         "</blockquote>",
         server_info_block,
         "<blockquote>"
@@ -369,6 +368,7 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
     is_super_admin = user.id in config.SUPER_ADMIN_IDS
     
     markup = kb.get_management_keyboard(
+        ip=server_ip, port=webui_port,
         is_running=is_running, ub_username=ub_username,
         ub_type=ub_data.get('ub_type', 'N/A'), is_server_active=is_server_active,
         is_owner=is_owner, is_private=message.chat.type == 'private',
@@ -427,7 +427,7 @@ async def _show_login_link_success_from_new_message(bot: Bot, chat_id: int, ub_u
             # Формируем правильную ссылку с IP сервера и портом из БД
             correct_url = f"http://{server_ip}:{webui_port}"
             text_parts = ["<b>✅ Установка завершена</b>\n"]
-            text_parts.append(f"\nПерейдите по этой <a href='{correct_url}'>ссылке</a>.\n")
+            text_parts.append(f"\nНажмите на кнопку ниже для перехода в веб панель.\n")
         else:
             # Fallback на старую логику если порт не найден
             text_parts = ["<b>✅ Установка завершена</b>\n"]
@@ -444,7 +444,7 @@ async def _show_login_link_success_from_new_message(bot: Bot, chat_id: int, ub_u
 
     await bot.send_message(
         chat_id=chat_id, text="".join(text_parts), 
-        reply_markup=kb.get_login_link_success_keyboard(), disable_web_page_preview=True
+        reply_markup=kb.userbot_panel(ip=server_ip, port=webui_port), disable_web_page_preview=True
     )
     await state.clear()
 

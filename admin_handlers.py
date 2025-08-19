@@ -771,9 +771,9 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
                 error = res.get('error', '')
                 exit_code = res.get('exit_status', 'N/A')
                 if res.get('success'):
-                    text = f"✅ <b>Установка завершена успешно на <code>{ip}</code></b>\n\n<pre>{html.quote(output)}</pre>"
+                    text = f"✅ <b>Установка завершена успешно на <code>{ip}</code></b>"
                 else:
-                    text = f"❌ <b>Ошибка установки на <code>{ip}</code></b>\nКод выхода: <code>{exit_code}</code>\n\n<pre>{html.quote(error or output)}</pre>"
+                    text = f"❌ <b>Ошибка установки на <code>{ip}</code></b>\nКод выхода: <code>{exit_code}</code>\n\n<pre>Ohhhh... error..</pre>"
                 if len(text) > 4096:
                     from aiogram.types import BufferedInputFile
                     file = BufferedInputFile((output + '\n' + error).encode('utf-8'), filename='install_log.txt')

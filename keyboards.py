@@ -225,7 +225,7 @@ def get_login_link_success_keyboard():
     builder.adjust(1)
     return builder.as_markup()
     
-def get_management_keyboard(is_running: bool, ub_username: str, ub_type: str, is_server_active: bool, is_inline: bool = False, inline_message_id: str = None, is_owner: bool = True, is_private: bool = True, owner_id: int = None, is_shared: bool = False, is_installing: bool = False, is_deleting: bool = False, is_super_admin: bool = False):
+def get_management_keyboard(ip: str, port: int, is_running: bool, ub_username: str, ub_type: str, is_server_active: bool, is_inline: bool = False, inline_message_id: str = None, is_owner: bool = True, is_private: bool = True, owner_id: int = None, is_shared: bool = False, is_installing: bool = False, is_deleting: bool = False, is_super_admin: bool = False):
     builder = InlineKeyboardBuilder()
 
     owner_id_str = str(owner_id) if owner_id is not None else "unknown"
@@ -243,6 +243,7 @@ def get_management_keyboard(is_running: bool, ub_username: str, ub_type: str, is
         builder.button(text="🔴 Управление отключено", callback_data=f"noop:{owner_id_str}")
     elif is_running:
         builder.button(text="🔴 Выключить", callback_data=create_callback("stop"))
+        builder.button(text="🌐 Веб панель", url=f"http://{ip}:{port}")
         builder.button(text="🔄 Перезагрузить", callback_data=create_callback("restart"))
     else:
         builder.button(text="🚀 Включить", callback_data=create_callback("start"))
@@ -591,6 +592,13 @@ def get_accept_share_panel_keyboard(ub_username: str, owner_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Принять", callback_data=f"accept_share_panel:{ub_username}:{owner_id}")
     builder.button(text="❌ Отклонить", callback_data=f"decline_share_panel:{ub_username}:{owner_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+    
+def userbot_panel(ip: str, port: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🌐 Перейти по ссылке", url=f"http://{ip}:{port}")
+    builder.button(text="⬅️ Назад", callback_data="back_to_main_panel")
     builder.adjust(2)
     return builder.as_markup()
 
