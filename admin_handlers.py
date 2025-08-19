@@ -456,6 +456,12 @@ def find_ip_by_code(code: str) -> str | None:
         if details.get("code") and details.get("code").lower() == code.lower():
             return ip
     return None
+    
+def truncate_text(text: str, max_length: int = 2048) -> str:
+    """Обрезает текст до максимальной длины, добавляя '...' в конце"""
+    if len(text) <= max_length:
+        return text
+    return text[:max_length - 3] + "..."
 
 @router.message(Command("terminal"), IsSuperAdmin())
 async def cmd_terminal(message: types.Message, command: CommandObject):
@@ -1005,60 +1011,73 @@ def create_progress_bar(percent_str: str, length: int = 10) -> str:
         return f"[{'?' * length}] N/A"
 
 async def _get_full_server_info_text(stats_map, servers_to_display: list):
-    text_parts = ["🖥️ <b>Статистика по серверам:</b>\n"]
+    text_parts = ["🖥️ <b>Статистика серверов:</b>\n"]
+    total_length = len(text_parts[0])
+    server_count = 0
 
     for ip, details in servers_to_display:
+        if server_count >= 5:  # Ограничиваем 5 серверами
+            break
+            
         stats = stats_map.get(ip, {})
         ub_count = len(await db.get_userbots_by_server_ip(ip))
 
         cpu_usage = stats.get('cpu_usage', '0')
-        cpu_cores = stats.get('cpu_cores', '?')
         ram_percent = stats.get('ram_percent', '0')
+        disk_percent = stats.get('disk_percent', '0%')
         ram_used = stats.get('ram_used', 'N/A')
         ram_total = stats.get('ram_total', 'N/A')
-        disk_percent = stats.get('disk_percent', '0%')
-        disk_used = stats.get('disk_used', 'N/A')
-        disk_total = stats.get('disk_total', 'N/A')
         uptime = stats.get('uptime', 'N/A')
-        
-        cpu_bar = create_progress_bar(cpu_usage)
-        ram_bar = create_progress_bar(ram_percent)
-        disk_bar = create_progress_bar(disk_percent)
 
+        # Компактный но информативный формат
         server_block = (
-            f"\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
-            f"<blockquote>"
-            f"<b>{details.get('flag', '🏳️')} {html.quote(details.get('name', 'Unknown'))}</b> (Код: <code>{details.get('code', 'N/A')}</code>)\n"
-            f"├ <b>Локация:</b> {details.get('country', 'N/A')}, {details.get('city', 'N/A')}\n"
-            f"├ <b>Провайдер:</b> {details.get('org', 'N/A')}\n"
-            f"├ <b>Характеристики:</b>\n"
-            f"│  ├─ CPU: {cpu_cores} ядер\n"
-            f"│  ├─ RAM: {ram_total}\n"
-            f"│  └─ Disk: {disk_total}\n"
-            f"├ <b>Текущая нагрузка:</b>\n"
-            f"│  ├─ CPU: {cpu_bar} {cpu_usage}%\n"
-            f"│  ├─ RAM: {ram_bar} ({ram_used}/{ram_total})\n"
-            f"│  └─ Disk: {disk_bar} ({disk_used}/{disk_total})\n"
-            f"├ <b>Uptime:</b> {uptime}\n"
-            f"└ <b>Юзерботы:</b> {ub_count} шт."
-            f"</blockquote>"
+            f"\n{details.get('flag', '🏳️')} <b>{html.quote(details.get('name', 'Unknown'))}</b>\n"
+            f"📍 {details.get('country', 'N/A')} | 🤖{ub_count}\n"
+            f"⚡ CPU: {cpu_usage}% | 💾 RAM: {ram_percent}% ({ram_used}/{ram_total})\n"
+            f"💿 Disk: {disk_percent} | ⏰ {uptime}"
         )
+        
+        if total_length + len(server_block) > 4000:
+            text_parts.append(f"\n\n⚠️ <i>Показаны первые {server_count} серверов</i>")
+            break
+            
         text_parts.append(server_block)
+        total_length += len(server_block)
+        server_count += 1
+        
+    # Добавляем информацию о количестве показанных серверов
+    if len(servers_to_display) > 5:
+        text_parts.append(f"\n\n📊 Показано: 5 из {len(servers_to_display)} серверов")
         
     return "".join(text_parts)
 
 async def auto_update_server_info_panel(bot: Bot, chat_id: int, message_id: int):
+    current_page = 1  # начинаем с 1, так как ваша пагинация с 1
     while True:
         await asyncio.sleep(180)
         try:
-            info_text, _ = await _get_server_info_content()
-
+            # Получаем все 4 значения
+            info_text, markup, page, total_pages = await _get_server_info_content(current_page)
+            
+            # Обрезаем текст если слишком длинный
+            if len(info_text) > 2000:
+                info_text = info_text[:2000] + "..."
+            
             await bot.edit_message_text(
                 text=info_text,
                 chat_id=chat_id,
                 message_id=message_id,
-                reply_markup=kb.get_server_info_keyboard()
+                reply_markup=markup  # используем готовую клавиатуру из функции
             )
+            
+            # ПРАВИЛЬНАЯ логика переключения страницы
+            if total_pages > 1:
+                if current_page < total_pages:
+                    current_page += 1
+                else:
+                    current_page = 1  # возвращаемся к первой странице
+            # если всего 1 страница - остаемся на ней
+                
         except TelegramBadRequest as e:
             if "message to edit not found" in str(e).lower() or "message can't be edited" in str(e).lower():
                 logging.warning(f"Message {message_id} in chat {chat_id} for auto-update not found. Stopping task.")
@@ -1069,7 +1088,6 @@ async def auto_update_server_info_panel(bot: Bot, chat_id: int, message_id: int)
                 logging.error(f"Error auto-updating server info panel: {e}")
         except Exception as e:
             logging.error(f"Unexpected error in auto-update task: {e}", exc_info=True)
-
 
 async def start_or_reset_update_task(bot: Bot, chat_id: int, message_id: int):
     if chat_id in ACTIVE_PANEL_UPDATE_TASKS:
@@ -1086,15 +1104,20 @@ async def _get_server_info_content(page: int = 1):
     total_servers = len(remote_servers)
     if not remote_servers:
         return "Список удаленных серверов пуст.", None, 1, 1
+    
     total_pages = max(1, (total_servers + SERVERINFO_PAGE_SIZE - 1) // SERVERINFO_PAGE_SIZE)
     page = max(1, min(page, total_pages))
     start = (page - 1) * SERVERINFO_PAGE_SIZE
     end = start + SERVERINFO_PAGE_SIZE
     servers_on_page = remote_servers[start:end]
+    
     stats_tasks = [sm.get_server_stats(ip) for ip, _ in servers_on_page]
     all_stats = await asyncio.gather(*stats_tasks)
     stats_map = dict(zip([ip for ip, _ in servers_on_page], all_stats))
+    
     info_text = await _get_full_server_info_text(stats_map, servers_on_page)
+    info_text = truncate_text(info_text)
+    
     from keyboards import get_server_info_paginator_keyboard
     markup = get_server_info_paginator_keyboard(page, total_pages)
     return info_text, markup, page, total_pages

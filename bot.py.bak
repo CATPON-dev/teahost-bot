@@ -15,7 +15,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, date, timedelta
 import pytz
 from collections import defaultdict
-import math
 
 from config_manager import config
 import database as db
@@ -24,7 +23,7 @@ import server_config
 import user_handlers
 import admin_handlers
 import keyboards as kb
-import inline_handlers
+import inline_handlers  # дада я ебал
 from admin_handlers import auto_backup_task
 from middlewares.error_handler import handle_errors
 from middlewares.ban_check import BanMiddleware
@@ -42,17 +41,13 @@ LAST_REFRESH_TIMESTAMP = 0
 LAST_STATS_REFRESH_TIMESTAMP = 0
 DOWN_SERVERS_NOTIFIED = set()
 
-SERVERS_PER_PAGE = 10
-PAGINATION_LIMITS = defaultdict(lambda: {"count": 0, "timestamp": 0})
-PAGINATION_MAX_ACTIONS = 10
-PAGINATION_COOLDOWN_SECONDS = 30
-
 def _read_status_ids() -> dict:
     if not os.path.exists(STATUS_IDS_FILE):
         return {}
     try:
         with open(STATUS_IDS_FILE, 'r') as f:
             data = json.load(f)
+            # Фильтруем некорректные значения
             filtered_data = {}
             for key, value in data.items():
                 if isinstance(value, int) and value is not None:
@@ -78,6 +73,7 @@ def _read_stats_id() -> int | None:
         with open(STATS_MESSAGE_ID_FILE, 'r') as f:
             data = json.load(f)
             message_id = data.get("message_id")
+            # Проверяем, что message_id является корректным числом
             if isinstance(message_id, int) and message_id is not None:
                 return message_id
             else:
@@ -99,11 +95,17 @@ async def upload_banners(bot: Bot):
     if not config.SUPER_ADMIN_IDS:
         logging.warning("No SUPER_ADMIN_IDS found in config. Cannot upload banners.")
         return
+    
+    # В тестовом режиме пропускаем загрузку баннеров
     if config.TEST_MODE:
         logging.info("Test mode enabled, skipping banner upload")
         return
+    
+    # Определяем целевой чат для кеширования баннеров
     target_chat_id = None
     chat_type = "unknown"
+    
+    # Сначала пробуем использовать log_channel_id, если он доступен
     if hasattr(config, 'LOG_CHANNEL_ID') and config.LOG_CHANNEL_ID:
         try:
             test_message = await bot.send_message(chat_id=config.LOG_CHANNEL_ID, text="🔄 Тест кеширования баннеров...")
@@ -113,9 +115,13 @@ async def upload_banners(bot: Bot):
             logging.info(f"Using log channel {target_chat_id} for banner caching")
         except Exception as e:
             logging.warning(f"Cannot use log channel {config.LOG_CHANNEL_ID}: {e}")
+    
+    # Если log_channel недоступен, используем личные сообщения первого админа
     if target_chat_id is None:
         target_chat_id = config.SUPER_ADMIN_IDS[0]
         chat_type = "admin_pm"
+        
+        # Проверяем, что бот может отправлять сообщения админу
         try:
             test_message = await bot.send_message(chat_id=target_chat_id, text="🔄 Инициализация кеша баннеров...")
             await bot.delete_message(chat_id=target_chat_id, message_id=test_message.message_id)
@@ -124,6 +130,7 @@ async def upload_banners(bot: Bot):
             logging.error(f"Cannot send messages to admin {target_chat_id}: {e}")
             logging.warning("Banner caching will be skipped. Banners will be loaded from disk when needed.")
             return
+    
     banner_files = {
         "main_panel": "banners/select_action.png",
         "select_server": "banners/select_server.png",
@@ -138,12 +145,15 @@ async def upload_banners(bot: Bot):
             photo = FSInputFile(path)
             sent_message = await bot.send_photo(chat_id=target_chat_id, photo=photo)
             BANNER_FILE_IDS[key] = sent_message.photo[-1].file_id
+            # Удаляем сообщение после получения file_id
             await bot.delete_message(chat_id=target_chat_id, message_id=sent_message.message_id)
             logging.info(f"Cached banner '{key}' via {chat_type}: {BANNER_FILE_IDS[key]}")
             await asyncio.sleep(0.5)
         except Exception as e:
             logging.error(f"Failed to upload and cache banner '{key}' from '{path}': {e}")
+            # Продолжаем с другими баннерами, даже если один не удался
             continue
+    
     if BANNER_FILE_IDS:
         logging.info(f"Banner caching complete. Successfully cached {len(BANNER_FILE_IDS)} banners.")
     else:
@@ -153,20 +163,24 @@ async def refresh_public_status_handler(call: CallbackQuery, bot: Bot):
     global LAST_REFRESH_TIMESTAMP
     current_time = time.time()
     cooldown = 5
+
     if current_time - LAST_REFRESH_TIMESTAMP < cooldown:
         await call.answer(f"Обновлять можно раз в {cooldown} секунд.", show_alert=True)
         return
+
     LAST_REFRESH_TIMESTAMP = current_time
     await call.answer("Обновляю...", show_alert=False)
-    await update_status_message(bot, force_resend=False, page=1)
+    await update_status_message(bot, force_resend=False)
 
 async def refresh_stats_panel_handler(call: CallbackQuery, bot: Bot):
     global LAST_STATS_REFRESH_TIMESTAMP
     current_time = time.time()
     cooldown = 5
+
     if current_time - LAST_STATS_REFRESH_TIMESTAMP < cooldown:
         await call.answer(f"Обновлять можно раз в {cooldown} секунд.", show_alert=True)
         return
+
     LAST_STATS_REFRESH_TIMESTAMP = current_time
     await call.answer("Обновляю...", show_alert=False)
     await update_stats_message(bot, force_resend=False)
@@ -184,6 +198,7 @@ async def _send_or_edit_status_message(bot: Bot, chat_id: int, message_id: int |
     if chat_id is None:
         logging.warning("chat_id is None, skipping message send/edit")
         return None
+        
     if message_id:
         try:
             edit_kwargs = {k: v for k, v in kwargs.items() if k in ['disable_web_page_preview']}
@@ -197,6 +212,7 @@ async def _send_or_edit_status_message(bot: Bot, chat_id: int, message_id: int |
             else:
                 logging.error(f"Failed to edit status message {message_id} in {chat_id}: {e}")
                 return message_id
+    
     try:
         sent_msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=markup, **kwargs)
         return sent_msg.message_id
@@ -218,6 +234,7 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
     if not config.STATS_CHAT_ID or not config.STATS_TOPIC_ID:
         logging.warning("STATS_CHAT_ID или STATS_TOPIC_ID не настроены. Обновление статистики пропущено.")
         return
+
     if force_resend:
         old_id = _read_stats_id()
         if old_id is not None and isinstance(old_id, int):
@@ -227,121 +244,177 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
                 pass
         STATS_MESSAGE_ID = None
         _save_stats_id(None)
+
     try:
         all_ubs_info = await db.get_all_userbots_full_info()
         total_ubs = len(all_ubs_info)
+        
         bots_by_type = defaultdict(int)
         for ub in all_ubs_info:
             ub_type = ub.get('ub_type', 'unknown').capitalize()
             bots_by_type[ub_type] += 1
+
         type_emojis = {
-            "Fox": "🦊", "Heroku": "🪐", "Hikka": "🌘",
-            "Legacy": "🌙", "Unknown": "❓"
+            "Fox": "🦊",
+            "Heroku": "🪐",
+            "Hikka": "🌘",
+            "Legacy": "🌙",
+            "Unknown": "❓"
         }
-        text_parts = ["📊 <b>SharkHost статистика</b>"]
+
+        text_parts = [
+            "📊 <b>SharkHost статистика</b>"
+        ]
+
         text_parts.append(f"<blockquote>Всего юзерботов: <code>{total_ubs}</code></blockquote>")
+        
         text_parts.append("<b>⚙️ Распределение по типам:</b>")
+
         type_stats = []
         all_known_types = ["Fox", "Heroku", "Hikka", "Legacy"]
         for ub_type in all_known_types:
             count = bots_by_type.get(ub_type, 0)
             emoji = type_emojis.get(ub_type, "🤖")
             type_stats.append(f"- {emoji} {ub_type}: <code>{count}</code>")
+            
         text_parts.append(f"<blockquote>" + "\n".join(type_stats) + "</blockquote>")
+        
         update_time_str = datetime.now(pytz.timezone("Europe/Moscow")).strftime('%d.%m.%Y в %H:%M:%S')
         text_parts.append(f"<i>Последнее обновление: {update_time_str} MSK</i>")
+
         text = "\n\n".join(text_parts)
+        
         new_id = await _send_or_edit_status_message(
-            bot=bot, chat_id=config.STATS_CHAT_ID, message_id=STATS_MESSAGE_ID,
-            text=text, markup=kb.get_stats_refresh_keyboard(), message_thread_id=config.STATS_TOPIC_ID,
+            bot=bot,
+            chat_id=config.STATS_CHAT_ID,
+            message_id=STATS_MESSAGE_ID,
+            text=text,
+            markup=kb.get_stats_refresh_keyboard(),
+            message_thread_id=config.STATS_TOPIC_ID,
             disable_web_page_preview=True
         )
+
         if new_id:
             STATS_MESSAGE_ID = new_id
             _save_stats_id(new_id)
+
     except Exception as e:
         logging.error(f"Не удалось обновить панель статистики: {e}", exc_info=True)
 
-async def _generate_paginated_status_content(page: int = 1):
-    total_users = len(await db.get_all_bot_users())
-    servers = server_config.get_servers()
-    servers_to_display_all = {ip: d for ip, d in servers.items() if ip != sm.LOCAL_IP and d.get("status") in ("true", "noub")}
-    total_servers = len(servers_to_display_all)
-    total_pages = math.ceil(total_servers / SERVERS_PER_PAGE) if total_servers > 0 else 1
-    page = max(1, min(page, total_pages))
-    start_index = (page - 1) * SERVERS_PER_PAGE
-    end_index = start_index + SERVERS_PER_PAGE
-    servers_on_page = dict(list(servers_to_display_all.items())[start_index:end_index])
-    installed_bots_map = {ip: len(await db.get_userbots_by_server_ip(ip)) for ip in servers.keys()}
-    active_servers = {ip: s for ip, s in servers.items() if s.get('status') == "true" and ip != sm.LOCAL_IP}
-    available_servers = len(active_servers)
-    free_slots = sum(max(0, s.get('slots', 0) - installed_bots_map.get(ip, 0)) for ip, s in active_servers.items())
-    async def get_stats_with_semaphore(ip):
-        async with SSH_SEMAPHORE:
-            return await sm.get_server_stats(ip)
-    tasks = [get_stats_with_semaphore(ip) for ip in servers_on_page.keys()]
-    stats_results = await asyncio.gather(*tasks)
-    server_stats = dict(zip(servers_on_page.keys(), stats_results))
-    text_parts = [
-        "🦈 <b>SharkHost Status</b>", "", "<b>📊 Общая статистика:</b>",
-        f"<blockquote>- {total_users} пользователей\n- {available_servers} серверов доступно\n- {free_slots} {pluralize_userbot(free_slots)} можно установить</blockquote>",
-        "", "<b>🚀 Статус серверов:</b>", ""
-    ]
-    for ip, details in servers_on_page.items():
-        flag, location_name, code = details.get("flag", "🏳️"), details.get("city", details.get("name", "Unknown")), details.get("code", "N/A")
-        server_title = f"{flag} {location_name} ({code})"
-        stats = server_stats.get(ip, {})
-        cpu_percent, ram_percent, disk_percent, uptime = stats.get('cpu_usage', '0'), stats.get('ram_percent', '0'), stats.get('disk_percent', '0%').replace('%', ''), stats.get('uptime', 'N/A')
-        cpu_bar, ram_bar, disk_bar = _create_progress_bar(cpu_percent), _create_progress_bar(ram_percent), _create_progress_bar(disk_percent)
-        server_block = (f"<blockquote>🧠 CPU: {cpu_bar} {cpu_percent}%\n"
-                        f"💾 RAM: {ram_bar} {ram_percent}%\n"
-                        f"💽 Disk: {disk_bar} {disk_percent}%\n"
-                        f"⏳ Uptime: {uptime}</blockquote>")
-        text_parts.append(server_title)
-        text_parts.append(server_block)
-    text = "\n".join(text_parts)
-    markup = kb.get_public_status_keyboard(installed_bots_map, server_stats, servers_on_page, page, total_pages)
-    return text, markup
-
-async def update_status_message(bot: Bot, force_resend: bool = False, page: int = 1):
+async def update_status_message(bot: Bot, force_resend: bool = False):
     if config.TEST_MODE:
         return
+
     global STATUS_MESSAGE_IDS
-    logging.info(f"Running status panel update. Force resend: {force_resend}, Page: {page}")
+    logging.info(f"Running status panel update. Force resend: {force_resend}")
+    
     current_ids = _read_status_ids()
     if force_resend:
         for key, msg_id in current_ids.items():
+            # Проверяем, что msg_id не None и является числом
             if msg_id is None or not isinstance(msg_id, int):
                 logging.warning(f"Skipping invalid message_id for key {key}: {msg_id}")
                 continue
+                
             chat_id = config.STATUS_CHANNEL_ID if key == "channel" else config.SUPPORT_CHAT_ID
             try:
                 await bot.delete_message(chat_id=chat_id, message_id=msg_id)
             except (TelegramBadRequest, TelegramNotFound):
                 pass
         current_ids = {}
+
     try:
-        text, markup = await _generate_paginated_status_content(page=page)
+        total_users = len(await db.get_all_bot_users())
+        servers = server_config.get_servers()
+        active_servers = {ip: s for ip, s in servers.items() if s.get('status') == "true" and ip != "127.0.0.1"}  # sm.LOCAL_IP
+        available_servers = len(active_servers)
+        
+        installed_bots_map = {ip: len(await db.get_userbots_by_server_ip(ip)) for ip in servers.keys()}
+        
+        free_slots = 0
+        for ip, s in active_servers.items():
+            slots = s.get('slots', 0)
+            used = installed_bots_map.get(ip, 0)
+            free_slots += max(0, slots - used)
+
+        async def get_stats_with_semaphore(ip):
+            async with SSH_SEMAPHORE:
+                try:
+                    # Получаем реальные данные через SSH
+                    stats = await sm.get_server_stats(ip)
+                    return stats
+                except Exception as e:
+                    logging.error(f"Failed to get stats for {ip}: {e}")
+                    return {"cpu_usage": "0", "ram_percent": "0", "disk_percent": "0%", "uptime": "N/A"}
+        
+        tasks = [get_stats_with_semaphore(ip) for ip in servers.keys()]
+        stats_results = await asyncio.gather(*tasks)
+        server_stats = dict(zip(servers.keys(), stats_results))
+        
+        text_parts = [
+            "🦈 <b>SharkHost Status</b>",
+            "",
+            "<b>📊 Общая статистика:</b>",
+            f"<blockquote>- {total_users} пользователей\n- {available_servers} серверов доступно\n- {free_slots} {pluralize_userbot(free_slots)} можно установить</blockquote>",
+            "",
+            "<b>🚀 Статус серверов:</b>",
+            ""
+        ]
+        
+        for ip, details in servers.items():
+            if ip == "127.0.0.1": continue  # sm.LOCAL_IP
+            
+            # Исключаем сервер, на котором запущен бот (лондонский сервер)
+            if details.get("ssh_user") is None and details.get("ssh_pass") is None:
+                continue
+            
+            flag, location_name, code, status = details.get("flag", "🏳️"), details.get("city", details.get("name", "Unknown")), details.get("code", "N/A"), details.get("status", "false")
+            
+            if status not in ("true", "noub", "test", "false"): status = "false"
+            if status == "test" or status == "false":
+                continue
+            else:
+                server_title = f"{flag} {location_name} ({code})"
+                stats = server_stats.get(ip, {})
+                cpu_percent, ram_percent, disk_percent, uptime = stats.get('cpu_usage', '0'), stats.get('ram_percent', '0'), stats.get('disk_percent', '0%').replace('%', ''), stats.get('uptime', 'N/A')
+                cpu_bar, ram_bar, disk_bar = _create_progress_bar(cpu_percent), _create_progress_bar(ram_percent), _create_progress_bar(disk_percent)
+                server_block = (f"<blockquote>🧠 CPU: {cpu_bar} {cpu_percent}%\n"
+                                f"💾 RAM: {ram_bar} {ram_percent}%\n"
+                                f"💽 Disk: {disk_bar} {disk_percent}%\n"
+                                f"⏳ Uptime: {uptime}</blockquote>")
+                text_parts.append(server_title)
+                text_parts.append(server_block)
+        
+        text = "\n".join(text_parts)
+        markup = kb.get_public_status_keyboard(installed_bots_map, server_stats, servers)
+
         new_channel_id = None
         new_topic_id = None
+        
         if config.STATUS_CHANNEL_ID:
             new_channel_id = await _send_or_edit_status_message(bot, config.STATUS_CHANNEL_ID, current_ids.get("channel"), text, markup, disable_web_page_preview=True)
+        
         if config.SUPPORT_CHAT_ID:
             new_topic_id = await _send_or_edit_status_message(bot, config.SUPPORT_CHAT_ID, current_ids.get("topic"), text, markup, message_thread_id=config.SUPPORT_TOPIC_ID, disable_web_page_preview=True)
+
         STATUS_MESSAGE_IDS = {"channel": new_channel_id, "topic": new_topic_id}
         _save_status_ids(STATUS_MESSAGE_IDS)
+
     except Exception as e:
         logging.error(f"Failed to update status panel: {e}", exc_info=True)
 
 async def check_servers_on_startup(bot: Bot):
+    # В тестовом режиме пропускаем проверку серверов при запуске
     if config.TEST_MODE:
         logging.info("Test mode enabled, skipping server check on startup")
         return
+        
     logging.info("Starting comprehensive server check-up...")
     servers = server_config.get_servers()
     if not servers:
         logging.warning("ip.json is empty. No servers to check.")
         return
+
     default_params = {"ssh_user": "root", "ssh_pass": "password", "name": "Unnamed", "country": "Unknown", "city": "Unknown", "flag": "🏳️", "code": "N/A", "status": "false", "slots": 0, "regionName": "N/A", "org": "N/A", "timezone": "N/A", "hosting": False, "proxy": False, "vpn": False}
     needs_saving = False
     for ip, details in servers.items():
@@ -349,16 +422,19 @@ async def check_servers_on_startup(bot: Bot):
             if key not in details:
                 details[key] = value
                 needs_saving = True
-        if ip == sm.LOCAL_IP:
+        if ip == "127.0.0.1":  # sm.LOCAL_IP
             if details.get('ssh_user') is not None: details['ssh_user'] = None; needs_saving = True
             if details.get('ssh_pass') is not None: details['ssh_pass'] = None; needs_saving = True
+
     if needs_saving:
         logging.info("Updating ip.json with default parameters and nullifying local SSH creds.")
         server_config._save_servers(servers)
-    remote_servers_ips = [ip for ip, d in servers.items() if ip != sm.LOCAL_IP]
+
+    remote_servers_ips = [ip for ip, d in servers.items() if ip != "127.0.0.1"]  # sm.LOCAL_IP
     if not remote_servers_ips:
         logging.info("No remote servers to check.")
         return
+
     async def check_conn_with_semaphore(ip):
         async with SSH_SEMAPHORE:
             try:
@@ -366,14 +442,17 @@ async def check_servers_on_startup(bot: Bot):
             except Exception as e:
                 logging.error(f"Failed to check connection to {ip}: {e}")
                 return {"success": False, "error": str(e)}
+
     tasks = [check_conn_with_semaphore(ip) for ip in remote_servers_ips]
     logging.info(f"Checking connectivity for {len(tasks)} remote servers concurrently...")
     results = await asyncio.gather(*tasks)
+
     unreachable_servers = []
     for ip, conn_res in zip(remote_servers_ips, results):
         if not conn_res.get("success"):
             error_details = html.quote(conn_res.get('error', 'Неизвестная ошибка SSH'))
             unreachable_servers.append(f" • <code>{ip}</code> - {error_details}")
+
     if unreachable_servers:
         text = "<b>‼️ Обнаружены недоступные серверы при запуске:</b>\n\n" + "\n".join(unreachable_servers)
         await log_to_channel(bot, text)
@@ -382,11 +461,15 @@ async def check_servers_on_startup(bot: Bot):
 
 async def monitor_servers_health(bot: Bot):
     global DOWN_SERVERS_NOTIFIED
+    
+    # В тестовом режиме пропускаем мониторинг серверов
     if config.TEST_MODE:
         logging.info("Test mode enabled, skipping server health check")
         return
+    
     logging.info("Running scheduled server health check...")
-    servers = {ip: d for ip, d in server_config.get_servers().items() if ip != sm.LOCAL_IP}
+    servers = {ip: d for ip, d in server_config.get_servers().items() if ip != "127.0.0.1"}  # sm.LOCAL_IP
+
     for ip, details in servers.items():
         async with SSH_SEMAPHORE:
             try:
@@ -394,6 +477,7 @@ async def monitor_servers_health(bot: Bot):
             except Exception as e:
                 logging.error(f"Failed to check health for {ip}: {e}")
                 conn_res = {"success": False, "error": str(e)}
+        
         if not conn_res.get("success"):
             if ip not in DOWN_SERVERS_NOTIFIED:
                 server_config.update_server_status(ip, 'test')
@@ -401,6 +485,7 @@ async def monitor_servers_health(bot: Bot):
                 log_data = {"server_info": {"ip": ip, "code": details.get("code", "N/A")}}
                 await log_event(bot, "server_unreachable", log_data)
             continue
+
         if ip in DOWN_SERVERS_NOTIFIED:
             DOWN_SERVERS_NOTIFIED.remove(ip)
             server_config.update_server_status(ip, 'true')
@@ -408,9 +493,11 @@ async def monitor_servers_health(bot: Bot):
             await log_event(bot, "server_recovered", log_data)
 
 async def daily_backup_task(bot: Bot):
+    # В тестовом режиме пропускаем ежедневный бэкап
     if config.TEST_MODE:
         logging.info("Test mode enabled, skipping daily backup task")
         return
+        
     source_directory = "/root/nh"
     if not os.path.exists(source_directory):
         logging.warning(f"Ежедневный бэкап: Директория {source_directory} не найдена. Пропускаю.")
@@ -454,15 +541,20 @@ def seconds_to_human_readable(seconds):
     hours, remainder = divmod(remainder, 3600)
     minutes, _ = divmod(remainder, 60)
     parts = []
-    if days: parts.append(f"{int(days)}d")
-    if hours: parts.append(f"{int(hours)}h")
-    if minutes: parts.append(f"{int(minutes)}m")
+    if days:
+        parts.append(f"{int(days)}d")
+    if hours:
+        parts.append(f"{int(hours)}h")
+    if minutes:
+        parts.append(f"{int(minutes)}m")
     return " ".join(parts) if parts else "<1m"
 
 async def daily_log_cleanup():
+    # В тестовом режиме пропускаем очистку логов
     if config.TEST_MODE:
         logging.info("Test mode enabled, skipping daily log cleanup")
         return
+        
     log_file = "bot.log"
     logging.info(f"Starting daily cleanup of {log_file}...")
     try:
@@ -476,10 +568,16 @@ async def main():
     try:
         await db.init_pool()
         await db.init_db()
-        bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        
+        bot = Bot(
+            token=config.BOT_TOKEN, 
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        )
+        
         storage = MemoryStorage()
         dp = Dispatcher(storage=storage)
         await upload_banners(bot)
+        
         dp.update.middleware(BanMiddleware())
         dp.update.middleware(AntiSpamMiddleware())
         dp.errors.register(handle_errors)
@@ -487,21 +585,28 @@ async def main():
         dp.include_router(user_handlers.router)
         dp.callback_query.register(refresh_public_status_handler, F.data == "refresh_public_status")
         dp.callback_query.register(refresh_stats_panel_handler, F.data == "refresh_stats_panel")
-        dp.callback_query.register(cq_status_page_handler, F.data.startswith("status_page:"))
+
         await check_servers_on_startup(bot)
+        
+        # Удаляем старые сообщения статуса только если каналы настроены
         if config.STATUS_CHANNEL_ID or config.SUPPORT_CHAT_ID:
             old_status_ids = _read_status_ids()
             for key, msg_id in old_status_ids.items():
+                # Проверяем, что msg_id не None и является числом
                 if msg_id is None or not isinstance(msg_id, int):
                     logging.warning(f"Skipping invalid message_id for key {key}: {msg_id}")
                     continue
+                    
                 chat_id = config.STATUS_CHANNEL_ID if key == "channel" else config.SUPPORT_CHAT_ID
-                if chat_id is None: continue
+                if chat_id is None:
+                    continue
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=msg_id)
                 except (TelegramBadRequest, TelegramNotFound):
                     pass
             _save_status_ids({})
+
+        # Удаляем старое сообщение статистики только если канал настроен
         if config.STATS_CHAT_ID:
             old_stats_id = _read_stats_id()
             if old_stats_id is not None and isinstance(old_stats_id, int):
@@ -510,6 +615,7 @@ async def main():
                 except (TelegramBadRequest, TelegramNotFound):
                     pass
             _save_stats_id(None)
+
         if os.path.exists(RESTART_INFO_FILE):
             try:
                 with open(RESTART_INFO_FILE, "r") as f:
@@ -521,16 +627,23 @@ async def main():
                 logging.error(f"Could not edit restart message: {e}")
             finally:
                 os.remove(RESTART_INFO_FILE)
+
         await bot.delete_webhook(drop_pending_updates=True)
+
         scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
         scheduler.add_job(monitor_servers_health, 'interval', minutes=10, args=[bot])
-        scheduler.add_job(update_status_message, 'interval', minutes=3, args=[bot, False, 1])
+        scheduler.add_job(update_status_message, 'interval', minutes=3, args=[bot, False])
         scheduler.add_job(update_stats_message, 'interval', minutes=10, args=[bot, False])
         scheduler.add_job(daily_log_cleanup, 'cron', hour=3, minute=0, id="daily_log_cleanup")
+        
+        # Автоматическое резервное копирование каждые 30 минут (в :00 и :30)
         scheduler.add_job(auto_backup_task, 'cron', minute='0,30', timezone='Europe/Moscow', args=[bot], id="auto_backup")
+        
         scheduler.start()
-        await update_status_message(bot, force_resend=True, page=1)
+        
+        await update_status_message(bot, force_resend=True)
         await update_stats_message(bot, force_resend=True)
+
         logging.info("Starting bot polling...")
         try:
             await dp.start_polling(bot)
@@ -543,37 +656,6 @@ async def main():
             logging.info("Bot has been shut down gracefully.")
     except Exception as e:
         logging.critical("!!! A CRITICAL ERROR OCCURRED !!!", exc_info=True)
-
-async def cq_status_page_handler(call: CallbackQuery, bot: Bot):
-    user_id = call.from_user.id
-    current_time = time.time()
-    user_data = PAGINATION_LIMITS[user_id]
-    if user_data["timestamp"] > 0 and current_time - user_data["timestamp"] < PAGINATION_COOLDOWN_SECONDS:
-        remaining_time = int(PAGINATION_COOLDOWN_SECONDS - (current_time - user_data["timestamp"]))
-        await call.answer(f"Вы слишком часто перелистываете. Подождите {remaining_time} сек.", show_alert=True)
-        return
-    if user_data["timestamp"] > 0:
-        user_data["timestamp"] = 0
-        user_data["count"] = 0
-    if user_data["count"] >= PAGINATION_MAX_ACTIONS:
-        user_data["timestamp"] = current_time
-        user_data["count"] = 0
-        await call.answer(f"Вы достигли лимита. Повторите через {PAGINATION_COOLDOWN_SECONDS} секунд.", show_alert=True)
-        return
-    user_data["count"] += 1
-    await call.answer()
-    try:
-        page = int(call.data.split(":")[1])
-    except (ValueError, IndexError):
-        return
-    try:
-        text, markup = await _generate_paginated_status_content(page=page)
-        await call.message.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e).lower():
-            logging.error(f"Ошибка обновления страницы статуса: {e}")
-    except Exception as e:
-        logging.error(f"Критическая ошибка в cq_status_page_handler: {e}", exc_info=True)
 
 if __name__ == '__main__':
     logs_dir = 'logs'
