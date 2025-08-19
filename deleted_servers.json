@@ -849,6 +849,48 @@
             "api_url": "http://m3.sharkhost.space:8000",
             "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
             "deleted_at": "2025-08-18T23:08:40.733135"
+        },
+        {
+            "ssh_user": "root",
+            "ssh_pass": "zzzz11109kz",
+            "name": "serv1",
+            "country": "Russia",
+            "city": "Moscow",
+            "regionName": "Moscow Oblast",
+            "flag": "\ud83c\uddf7\ud83c\uddfa",
+            "code": "M3",
+            "org": "KOHTAKT Company",
+            "timezone": "Europe/Moscow",
+            "hosting": false,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 36,
+            "api_url": "http://m3.sharkhost.space:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-19T06:13:03.248812"
+        }
+    ],
+    "51.250.114.150": [
+        {
+            "ssh_user": "root",
+            "ssh_pass": "zzzz11109kz",
+            "name": "serv3",
+            "country": "Unknown",
+            "city": "Unknown",
+            "regionName": "N/A",
+            "flag": "\ud83c\udff3\ufe0f",
+            "code": "M5",
+            "org": "N/A",
+            "timezone": "N/A",
+            "hosting": false,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 23,
+            "api_url": "http://m7.sharkhost.space:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-19T06:13:48.805737"
         }
     ]
 }

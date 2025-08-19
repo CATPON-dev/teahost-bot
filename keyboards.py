@@ -663,4 +663,27 @@ def get_container_list_keyboard(page_containers: list, page: int, total_pages: i
     builder.row(InlineKeyboardButton(text="🔄 Обновить всё", callback_data="container_page:refresh"))
         
     return builder.as_markup()
+
+def get_server_info_paginator_keyboard(page: int, total_pages: int):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append({
+            'text': '◀️',
+            'callback_data': f'serverinfo_page:{page-1}'
+        })
+    nav_buttons.append({
+        'text': f'{page}/{total_pages}',
+        'callback_data': 'noop'
+    })
+    if page < total_pages:
+        nav_buttons.append({
+            'text': '▶️',
+            'callback_data': f'serverinfo_page:{page+1}'
+        })
+    for btn in nav_buttons:
+        builder.button(text=btn['text'], callback_data=btn['callback_data'])
+    builder.button(text='🔄 Обновить', callback_data='refresh_server_info')
+    return builder.as_markup()
 # --- END OF FILE keyboards.py ---

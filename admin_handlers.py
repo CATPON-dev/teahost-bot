@@ -59,6 +59,8 @@ CACHE_TTL_SECONDS = 60
 CONTAINER_LIST_CACHE = {}
 CONTAINER_CACHE_TTL = 600 
 
+SERVERINFO_PAGE_SIZE = 5
+
 async def _generate_container_list_page(containers_on_page: list, total_containers: int, expanded_container_name: str | None = None) -> str:
     """Формирует текст для одной страницы списка контейнеров с красивым форматированием."""
     
@@ -624,8 +626,8 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             "<b>⚙️ Команды управления серверами:</b>\n\n"
             "<code>/serv list</code>\n"
             "<i>Показывает список всех серверов с их кодами.</i>\n\n"
-            "<code>/serv add [IP] [user] [pass] [hostname] [код]</code>\n"
-            "<i>Добавляет новый сервер. Пример: /serv add 192.168.1.100 root mypass sharkhost M2</i>\n\n"
+            "<code>/serv add [IP] [user] [pass] [hostname] [код] [-i]</code>\n"
+            "<i>Добавляет новый сервер. Пример: /serv add 192.168.1.100 root mypass sharkhost M2 -i</i>\n\n"
             "<code>/serv del [код]</code>\n"
             "<i>Удаляет сервер из конфигурации.</i>\n\n"
             "<b>Команды для конкретного сервера:</b>\n"
@@ -662,22 +664,27 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
 
     if action == "add":
         if len(args) < 6:
-            await message.reply(f"Использование: <code>/serv add [IP] [user] [password] [hostname] [код]</code>\n\n"
-                              f"Пример: <code>/serv add 192.168.1.100 root mypass sharkhost M2</code>")
+            await message.reply(f"Использование: <code>/serv add [IP] [user] [password] [hostname] [код] [-i]</code>\n\n"
+                              f"Пример: <code>/serv add 192.168.1.100 root mypass sharkhost M2 -i</code>")
             return
+
+        # Поддержка флага -i
+        do_install = False
+        if len(args) > 6 and args[6] == "-i":
+            do_install = True
 
         _, ip, user, password, hostname, code = args[:6]
         
         if ip in servers:
             await message.reply(f"❌ Сервер <code>{ip}</code> уже существует.")
             return
-
+        
         existing_codes = [details.get("code") for details in servers.values() if details.get("code")]
         if code in existing_codes:
             await message.reply(f"❌ Сервер с кодом <code>{code}</code> уже существует.\n\n"
                               f"Доступные коды: {', '.join(f'<code>{c}</code>' for c in existing_codes)}")
             return
-
+        
         existing_names = [details.get("name") for details in servers.values() if details.get("name")]
         i = 1
         while f"serv{i}" in existing_names:
@@ -735,6 +742,44 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
                 await msg.reply(f"✅ Hostname успешно изменён на '{hostname}'.")
             else:
                 await msg.reply(f"⚠️ Не удалось изменить hostname.\n<pre>{set_hostname_res.get('error','')}</pre>")
+
+            # Если был флаг -i, запускаем установку Docker и sharkapi
+            if do_install:
+                await msg.reply(f"⏳ Запускаю установку Docker и sharkapi на сервере <code>{ip}</code>...")
+                install_cmd = (
+                    "sudo apt update && sudo apt install -y ca-certificates curl gnupg lsb-release "
+                    "&& sudo install -m 0755 -d /etc/apt/keyrings "
+                    "&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg "
+                    "&& echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null "
+                    "&& sudo apt update "
+                    "&& sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin python3-pip "
+                    "&& cd /root/ && git clone https://Plovchikdeval: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@github.com/Plovchikdeval/sharkapi.git api "
+                    "&& cd api && pip install -r requirements.txt "
+                    "&& echo \"[Unit]\nDescription=Запуск Python-приложения (app) из /projects/give\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=/root/api\nExecStart=python3 -m app\nRestart=always\nRestartSec=15\nUser=root\nEnvironment=PYTHONUNBUFFERED=1\n\n[Install]\nWantedBy=multi-user.target\" > /etc/systemd/system/api.service "
+                    "&& systemctl enable --now api "
+                    "&& systemctl stop docker "
+                    "&& mkdir -p /opt/docker-storage "
+                    "&& fallocate -l 40G /opt/docker-storage/docker.img "
+                    "&& mkfs.xfs -m reflink=1 -n ftype=1 /opt/docker-storage/docker.img "
+                    "&& mount -o loop,pquota /opt/docker-storage/docker.img /var/lib/docker "
+                    "&& grep -q '/var/lib/docker' /etc/fstab || echo '/opt/docker-storage/docker.img /var/lib/docker xfs loop,pquota 0 0' >> /etc/fstab "
+                    "&& systemctl start docker "
+                    "&& for userbot in legacy fox hikka heroku; do docker pull sharkhost/sharkhost:$userbot; done"
+                )
+                res = await sm.run_command_async(install_cmd, ip, timeout=1800)
+                output = res.get('output', '')
+                error = res.get('error', '')
+                exit_code = res.get('exit_status', 'N/A')
+                if res.get('success'):
+                    text = f"✅ <b>Установка завершена успешно на <code>{ip}</code></b>\n\n<pre>{html.quote(output)}</pre>"
+                else:
+                    text = f"❌ <b>Ошибка установки на <code>{ip}</code></b>\nКод выхода: <code>{exit_code}</code>\n\n<pre>{html.quote(error or output)}</pre>"
+                if len(text) > 4096:
+                    from aiogram.types import BufferedInputFile
+                    file = BufferedInputFile((output + '\n' + error).encode('utf-8'), filename='install_log.txt')
+                    await message.answer_document(file, caption=text[:1000])
+                else:
+                    await message.reply(text)
         else:
             await msg.edit_text(f"❌ Не удалось добавить сервер <code>{ip}</code>.")
         return
@@ -795,6 +840,79 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             await msg.edit_text(f"<b>Системная сводка для {server_code}:</b>\n<pre>{html.quote(res['output'])}</pre>")
         else:
             await msg.edit_text(f"❌ Не удалось выполнить neofetch: <pre>{html.quote(res.get('error', '...'))}</pre>")
+        return
+
+    if sub_action == "install":
+        msg = await message.reply(f"⏳ Запускаю установку Docker и sharkapi на сервере <code>{target_ip}</code>...")
+        install_cmd = (
+            "sudo apt update && sudo apt install -y ca-certificates curl gnupg lsb-release "
+            "&& sudo install -m 0755 -d /etc/apt/keyrings "
+            "&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg "
+            "&& echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null "
+            "&& sudo apt update "
+            "&& sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin python3-pip "
+            "&& cd /root/ && git clone https://Plovchikdeval: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@github.com/Plovchikdeval/sharkapi.git api "
+            "&& cd api && pip install -r requirements.txt "
+            "&& echo \"[Unit]\nDescription=Запуск Python-приложения (app) из /projects/give\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=/root/api\nExecStart=python3 -m app\nRestart=always\nRestartSec=15\nUser=root\nEnvironment=PYTHONUNBUFFERED=1\n\n[Install]\nWantedBy=multi-user.target\" > /etc/systemd/system/api.service "
+            "&& systemctl enable --now api "
+            "&& systemctl stop docker "
+            "&& mkdir -p /opt/docker-storage "
+            "&& fallocate -l 40G /opt/docker-storage/docker.img "
+            "&& mkfs.xfs -m reflink=1 -n ftype=1 /opt/docker-storage/docker.img "
+            "&& mount -o loop,pquota /opt/docker-storage/docker.img /var/lib/docker "
+            "&& grep -q '/var/lib/docker' /etc/fstab || echo '/opt/docker-storage/docker.img /var/lib/docker xfs loop,pquota 0 0' >> /etc/fstab "
+            "&& systemctl start docker "
+            "&& for userbot in legacy fox hikka heroku; do docker pull sharkhost/sharkhost:$userbot; done"
+        )
+        res = await sm.run_command_async(install_cmd, target_ip, timeout=1800)
+        output = res.get('output', '')
+        error = res.get('error', '')
+        exit_code = res.get('exit_status', 'N/A')
+        if res.get('success'):
+            text = f"✅ <b>Установка завершена успешно на <code>{target_ip}</code></b>\n\n<pre>{html.quote(output)}</pre>"
+        else:
+            text = f"❌ <b>Ошибка установки на <code>{target_ip}</code></b>\nКод выхода: <code>{exit_code}</code>\n\n<pre>{html.quote(error or output)}</pre>"
+        if len(text) > 4096:
+            from aiogram.types import BufferedInputFile
+            file = BufferedInputFile((output + '\n' + error).encode('utf-8'), filename='install_log.txt')
+            await msg.delete()
+            await message.answer_document(file, caption=text[:1000])
+        else:
+            await msg.edit_text(text)
+        return
+
+    if sub_action == "uninstall":
+        msg = await message.reply(f"⏳ Запускаю удаление Docker, sharkapi и связанных файлов на сервере <code>{target_ip}</code>...")
+        uninstall_cmd = (
+            "systemctl disable --now api || true && "
+            "rm -f /etc/systemd/system/api.service && "
+            "rm -rf /root/api && "
+            "systemctl stop docker || true && "
+            "umount /var/lib/docker || true && "
+            "sed -i '\|/opt/docker-storage/docker.img /var/lib/docker|d' /etc/fstab && "
+            "rm -f /opt/docker-storage/docker.img && "
+            "rm -rf /opt/docker-storage && "
+            "apt purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin python3-pip && "
+            "apt autoremove -y && "
+            "rm -f /etc/apt/keyrings/docker.gpg && "
+            "rm -f /etc/apt/sources.list.d/docker.list && "
+            "apt update"
+        )
+        res = await sm.run_command_async(uninstall_cmd, target_ip, timeout=1800)
+        output = res.get('output', '')
+        error = res.get('error', '')
+        exit_code = res.get('exit_status', 'N/A')
+        if res.get('success'):
+            text = f"✅ <b>Удаление завершено успешно на <code>{target_ip}</code></b>\n\n<pre>{html.quote(output)}</pre>"
+        else:
+            text = f"❌ <b>Ошибка удаления на <code>{target_ip}</code></b>\nКод выхода: <code>{exit_code}</code>\n\n<pre>{html.quote(error or output)}</pre>"
+        if len(text) > 4096:
+            from aiogram.types import BufferedInputFile
+            file = BufferedInputFile((output + '\n' + error).encode('utf-8'), filename='uninstall_log.txt')
+            await msg.delete()
+            await message.answer_document(file, caption=text[:1000])
+        else:
+            await msg.edit_text(text)
         return
 
     if sub_action == "ubs":
@@ -962,41 +1080,56 @@ async def start_or_reset_update_task(bot: Bot, chat_id: int, message_id: int):
     ACTIVE_PANEL_UPDATE_TASKS[chat_id] = task
     logging.info(f"Started new auto-update task for chat {chat_id}, message {message_id}")
 
-async def _get_server_info_content():
+async def _get_server_info_content(page: int = 1):
     servers = server_config.get_servers()
-    
-    remote_servers = [(ip, details) for ip, details in servers.items() if ip != "127.0.0.1"]  # sm.LOCAL_IP
-    
+    remote_servers = [(ip, details) for ip, details in servers.items() if ip != "127.0.0.1"]
+    total_servers = len(remote_servers)
     if not remote_servers:
-        return "Список удаленных серверов пуст.", None
-
-    stats_tasks = [sm.get_server_stats(ip) for ip, _ in remote_servers]
+        return "Список удаленных серверов пуст.", None, 1, 1
+    total_pages = max(1, (total_servers + SERVERINFO_PAGE_SIZE - 1) // SERVERINFO_PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * SERVERINFO_PAGE_SIZE
+    end = start + SERVERINFO_PAGE_SIZE
+    servers_on_page = remote_servers[start:end]
+    stats_tasks = [sm.get_server_stats(ip) for ip, _ in servers_on_page]
     all_stats = await asyncio.gather(*stats_tasks)
-    stats_map = dict(zip([ip for ip, _ in remote_servers], all_stats))
-    
-    info_text = await _get_full_server_info_text(stats_map, remote_servers)
-    
-    markup = kb.get_server_info_keyboard()
-    
-    return info_text, markup
+    stats_map = dict(zip([ip for ip, _ in servers_on_page], all_stats))
+    info_text = await _get_full_server_info_text(stats_map, servers_on_page)
+    from keyboards import get_server_info_paginator_keyboard
+    markup = get_server_info_paginator_keyboard(page, total_pages)
+    return info_text, markup, page, total_pages
 
 @router.message(Command("serverinfo"))
 async def cmd_server_info(message: types.Message, bot: Bot):
     msg = await message.reply("⏳ Собираю информацию...")
-    
-    info_text, markup = await _get_server_info_content()
-
+    info_text, markup, page, total_pages = await _get_server_info_content(page=1)
     if "пуст" in info_text:
         await msg.edit_text(info_text)
         return
-
     sent_message = await msg.edit_text(
         text=info_text,
         reply_markup=markup
     )
-    
     await start_or_reset_update_task(bot, sent_message.chat.id, sent_message.message_id)
 
+@router.callback_query(F.data.startswith("serverinfo_page:"))
+async def serverinfo_page_callback(call: types.CallbackQuery, bot: Bot):
+    await call.answer()
+    try:
+        page = int(call.data.split(":")[1])
+    except Exception:
+        page = 1
+    info_text, markup, page, total_pages = await _get_server_info_content(page=page)
+    try:
+        await call.message.edit_text(
+            text=info_text,
+            reply_markup=markup
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            import logging
+            logging.error(f"Ошибка обновления serverinfo_page: {e}")
+    await start_or_reset_update_task(bot, call.message.chat.id, call.message.message_id)
 
 @router.callback_query(F.data == "refresh_server_info")
 async def refresh_server_info_handler(call: types.CallbackQuery, bot: Bot):
@@ -3106,7 +3239,7 @@ async def cmd_update_commit(message: types.Message, command: CommandObject, bot:
     if admin.username:
         admin_info_str += f" (@{html.quote(admin.username)})"
 
-    changelog_channel_id = None  # Отключено из-за недоступности чата
+    changelog_channel_id = -1002758779158  # Отключено из-за недоступности чата
     topic_id = 1920
 
     header_text = (
