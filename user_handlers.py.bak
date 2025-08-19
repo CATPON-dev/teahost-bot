@@ -34,7 +34,6 @@ from states import UserBotSetup, UserBotTransfer, UserReview, CommitEditing, API
 from admin_manager import get_all_admins
 from config_manager import config
 from channel_logger import log_event
-import math
 from filters import IsBotEnabled, IsSubscribed, IsAdmin
 # from system_manager import get_service_process_uptime
 
@@ -44,62 +43,6 @@ router.message.filter(IsBotEnabled())
 router.callback_query.filter(IsBotEnabled())
 
 LOG_LINES_PER_PAGE = 25
-SERVERS_PER_PAGE = 10
-
-async def _show_server_selection_page(call: types.CallbackQuery, state: FSMContext, page: int = 1):
-    from bot import BANNER_FILE_IDS
-    user_id = call.from_user.id
-    is_admin = user_id in get_all_admins()
-    
-    all_servers = server_config.get_servers()
-    available_servers = [
-        (ip, details) for ip, details in all_servers.items()
-        if ip != sm.LOCAL_IP and (details.get("status") != "test" or is_admin)
-    ]
-    
-    total_pages = math.ceil(len(available_servers) / SERVERS_PER_PAGE) if available_servers else 1
-    page = max(1, min(page, total_pages))
-    start_index = (page - 1) * SERVERS_PER_PAGE
-    end_index = start_index + SERVERS_PER_PAGE
-    servers_on_page = available_servers[start_index:end_index]
-
-    ips_on_page = [ip for ip, _ in servers_on_page]
-    installed_bots_map = {ip: len(await db.get_userbots_by_server_ip(ip)) for ip in ips_on_page}
-    
-    data = await state.get_data()
-    server_stats = data.get("server_stats", {})
-    
-    markup = kb.get_server_selection_keyboard(
-        user_id=user_id,
-        installed_bots_map=installed_bots_map,
-        server_stats=server_stats,
-        servers_on_page=servers_on_page,
-        page=page,
-        total_pages=total_pages
-    )
-    
-    text = "<b>⬇️ Установка</b>\n\n<b>💻 Выберите сервер, на который хотите установить юзербот</b>"
-    photo = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
-    message_id = data.get("message_id_to_edit", call.message.message_id)
-
-    try:
-        await call.bot.edit_message_media(
-            chat_id=call.message.chat.id, message_id=message_id,
-            media=InputMediaPhoto(media=photo, caption=text),
-            reply_markup=markup
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e).lower():
-            logging.error(f"Error editing server selection page: {e}")
-
-@router.callback_query(F.data.startswith("select_server_page:"), UserBotSetup.ChoosingServer)
-async def cq_select_server_page(call: types.CallbackQuery, state: FSMContext):
-    try:
-        page = int(call.data.split(":")[1])
-        await call.answer()
-        await _show_server_selection_page(call, state, page)
-    except (ValueError, IndexError):
-        await call.answer("Ошибка данных пагинации.", show_alert=True)
 
 review_warned_users = defaultdict(lambda: False)
 
@@ -748,32 +691,50 @@ async def cq_back_to_main_panel_delete(call: types.CallbackQuery, state: FSMCont
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 async def _start_installation_flow(call: types.CallbackQuery, state: FSMContext):
-    from bot import BANNER_FILE_IDS
-    photo_file = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
-    message_to_edit_id = call.message.message_id
     try:
-        await call.message.edit_media(
-            media=InputMediaPhoto(media=photo_file, caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов..."),
-            reply_markup=kb.get_loading_keyboard()
-        )
-    except TelegramBadRequest:
-        await call.message.delete()
-        new_msg = await call.message.answer_photo(
-            photo=photo_file, 
-            caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов...",
-            reply_markup=kb.get_loading_keyboard()
-        )
-        message_to_edit_id = new_msg.message_id
-    await state.update_data(message_id_to_edit=message_to_edit_id)
+        from bot import BANNER_FILE_IDS
+        photo_file = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
+        message_to_edit_id = call.message.message_id
+        try:
+            await call.message.edit_media(
+                media=InputMediaPhoto(media=photo_file, caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов..."),
+                reply_markup=kb.get_loading_keyboard()
+            )
+        except TelegramBadRequest:
+            await call.message.delete()
+            new_msg = await call.message.answer_photo(
+                photo=photo_file, 
+                caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов...",
+                reply_markup=kb.get_loading_keyboard()
+            )
+            message_to_edit_id = new_msg.message_id
 
-    servers = server_config.get_servers()
-    tasks = [sm.get_server_stats(ip) for ip in servers.keys()]
-    stats_results = await asyncio.gather(*tasks, return_exceptions=True)
-    server_stats = {ip: result for ip, result in zip(servers.keys(), stats_results) if not isinstance(result, Exception)}
-    await state.update_data(server_stats=server_stats)
-    
-    await _show_server_selection_page(call, state, page=1)
-    await state.set_state(UserBotSetup.ChoosingServer)
+        await state.update_data(message_id_to_edit=message_to_edit_id)
+
+        servers = server_config.get_servers()
+        installed_bots_map = {ip: len(await db.get_userbots_by_server_ip(ip)) for ip in servers.keys()}
+        # Получаем статистику серверов
+        tasks = [sm.get_server_stats(ip) for ip in servers.keys()]
+        stats_results = await asyncio.gather(*tasks, return_exceptions=True)
+        server_stats = {}
+        for ip, result in zip(servers.keys(), stats_results):
+            if isinstance(result, Exception):
+                server_stats[ip] = None
+            else:
+                server_stats[ip] = result
+        
+        await state.update_data(server_stats=server_stats)
+        
+        text = "<b>⬇️ Установка</b>\n\n<b>💻 Выберите сервер, на который хотите установить юзербот</b>"
+        
+        await call.bot.edit_message_media(
+            chat_id=call.message.chat.id, message_id=message_to_edit_id,
+            media=InputMediaPhoto(media=photo_file, caption=text),
+            reply_markup=kb.get_server_selection_keyboard(call.from_user.id, installed_bots_map, server_stats)
+        )
+        await state.set_state(UserBotSetup.ChoosingServer)
+    except TelegramBadRequest:
+        await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data == "create_userbot_start", IsSubscribed(), StateFilter("*"))
 async def cq_create_userbot_start(call: types.CallbackQuery, state: FSMContext):

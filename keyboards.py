@@ -63,28 +63,18 @@ def get_subscribe_keyboard(channel_id: str):
     builder.adjust(1)
     return builder.as_markup()
 
-def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server_stats: dict):
+def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server_stats: dict, servers_on_page: list, page: int, total_pages: int):
     builder = InlineKeyboardBuilder()
-    servers = server_config.get_servers()
     is_admin = user_id in get_all_admins()
-    for ip, details in servers.items():
-        if ip == "127.0.0.1" or ip == sm.LOCAL_IP:
-            emoji_status = "🔧"
-            flag = details.get("flag", "🏳️")
-            code = f"{details.get('code', 'N/A')}-service"
-            cpu_load = server_stats.get(ip, {}).get('cpu_usage', 'N/A')
-            button_text = f"{emoji_status} | {flag} | {code} | 📈 {cpu_load}%"
-            callback_data = "server_is_service"
-            builder.button(text=button_text, callback_data=callback_data)
-            continue
+    
+    for ip, details in servers_on_page:
         status = details.get("status", "false")
-        if status == "test" and not is_admin:
-            continue
         slots = details.get("slots", 0)
         installed = installed_bots_map.get(ip, 0)
         flag = details.get("flag", "🏳️")
         code = details.get("code", "N/A")
         cpu_load = server_stats.get(ip, {}).get('cpu_usage', 'N/A')
+        
         if status == "false":
             emoji_status = "🔴"
             callback_data = "server_unavailable"
@@ -100,10 +90,29 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
         else:
             emoji_status = "🟢"
             callback_data = f"select_server:{ip}"
+
         button_text = f"{emoji_status} | [{installed}/{slots}] | {flag} | {code} | 📈 {cpu_load}%"
         builder.button(text=button_text, callback_data=callback_data)
-    builder.button(text="🔙 Назад", callback_data="back_to_main_panel")
+
     builder.adjust(1)
+    
+    if total_pages > 1:
+        nav_buttons = []
+        if page > 1:
+            nav_buttons.append(InlineKeyboardButton(text="« 1", callback_data=f"select_server_page:1"))
+        if page > 1:
+            nav_buttons.append(InlineKeyboardButton(text="‹", callback_data=f"select_server_page:{page - 1}"))
+        
+        nav_buttons.append(InlineKeyboardButton(text=f"· {page}/{total_pages} ·", callback_data="noop"))
+        
+        if page < total_pages:
+            nav_buttons.append(InlineKeyboardButton(text="›", callback_data=f"select_server_page:{page + 1}"))
+        if page < total_pages:
+            nav_buttons.append(InlineKeyboardButton(text=f"{total_pages} »", callback_data=f"select_server_page:{total_pages}"))
+        
+        builder.row(*nav_buttons)
+
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main_panel"))
     return builder.as_markup()
     
 def get_main_panel_keyboard(has_bots: bool, user_id: int = None, chat_id: int = None, is_chat: bool = False):

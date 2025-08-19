@@ -276,30 +276,86 @@ async def _generate_paginated_status_content(page: int = 1):
     active_servers = {ip: s for ip, s in servers.items() if s.get('status') == "true" and ip != sm.LOCAL_IP}
     available_servers = len(active_servers)
     free_slots = sum(max(0, s.get('slots', 0) - installed_bots_map.get(ip, 0)) for ip, s in active_servers.items())
+    
     async def get_stats_with_semaphore(ip):
         async with SSH_SEMAPHORE:
             return await sm.get_server_stats(ip)
+    
     tasks = [get_stats_with_semaphore(ip) for ip in servers_on_page.keys()]
     stats_results = await asyncio.gather(*tasks)
     server_stats = dict(zip(servers_on_page.keys(), stats_results))
+    
     text_parts = [
+        "<blockquote>",
         "🦈 <b>SharkHost Status</b>", "", "<b>📊 Общая статистика:</b>",
         f"<blockquote>- {total_users} пользователей\n- {available_servers} серверов доступно\n- {free_slots} {pluralize_userbot(free_slots)} можно установить</blockquote>",
-        "", "<b>🚀 Статус серверов:</b>", ""
+        "", "<b>🚀 Статус серверов:</b>", "</blockquote>"
     ]
+
     for ip, details in servers_on_page.items():
-        flag, location_name, code = details.get("flag", "🏳️"), details.get("city", details.get("name", "Unknown")), details.get("code", "N/A")
-        server_title = f"{flag} {location_name} ({code})"
         stats = server_stats.get(ip, {})
-        cpu_percent, ram_percent, disk_percent, uptime = stats.get('cpu_usage', '0'), stats.get('ram_percent', '0'), stats.get('disk_percent', '0%').replace('%', ''), stats.get('uptime', 'N/A')
-        cpu_bar, ram_bar, disk_bar = _create_progress_bar(cpu_percent), _create_progress_bar(ram_percent), _create_progress_bar(disk_percent)
-        server_block = (f"<blockquote>🧠 CPU: {cpu_bar} {cpu_percent}%\n"
-                        f"💾 RAM: {ram_bar} {ram_percent}%\n"
-                        f"💽 Disk: {disk_bar} {disk_percent}%\n"
-                        f"⏳ Uptime: {uptime}</blockquote>")
-        text_parts.append(server_title)
+        ub_count = installed_bots_map.get(ip, 0)
+
+        def safe_float(value, default=0):
+            try:
+                if isinstance(value, str):
+                    value = ''.join(c for c in value if c.isdigit() or c == '.')
+                return float(value) if value else default
+            except (ValueError, TypeError):
+                return default
+
+        cpu_usage = safe_float(stats.get('cpu_usage', 0))
+        cpu_cores = stats.get('cpu_cores', '?')
+        ram_percent = safe_float(stats.get('ram_percent', 0))
+        ram_used = stats.get('ram_used', 'N/A')
+        ram_total = stats.get('ram_total', 'N/A')
+        disk_percent = safe_float(stats.get('disk_percent', 0))
+        disk_used = stats.get('disk_used', 'N/A')
+        disk_total = stats.get('disk_total', 'N/A')
+        uptime = stats.get('uptime', 'N/A')
+        
+        cpu_bar = _create_progress_bar(cpu_usage)
+        ram_bar = _create_progress_bar(ram_percent)
+        disk_bar = _create_progress_bar(disk_percent)
+        if cpu_usage < 80 and ram_percent < 80:
+            status_emoji = "🟢"
+        elif cpu_usage < 90:
+            status_emoji = "🟡"
+        else:
+            status_emoji = "🔴"
+
+        flag = details.get("flag", "🏳️")
+        location_name = details.get("city", details.get("name", "Unknown"))
+        code = details.get("code", "N/A")
+        country = details.get("country", "N/A")
+
+        server_block = (
+            "<blockquote expandable>"
+            "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"┃ <b>{status_emoji} {location_name}</b>\n"
+            f"┃ <code>{code}</code> • {flag}\n"
+            f"┃\n"
+            f"┃ 📍 <b>Локация</b>\n"
+            f"┃   {country}, {details.get('city', 'N/A')}\n"
+            f"┃\n"
+            f"┃ 💻 <b>Характеристики</b>\n"
+            f"┃   • CPU: {cpu_cores} ядер\n"
+            f"┃   • RAM: {ram_total}\n"
+            f"┃   • Disk: {disk_total}\n"
+            f"┃\n"
+            f"┃ 📈 <b>Нагрузка</b>\n"
+            f"┃   • CPU: {cpu_bar} <code>{cpu_usage:.1f}%</code>\n"
+            f"┃   • RAM: {ram_bar} <code>{ram_percent:.1f}%</code>\n"
+            f"┃   • Disk: {disk_bar} <code>{disk_percent:.1f}%</code>\n"
+            f"┃\n"
+            f"┃ ⏱️ <b>Uptime:</b> {uptime}\n"
+            f"┃ 🤖 <b>Юзерботы:</b> <code>{ub_count} шт.</code>\n"
+            f"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+             "</blockquote>"
+        )
         text_parts.append(server_block)
-    text = "\n".join(text_parts)
+    
+    text = "".join(text_parts)
     markup = kb.get_public_status_keyboard(installed_bots_map, server_stats, servers_on_page, page, total_pages)
     return text, markup
 
