@@ -10,14 +10,12 @@ logger = logging.getLogger(__name__)
 class APIManager:
     def __init__(self):
         self.base_url = "http://m7.sharkhost.space:8000"
-        self.token = "kivWJm0e2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZve0zvr8y"
+        self.token = "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZve0zvr8y"
     
     def get_server_api_config(self, server_ip: str) -> tuple[str, str]:
-        """Получает API URL и токен для конкретного сервера"""
         api_url = server_config.get_server_api_url(server_ip)
         api_token = server_config.get_server_api_token(server_ip)
         
-        # Если для сервера не настроен API, используем дефолтные значения
         if not api_url:
             api_url = self.base_url
         if not api_token:
@@ -26,7 +24,6 @@ class APIManager:
         return api_url, api_token
     
     async def create_container(self, name: str, port: int, userbot: str, server_ip: str) -> Dict[str, Any]:
-        """Создает контейнер через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/create"
         params = {
@@ -55,7 +52,6 @@ class APIManager:
             return {"success": False, "error": str(e)}
     
     async def delete_container(self, name: str, server_ip: str) -> Dict[str, Any]:
-        """Удаляет контейнер через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/remove"
         params = {"name": name}
@@ -79,8 +75,7 @@ class APIManager:
             logger.error(f"Ошибка при удалении контейнера {name}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
     
-    async def get_container_status(self, name: str, server_ip: str) -> Dict[str, Any]:
-        """Получает статус контейнера через API"""
+    async def get_container_status(self, name: str, server_ip: str, timeout: float = 8.0) -> Dict[str, Any]:
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/status"
         params = {"name": name}
@@ -90,8 +85,8 @@ class APIManager:
         }
         
         try:
-            timeout = aiohttp.ClientTimeout(total=8.0)  # 8 секунд таймаут
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            client_timeout = aiohttp.ClientTimeout(total=timeout)
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
                 async with session.get(url, params=params, headers=headers) as response:
                     if response.status == 200:
                         result = await response.json()
@@ -108,7 +103,6 @@ class APIManager:
             return {"success": False, "error": str(e)}
 
     async def get_container_logs(self, name: str, server_ip: str) -> Dict[str, Any]:
-        """Получает логи контейнера через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/logs"
         params = {"name": name}
@@ -131,8 +125,7 @@ class APIManager:
             logger.error(f"Ошибка при получении логов контейнера {name}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
-    async def get_container_stats(self, name: str, server_ip: str) -> Dict[str, Any]:
-        """Получает статистику контейнера через API"""
+    async def get_container_stats(self, name: str, server_ip: str, timeout: float = 10.0) -> Dict[str, Any]:
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/cont_stat"
         params = {"name": name}
@@ -142,9 +135,9 @@ class APIManager:
         }
         
         try:
-            timeout = aiohttp.ClientTimeout(total=10.0)  # 10 секунд таймаут для статистики
+            client_timeout = aiohttp.ClientTimeout(total=timeout)
             logger.info(f"Запрашиваем статистику контейнера {name} с URL: {url}")
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
                 async with session.get(url, params=params, headers=headers) as response:
                     logger.info(f"Получен ответ для статистики контейнера {name}: {response.status}")
                     if response.status == 200:
@@ -163,7 +156,6 @@ class APIManager:
             return {"success": False, "error": str(e)}
     
     async def get_server_ping(self, server_ip: str) -> Optional[float]:
-        """Измеряет пинг до сервера через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/ping"
         headers = {
@@ -172,7 +164,7 @@ class APIManager:
         }
         
         try:
-            timeout = aiohttp.ClientTimeout(total=5.0)  # 5 секунд таймаут для пинга
+            timeout = aiohttp.ClientTimeout(total=5.0)
             start_time = asyncio.get_event_loop().time()
             
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -182,7 +174,7 @@ class APIManager:
                     if response.status == 200:
                         result = await response.json()
                         if result.get("message") == "pong":
-                            ping_ms = (end_time - start_time) * 1000  # Конвертируем в миллисекунды
+                            ping_ms = (end_time - start_time) * 1000
                             return round(ping_ms, 1)
                     
                     return None
@@ -191,7 +183,6 @@ class APIManager:
             return None
     
     async def start_container(self, name: str, server_ip: str) -> Dict[str, Any]:
-        """Запускает контейнер через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/action"
         params = {"type": "start", "name": name}
@@ -201,7 +192,7 @@ class APIManager:
         }
         
         try:
-            timeout = aiohttp.ClientTimeout(total=15.0)  # 15 секунд таймаут для запуска
+            timeout = aiohttp.ClientTimeout(total=15.0)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params, headers=headers) as response:
                     if response.status == 200:
@@ -220,7 +211,6 @@ class APIManager:
             return {"success": False, "error": str(e)}
     
     async def stop_container(self, name: str, server_ip: str) -> Dict[str, Any]:
-        """Останавливает контейнер через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/action"
         params = {"type": "stop", "name": name}
@@ -230,7 +220,7 @@ class APIManager:
         }
         
         try:
-            timeout = aiohttp.ClientTimeout(total=15.0)  # 15 секунд таймаут для остановки
+            timeout = aiohttp.ClientTimeout(total=15.0)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params, headers=headers) as response:
                     if response.status == 200:
@@ -249,7 +239,6 @@ class APIManager:
             return {"success": False, "error": str(e)}
     
     async def restart_container(self, name: str, server_ip: str) -> Dict[str, Any]:
-        """Перезапускает контейнер через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/action"
         params = {"type": "restart", "name": name}
@@ -259,7 +248,7 @@ class APIManager:
         }
         
         try:
-            timeout = aiohttp.ClientTimeout(total=20.0)  # 20 секунд таймаут для перезапуска
+            timeout = aiohttp.ClientTimeout(total=20.0)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params, headers=headers) as response:
                     if response.status == 200:
@@ -278,7 +267,6 @@ class APIManager:
             return {"success": False, "error": str(e)}
 
     async def get_container_list(self, server_ip: str) -> Dict[str, Any]:
-        """Получает список контейнеров с сервера через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/list"
         headers = {
@@ -302,7 +290,6 @@ class APIManager:
             return {"success": False, "error": str(e)}
             
     async def exec_in_container(self, name: str, command: str, server_ip: str) -> Dict[str, Any]:
-        """Выполняет команду в контейнере через API"""
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/exec"
         params = {"name": name, "command": command}
@@ -325,6 +312,75 @@ class APIManager:
         except Exception as e:
             logger.error(f"Ошибка при выполнении команды в контейнере {name}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
-
-# Создаем глобальный экземпляр
-api_manager = APIManager() 
+            
+    async def exec_all(self, command: str, server_ip: str) -> Dict[str, Any]:
+        api_url, api_token = self.get_server_api_config(server_ip)
+        url = f"{api_url}/api/host/exec_all"
+        params = {"command": command}
+        headers = {
+            "accept": "application/json",
+            "token": api_token
+        }
+        
+        try:
+            timeout = aiohttp.ClientTimeout(total=300.0) 
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params, headers=headers) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return {"success": True, "data": result}
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Ошибка выполнения команды в контейнере {name}: {response.status} - {error_text}")
+                        return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
+        except Exception as e:
+            logger.error(f"Ошибка при выполнении команды в контейнере {name}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+            
+    async def check_session(self, server_ip: str) -> Dict[str, Any]:
+        api_url, api_token = self.get_server_api_config(server_ip)
+        url = f"{api_url}​/api​/host​/check_session"
+        headers = {
+            "accept": "application/json",
+            "token": api_token
+        }
+        
+        try:
+            timeout = aiohttp.ClientTimeout(total=300.0) 
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return {"success": True, "data": result}
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Ошибка выполнения команды в контейнере {name}: {response.status} - {error_text}")
+                        return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
+        except Exception as e:
+            logger.error(f"Ошибка при выполнении команды в контейнере {name}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+            
+    async def reinstall_ub(self, name: str, userbot: str, server_ip: str) -> Dict[str, Any]:
+        api_url, api_token = self.get_server_api_config(server_ip)
+        url = f"{api_url}/api/host/action"
+        params = {"type": "recreate", "name": name, "userbot": userbot}
+        headers = {
+            "accept": "application/json",
+            "token": api_token
+        }
+        
+        try:
+            timeout = aiohttp.ClientTimeout(total=300.0) 
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params, headers=headers) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return {"success": True, "data": result}
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Ошибка выполнения команды в контейнере {name}: {response.status} - {error_text}")
+                        return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
+        except Exception as e:
+            logger.error(f"Ошибка при выполнении команды в контейнере {name}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+api_manager = APIManager()

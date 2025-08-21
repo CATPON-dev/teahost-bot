@@ -18,25 +18,6 @@
         "api_url": "http://109.120.157.210:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
     },
-    "158.160.137.16": {
-        "ssh_user": "root",
-        "ssh_pass": "zzzz11109kz",
-        "name": "serv2",
-        "country": "Russia",
-        "city": "Moscow",
-        "regionName": "Moscow Oblast",
-        "flag": "🇷🇺",
-        "code": "M4",
-        "org": "Yandex Cloud",
-        "timezone": "Europe/Moscow",
-        "hosting": false,
-        "proxy": false,
-        "vpn": false,
-        "status": "true",
-        "slots": 38,
-        "api_url": "http://m4.sharkhost.space:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
-    },
     "94.198.218.164": {
         "ssh_user": "root",
         "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
@@ -697,7 +678,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "test",
+        "status": "true",
         "slots": 20,
         "api_url": "http://94.241.143.117:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
@@ -754,7 +735,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "test",
+        "status": "true",
         "slots": 20,
         "api_url": "http://94.241.143.187:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"

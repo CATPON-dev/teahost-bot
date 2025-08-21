@@ -287,9 +287,13 @@ async def _generate_paginated_status_content(page: int = 1):
     
     text_parts = [
         "<blockquote>",
-        "🦈 <b>SharkHost Status</b>", "", "<b>📊 Общая статистика:</b>",
-        f"<blockquote>- {total_users} пользователей\n- {available_servers} серверов доступно\n- {free_slots} {pluralize_userbot(free_slots)} можно установить</blockquote>",
-        "", "<b>🚀 Статус серверов:</b>", "</blockquote>"
+        "🦈 <b>SharkHost Status</b>\n",
+       f"<b>📊 Общая статистика:</b>\n"
+       f"{total_users} пользователей\n"
+       f"- {available_servers} серверов доступно\n"
+       f"- {free_slots} {pluralize_userbot(free_slots)} можно установить\n\n"
+       "<b>🚀 Статус серверов:</b>",
+       "</blockquote>\n\n"
     ]
 
     for ip, details in servers_on_page.items():

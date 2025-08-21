@@ -177,6 +177,26 @@
             "api_url": "m4.sharkhost.space:8000/api/v1",
             "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
             "deleted_at": "2025-08-05T12:50:30.104721"
+        },
+        {
+            "ssh_user": "root",
+            "ssh_pass": "zzzz11109kz",
+            "name": "serv2",
+            "country": "Russia",
+            "city": "Moscow",
+            "regionName": "Moscow Oblast",
+            "flag": "\ud83c\uddf7\ud83c\uddfa",
+            "code": "M4",
+            "org": "Yandex Cloud",
+            "timezone": "Europe/Moscow",
+            "hosting": false,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 38,
+            "api_url": "http://m4.sharkhost.space:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-20T12:36:26.202486"
         }
     ],
     "13.60.199.97": [

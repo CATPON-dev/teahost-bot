@@ -677,6 +677,16 @@ async def update_userbot_server(ub_username: str, new_server_ip: str) -> bool:
     except aiomysql.Error as e:
         logger.error(f"Ошибка обновления сервера для UB {ub_username}: {e}", exc_info=True)
         return False
+        
+async def update_type(ub_username: str, userbot: str) -> bool:
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("UPDATE userbots SET ub_type = %s WHERE ub_username = %s", (userbot, ub_username))
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка обновления сервера для UB {ub_username}: {e}", exc_info=True)
+        return False
 
 async def get_user_counts_by_period(days: int) -> int:
     try:

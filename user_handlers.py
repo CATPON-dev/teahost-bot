@@ -1138,84 +1138,105 @@ async def cq_show_container_stats(call: types.CallbackQuery, state: FSMContext, 
 
 @router.callback_query(F.data.startswith("manage_ub:"))
 async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
-    """Обработчик для управления контейнером (старт/стоп/рестарт)"""
+    """Обработчик для управления контейнером (старт/стоп/рестарт/переустановка)"""
     try:
-        # Парсим данные из callback
-        _, action, ub_username, owner_id_str = call.data.split(":")
+        # Базовый парсинг
+        parts = call.data.split(":")
+        action = parts[1]
+        ub_username = parts[2]
+        owner_id_str = parts[3]
         owner_id = int(owner_id_str)
-        
-        # Проверяем права доступа
+
+        # Проверка прав доступа
         if not check_panel_owner(call, owner_id):
             return
-        
-        # Получаем данные юзербота
-        ub_data = await db.get_userbot_data(ub_username)
-        if not ub_data:
-            await safe_callback_answer(call, "❌ Юзербот не найден", show_alert=True)
-            return
-        
-        server_ip = ub_data.get('server_ip')
-        if not server_ip:
-            await safe_callback_answer(call, "❌ Сервер не найден", show_alert=True)
-            return
-        
-        # Сразу заменяем клавиатуру на "Загрузка..."
-        try:
+
+        # Получаем данные юзербота (если не recreate)
+        ub_data = None
+        server_ip = None
+        if action not in ["recreate"]:
+            ub_data = await db.get_userbot_data(ub_username)
+            if not ub_data:
+                await safe_callback_answer(call, "❌ Юзербот не найден", show_alert=True)
+                return
+
+            server_ip = ub_data.get('server_ip')
+            if not server_ip:
+                await safe_callback_answer(call, "❌ Сервер не найден", show_alert=True)
+                return
+
+        # Обработка действий
+        if action == "start":
             await safe_callback_answer(call, "", show_alert=True)
             await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
-        except Exception as e:
-            # Если не удалось отредактировать сообщение, просто отвечаем на callback
-            await safe_callback_answer(call, "⏳ Выполняю команду...", show_alert=True)
-        
-        # Выполняем действие в зависимости от типа
-        if action == "start":
             result = await api_manager.start_container(ub_username, server_ip)
             action_text = "запуск"
+
         elif action == "stop":
+            await safe_callback_answer(call, "", show_alert=True)
+            await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
             result = await api_manager.stop_container(ub_username, server_ip)
             action_text = "остановка"
+
         elif action == "restart":
+            await safe_callback_answer(call, "", show_alert=True)
+            await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
             result = await api_manager.restart_container(ub_username, server_ip)
             action_text = "перезапуск"
+
+        elif action == "recreate":
+            await call.message.edit_caption(
+                caption="🔄 <b>Переустановка юзербота</b>\n\nВыберите юзербота для переустановки:",
+                reply_markup=kb.get_reinstall_userbot(ub_username, owner_id_str)
+            )
+            return
+
+        elif action == "reinstall":
+            _, _, ub_username, owner_id_str, userbot = parts
+
+            await safe_callback_answer(call, "", show_alert=True)
+            ub_data = await db.get_userbot_data(ub_username)
+            server_ip = ub_data.get('server_ip')
+            await call.message.edit_caption(caption="🔄 <b>Переустановка юзербота</b>\n\nИдёт переустановка вашего юзербота")
+            await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+            result = await api_manager.reinstall_ub(ub_username, userbot, server_ip)
+            update_info = await db.update_type(ub_username, userbot)
+            action_text = f"переустановка ({userbot})"
+
         else:
             await safe_callback_answer(call, "❌ Неизвестное действие", show_alert=True)
             return
-        
+
+        # Проверка результата
         if result.get("success"):
-            # Обновляем панель управления (как при нажатии "Обновить")
             try:
                 await show_management_panel(call, ub_username, state)
             except Exception as e:
                 logging.error(f"Ошибка при обновлении панели: {e}")
-                await safe_callback_answer(call, "✅ Действие выполнено успешно", show_alert=True)
+                await safe_callback_answer(call, f"✅ {action_text.capitalize()} выполнена успешно", show_alert=True)
         else:
             error_msg = result.get("error", "Неизвестная ошибка")
             try:
                 await safe_callback_answer(call, f"❌ Ошибка {action_text}: {error_msg}", show_alert=True)
             except Exception:
-                # Если callback query устарел, отправляем новое сообщение
                 pass
-            # В случае ошибки тоже обновляем панель, чтобы показать актуальное состояние
             try:
                 await show_management_panel(call, ub_username, state)
             except Exception as e:
                 logging.error(f"Ошибка при обновлении панели после ошибки: {e}")
-            
+
     except Exception as e:
         logging.error(f"Ошибка при управлении контейнером: {e}")
         try:
             await safe_callback_answer(call, "❌ Произошла ошибка при выполнении действия", show_alert=True)
         except aiogram.exceptions.TelegramBadRequest as tg_error:
-            # Если callback query устарел, логируем ошибку
             if "query is too old" in str(tg_error).lower() or "response timeout expired" in str(tg_error).lower():
                 logging.warning(f"Callback query устарел для пользователя {call.from_user.id}: {tg_error}")
             else:
                 logging.error(f"TelegramBadRequest при ответе на callback: {tg_error}")
         except Exception as answer_error:
-            # Если callback query устарел, логируем ошибку
             logging.error(f"Не удалось ответить на callback query: {answer_error}")
-        
-        # В случае исключения тоже обновляем панель
+
         try:
             await show_management_panel(call, ub_username, state)
         except Exception as panel_error:

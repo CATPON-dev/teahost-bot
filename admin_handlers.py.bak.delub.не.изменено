@@ -224,85 +224,6 @@ async def cmd_container(message: types.Message, command: CommandObject, bot: Bot
         )
         await message.reply(help_text)
 
-@router.message(Command("exec_all"), IsSuperAdmin())
-async def cmd_exec_all(message: types.Message, command: CommandObject):
-    if not command.args:
-        servers = server_config.get_servers()
-        codes = [details.get("code") for details in servers.values() if details.get("code")]
-        codes_str = ", ".join(f"<code>{c}</code>" for c in codes)
-        help_text = (
-            "<b>🖥️ Выполнение команды во всех контейнерах на сервере</b>\n\n"
-            "<b>Формат:</b>\n"
-            "   <code>/exec_all [код] [команда]</code>\n\n"
-            "<i>Пример:</i>\n"
-            "   <code>/exec_all M5 ls /data/</code>\n\n"
-            f"<b>Доступные коды серверов:</b> {codes_str}"
-        )
-        await message.reply(help_text)
-        return
-
-    args = command.args.split(maxsplit=1)
-    if len(args) < 2:
-        await message.reply("<b>Ошибка:</b> Неверный формат.\nИспользование: <code>/exec_all [код] [команда]</code>")
-        return
-
-    server_code, cmd_str = args[0], args[1]
-
-    target_ip = find_ip_by_code(server_code)
-    if not target_ip:
-        await message.reply(f"❌ Сервер с кодом <code>{server_code}</code> не найден.")
-        return
-
-    msg = await message.reply(
-        f"⏳ Выполняю <code>{html.quote(cmd_str)}</code> во всех контейнерах на сервере <b>{server_code}</b>..."
-    )
-
-    try:
-        res = await api_manager.exec_all(cmd_str, target_ip)
-    except Exception as e:
-        await msg.edit_text(f"❌ Ошибка выполнения: <code>{html.quote(str(e))}</code>")
-        return
-
-    results = res.get("data", {}).get("exec_all", {})
-    print(results)
-
-    report_lines = [
-        f"<b>🚀 Выполнение команды на сервере {server_code}:</b>\n"
-        f"<pre><code>{html.quote(cmd_str)}</code></pre>\n"
-    ]
-    success_count, fail_count = 0, 0
-
-    for container, data in results.items():
-        container_report = f"\n⎯⎯⎯⎯⎯\n<b>Контейнер {container}</b>"
-
-        if data.get("success"):
-            success_count += 1
-            exit_code = data["output"].get("exit_code", "N/A")
-            container_report += f"\nСтатус: ✅ (код выхода {exit_code})"
-            out_text = html.quote(data["output"].get("output", "").strip())
-            if out_text:
-                container_report += f"\n<pre><code>{out_text}</code></pre>"
-            else:
-                container_report += "\n<i>(нет вывода)</i>"
-        else:
-            fail_count += 1
-            exit_code = data.get("output", {}).get("exit_code", "N/A")
-            err_text = html.quote(data.get("output", {}).get("output", "Неизвестная ошибка"))
-            container_report += f"\nСтатус: ❌ (код выхода {exit_code})"
-            container_report += f"\n<pre><code>{err_text}</code></pre>"
-
-        report_lines.append(container_report)
-
-    summary = f"\n\n<b>Итог: {success_count} ✅ | {fail_count} ❌</b>"
-    final_report = "".join(report_lines) + summary
-
-    if len(final_report) > 4096:
-        file = BufferedInputFile(final_report.encode("utf-8"), filename="exec_all_report.txt")
-        await msg.delete()
-        await message.answer_document(file, caption=f"Отчет о выполнении команды на {server_code}.")
-    else:
-        await msg.edit_text(final_report)
-
 @router.callback_query(F.data.startswith("container_page:"))
 async def cq_container_list_page(call: types.CallbackQuery):
     await call.answer()
@@ -1059,13 +980,17 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             await message.reply("Использование: <code>/serv [код] status [true|false|noub|test]</code>")
             return
         status_value = args[2].lower()
-        if status_value not in ["true", "noub", "test"]:
+        if status_value not in ["true", "false", "noub", "test"]:
             await message.reply("Неверный статус. Доступные: true, false, noub, test.")
             return
         if server_config.update_server_status(target_ip, status_value):
             await message.reply(f"✅ Статус сервера <code>{server_code}</code> изменен на <b>{status_value}</b>.")
             log_data = { "admin_data": admin_data, "server_info": {"ip": target_ip, "code": server_code}, "details": f"статус изменен на '{status_value}'" }
             await log_event(bot, "server_settings_changed", log_data)
+            if status_value == "false":
+                userbots = await db.get_userbots_by_server_ip(target_ip)
+                for task in tasks:
+                    asyncio.create_task(task)
         else:
             await message.reply("❌ Не удалось обновить статус сервера.")
     else:
@@ -1242,8 +1167,8 @@ async def serverinfo_page_callback(call: types.CallbackQuery, bot: Bot):
 @router.callback_query(F.data == "refresh_server_info")
 async def refresh_server_info_handler(call: types.CallbackQuery, bot: Bot):
     await call.answer("Обновляю...")
-    
-    info_text, markup = await _get_server_info_content()
+   
+    info_text, markup, _, _ = await _get_server_info_content()
 
     try:
         await call.message.edit_text(
@@ -1380,7 +1305,6 @@ async def cmd_ahelp(message: types.Message):
         "<code>/obs</code> - Полное обслуживание всех удаленных серверов.\n"
         "<code>/cpu_ub</code> - Нагрузка на CPU по юзерботам.\n"
         "<code>/terminal [код] [команда]</code> - Выполнить команду на сервере.\n\n"
-        "<code>/exec_all [код] [команда]</code> - Выполнить команду во всех контейнерах на сервере. \n\n"
         
         "<b>Управление юзерботами:</b>\n"
         "<code>/ub [имя]</code> - Инфо и управление конкретным юзерботом.\n"
@@ -1396,11 +1320,10 @@ async def cmd_ahelp(message: types.Message):
 
 @router.message(Command("check"), IsAdmin())
 async def cmd_check_sessions(message: types.Message):
-    msg = await message.reply("⏳ Проверяю сессии на всех удалённых серверах...")
+    msg = await message.reply("⏳ Проверяю сессии...")
     try:
-        server_results = await session_checker.check_all_remote_sessions()
+        server_results = await session_checker.check_all_remote_sessions_docker()
         
-        # Кешируем данные для быстрого доступа
         cached_data = {
             "data": server_results,
             "timestamp": time.time(),
@@ -1410,49 +1333,18 @@ async def cmd_check_sessions(message: types.Message):
             }
         }
         
-        # Генерируем отчеты для всех страниц и режимов
-        await msg.edit_text("⏳ Генерирую отчеты для всех режимов...")
-        
-        for view_mode in ["has_session", "no_session"]:
-            for page in range(10):  # Максимум 10 страниц
-                try:
-                    report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=page)
-                    if total_pages <= page:  # Если страница выходит за пределы
-                        break
-                    cached_data["reports"][view_mode][page] = {
-                        "report": report,
-                        "total_pages": total_pages
-                    }
-                except Exception as e:
-                    logging.error(f"Error generating report for {view_mode} page {page}: {e}")
-                    break
-        
         SESSION_CHECK_CACHE[msg.chat.id] = cached_data
         
-        # Отображаем первую страницу
-        first_page_data = cached_data["reports"]["has_session"][0]
-        markup = kb.get_session_check_keyboard("has_session", page=0, total_pages=first_page_data["total_pages"])
+        report, total_pages = await session_checker.format_session_check_report(server_results, "has_session", page=0)
+        markup = kb.get_session_check_keyboard("has_session", page=0, total_pages=total_pages)
         
-        # Отладочная информация
-        logging.info(f"Report length: {len(first_page_data['report'])}, Total pages: {first_page_data['total_pages']}")
-        
-        # Проверяем длину сообщения
-        if len(first_page_data["report"]) > 3000:
-            # Если сообщение слишком длинное, отправляем как файл
-            report_file = BufferedInputFile(first_page_data["report"].encode('utf-8'), filename="session_check_report.txt")
+        if len(report) > 4000:
+            report_file = BufferedInputFile(report.encode('utf-8'), filename="session_check_report.txt")
             await msg.delete()
             await message.answer_document(report_file, caption="📊 Отчет о проверке сессий (файл слишком большой для сообщения)")
         else:
-            try:
-                await msg.edit_text(text=first_page_data["report"], reply_markup=markup)
-            except TelegramBadRequest as e:
-                if "can't parse entities" in str(e):
-                    logging.error(f"HTML parsing error in /check: {e}")
-                    # Пробуем отправить без HTML-разметки
-                    clean_report = first_page_data["report"].replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '').replace('<code>', '').replace('</code>', '').replace('<blockquote>', '').replace('</blockquote>', '')
-                    await msg.edit_text(text=clean_report, reply_markup=markup)
-                else:
-                    raise e
+            await msg.edit_text(text=report, reply_markup=markup)
+
     except Exception as e:
         logging.error(f"Ошибка во время выполнения /check: {e}", exc_info=True)
         await msg.edit_text(f"❌ Произошла ошибка во время проверки: {e}")
@@ -2271,6 +2163,8 @@ async def toggle_user_visibility_handler(call: types.CallbackQuery, bot: Bot):
     await call.message.edit_text(text=text, reply_markup=markup)
     await call.answer()
 
+STATS_SEMAPHORE = asyncio.Semaphore(8)
+
 async def _generate_stats_panel(view_mode: str):
     global STATS_CACHE
     cache_key = f"stats_{view_mode}"
@@ -2295,22 +2189,17 @@ async def _generate_stats_panel(view_mode: str):
         bots_by_type = defaultdict(int)
         
         if all_ubs_info:
-            services_by_ip = defaultdict(list)
+            status_tasks = []
             for ub in all_ubs_info:
-                if ub.get('server_ip'):
-                    services_by_ip[ub['server_ip']].append(f"hikka-{ub['ub_username']}.service")
+                async def get_status(userbot):
+                    async with STATS_SEMAPHORE:
+                        return await api_manager.get_container_status(userbot['ub_username'], userbot['server_ip'])
+                status_tasks.append(get_status(ub))
+
+            status_results = await asyncio.gather(*status_tasks, return_exceptions=True)
             
-            # batch_tasks = [sm.get_batch_service_statuses(names, ip) for ip, names in services_by_ip.items()]
-            batch_results = await asyncio.gather(*batch_tasks)
-            
-            active_statuses = {}
-            for result_dict in batch_results:
-                for service_name, is_active in result_dict.items():
-                    ub_username = service_name.replace("hikka-", "").replace(".service", "")
-                    active_statuses[ub_username] = is_active
-            
-            for ub in all_ubs_info:
-                if active_statuses.get(ub['ub_username'], False):
+            for ub, res in zip(all_ubs_info, status_results):
+                if isinstance(res, dict) and res.get("success") and res.get("data", {}).get("status") == "running":
                     active_ubs_count += 1
                 ub_type = ub.get('ub_type', 'unknown').capitalize()
                 bots_by_type[ub_type] = bots_by_type.get(ub_type, 0) + 1
@@ -2338,11 +2227,11 @@ async def _generate_stats_panel(view_mode: str):
             text += "</blockquote>"
 
     elif view_mode == "servers":
-        text += "<b>��️ Статус и нагрузка на серверы</b>\n"
+        text += "<b>🖥️ Статус и нагрузка на серверы</b>\n"
         servers = server_config.get_servers()
-        remote_servers = {ip: d for ip, d in servers.items() if ip != "127.0.0.1"}  # sm.LOCAL_IP
+        remote_servers = {ip: d for ip, d in servers.items() if ip != sm.LOCAL_IP}
         
-        # stats_tasks = [sm.get_server_stats(ip) for ip in remote_servers]
+        stats_tasks = [sm.get_server_stats(ip) for ip in remote_servers]
         ub_counts_tasks = [db.get_userbots_by_server_ip(ip) for ip in remote_servers]
 
         all_stats = await asyncio.gather(*stats_tasks)
@@ -2370,22 +2259,27 @@ async def _generate_stats_panel(view_mode: str):
 
     elif view_mode == "userbots":
         text += "<b>📈 Наиболее ресурсоемкие юзерботы</b>\n"
-        all_servers = server_config.get_servers()
-        remote_ips = [ip for ip in all_servers if ip != "127.0.0.1"]  # sm.LOCAL_IP
+        all_ubs_info = await db.get_all_userbots_full_info()
         
-        # cpu_tasks = [sm.get_all_userbots_cpu_usage(ip) for ip in remote_ips]
-        # ram_tasks = [sm.get_all_userbots_ram_usage(ip) for ip in remote_ips]
-        
-        cpu_results = await asyncio.gather(*cpu_tasks)
-        ram_results = await asyncio.gather(*ram_tasks)
-
         all_cpu_data = {}
-        for res in cpu_results:
-            all_cpu_data.update(res)
-
         all_ram_data = {}
-        for res in ram_results:
-            all_ram_data.update(res)
+
+        if all_ubs_info:
+            stats_tasks = []
+            for ub in all_ubs_info:
+                async def get_stats(userbot):
+                    async with STATS_SEMAPHORE:
+                        return await api_manager.get_container_stats(userbot['ub_username'], userbot['server_ip'])
+                stats_tasks.append(get_stats(ub))
+            
+            stats_results = await asyncio.gather(*stats_tasks, return_exceptions=True)
+
+            for ub, res in zip(all_ubs_info, stats_results):
+                if isinstance(res, dict) and res.get("success"):
+                    info = res.get("data", {}).get("info", {})
+                    if info:
+                        all_cpu_data[ub['ub_username']] = info.get("cpu_percent", 0)
+                        all_ram_data[ub['ub_username']] = info.get("ram_usage_mb", 0)
 
         if not all_cpu_data and not all_ram_data:
             text += "<blockquote>Не удалось получить данные о нагрузке.</blockquote>"
@@ -2420,6 +2314,60 @@ async def cmd_stats_panel(message: Message):
     content = await _generate_stats_panel("overall")
     await msg.edit_text(content['text'], reply_markup=content['markup'])
 
+@router.message(Command("cpu_ub"))
+async def cmd_cpu_ub_usage(message: types.Message):
+    msg = await message.reply("⏳ Собираю данные о нагрузке CPU с контейнеров... Это может занять до минуты.")
+    
+    all_ubs_info = await db.get_all_userbots_full_info()
+    if not all_ubs_info:
+        await msg.edit_text("Не найдено юзерботов для анализа.")
+        return
+
+    stats_tasks = []
+    for ub in all_ubs_info:
+        async def get_stats(userbot):
+            async with STATS_SEMAPHORE:
+                return await api_manager.get_container_stats(userbot['ub_username'], userbot['server_ip'])
+        stats_tasks.append(get_stats(ub))
+
+    results = await asyncio.gather(*stats_tasks, return_exceptions=True)
+
+    server_reports = defaultdict(list)
+    has_any_data = False
+
+    for ub, res in zip(all_ubs_info, results):
+        if isinstance(res, dict) and res.get("success"):
+            info = res.get("data", {}).get("info", {})
+            if info:
+                has_any_data = True
+                cpu_percent = info.get("cpu_percent", 0.0)
+                server_reports[ub['server_ip']].append((ub['ub_username'], cpu_percent))
+    
+    if not has_any_data:
+        await msg.edit_text("Не удалось получить данные о нагрузке ни с одного сервера.")
+        return
+
+    full_report = ["<b>📊 Нагрузка на CPU по юзерботам:</b>\n"]
+    all_servers_info = server_config.get_servers()
+
+    for server_ip, cpu_data in sorted(server_reports.items()):
+        server_details = all_servers_info.get(server_ip, {})
+        server_flag = server_details.get("flag", "🏳️")
+        server_name = server_details.get("name", server_ip)
+
+        sorted_bots = sorted(cpu_data, key=lambda item: item[1], reverse=True)
+        
+        server_report_part = [f"\n<b>{server_flag} {html.quote(server_name)} (<code>{server_ip}</code>)</b>"]
+        for ub_username, cpu_percent in sorted_bots:
+            if cpu_percent > 50.0: emoji = "🔥"
+            elif cpu_percent > 25.0: emoji = "⚠️"
+            else: emoji = "🔹"
+            server_report_part.append(f"{emoji} <code>{f'{cpu_percent:.2f}%'.ljust(7)}</code> - {html.quote(ub_username)}")
+        
+        full_report.extend(server_report_part)
+        
+    await msg.edit_text("\n".join(full_report))
+
 @router.callback_query(F.data.startswith("stats_view:"))
 async def cq_stats_view_switch(call: CallbackQuery):
     view_mode = call.data.split(":")[1]
@@ -2452,49 +2400,6 @@ async def cq_stats_refresh(call: CallbackQuery):
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
             logging.error(f"Ошибка принудительного обновления панели статистики: {e}")
-    
-@router.message(Command("cpu_ub"))
-async def cmd_cpu_ub_usage(message: types.Message):
-    msg = await message.reply("⏳ Собираю данные о нагрузке CPU... Это может занять до минуты.")
-    
-    all_servers = server_config.get_servers()
-    full_report = ["<b>📊 Нагрузка на CPU по юзерботам:</b>\n"]
-    
-    has_any_data = False
-    
-            # tasks = [sm.get_all_userbots_cpu_usage(ip) for ip in all_servers.keys()]
-    results = await asyncio.gather(*tasks)
-    
-    for server_ip, cpu_data in zip(all_servers.keys(), results):
-        server_details = all_servers.get(server_ip, {})
-        server_flag = server_details.get("flag", "🏳️")
-        server_name = server_details.get("name", server_ip)
-
-        if not cpu_data:
-            continue
-            
-        has_any_data = True
-        
-        sorted_bots = sorted(cpu_data.items(), key=lambda item: item[1], reverse=True)
-        
-        server_report = [f"\n<b>{server_flag} {html.quote(server_name)} (<code>{server_ip}</code>)</b>"]
-        for ub_username, cpu_percent in sorted_bots:
-            if cpu_percent > 50.0:
-                emoji = "🔥"
-            elif cpu_percent > 25.0:
-                emoji = "⚠️"
-            else:
-                emoji = "🔹"
-                
-            server_report.append(f"{emoji} <code>{f'{cpu_percent:.2f}%'.ljust(7)}</code> - {html.quote(ub_username)}")
-        
-        full_report.extend(server_report)
-        
-    if not has_any_data:
-        await msg.edit_text("Не удалось получить данные о нагрузке ни с одного сервера.")
-        return
-        
-    await msg.edit_text("\n".join(full_report))
 
 @router.callback_query(F.data.startswith("host_reboot_confirm:"))
 async def cq_host_reboot_confirm(call: types.CallbackQuery, bot: Bot):
