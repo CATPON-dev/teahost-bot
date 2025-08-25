@@ -2081,6 +2081,9 @@ async def cq_delub_execute(call: types.CallbackQuery, bot: Bot):
 
         # Удаляем контейнер через API
         res = await api_manager.delete_container(ub_username, server_ip)
+        await db.delete_password(owner_id)
+        await db.delete_vpn(owner_id)
+        await api_manager.delete_vpn(f"ub{owner_id}")
 
         if res is None or not res.get("success"):
             error_message = res.get('error', 'Не удалось получить ответ от сервера') if res else 'Не удалось получить ответ от сервера'

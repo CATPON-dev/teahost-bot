@@ -48,6 +48,20 @@ async def init_db():
                 # Подавляем предупреждения о существующих таблицах
                 await cursor.execute("SET sql_notes = 0")
                 await cursor.execute("""
+                CREATE TABLE IF NOT EXISTS vpn (
+                    tg_user_id BIGINT PRIMARY KEY,
+                    link TEXT
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+                """)
+                await cursor.execute("""
+                CREATE TABLE IF NOT EXISTS auth (
+                    tg_user_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    password TEXT
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+                """)
+                
+                await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     tg_user_id BIGINT PRIMARY KEY,
                     username TEXT,
@@ -686,6 +700,96 @@ async def update_type(ub_username: str, userbot: str) -> bool:
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
         logger.error(f"Ошибка обновления сервера для UB {ub_username}: {e}", exc_info=True)
+        return False
+        
+async def add_password(tg_id: int, username: str, password: str) -> bool:
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "INSERT INTO auth (tg_user_id, username, password) VALUES (%s, %s, %s)",
+                    (tg_id, username, password)
+                )
+                await conn.commit()
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка добавления пароля для пользователя {username}: {e}", exc_info=True)
+        return False
+
+async def get_password(tg_id: int) -> dict:
+    """
+    Получает данные аутентификации для пользователя
+    Возвращает словарь с ключами 'username' и 'password' или пустой словарь
+    """
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT username, password FROM auth WHERE tg_user_id = %s",
+                    (tg_id,)
+                )
+                result = await cursor.fetchone()
+                return result if result else {}
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка получения данных аутентификации для пользователя {tg_id}: {e}", exc_info=True)
+        return {}
+
+async def delete_password(tg_id: int) -> bool:
+    """Удаляет запись с паролем по ID пользователя"""
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "DELETE FROM auth WHERE tg_user_id = %s",
+                    (tg_id,)
+                )
+                await conn.commit()
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка удаления пароля для пользователя {tg_id}: {e}", exc_info=True)
+        return False
+        
+async def add_vpn(tg_id: int, link: str) -> bool:
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "INSERT INTO vpn (tg_user_id, link) VALUES (%s, %s)",
+                    (tg_id, link)
+                )
+                await conn.commit()
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка добавления VPN для пользователя {tg_id}: {e}", exc_info=True)
+        return False
+
+async def get_vpn(tg_id: int) -> str:
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT link FROM vpn WHERE tg_user_id = %s",
+                    (tg_id,)
+                )
+                result = await cursor.fetchone()
+                return result[0] if result else None
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка получения VPN для пользователя {tg_id}: {e}", exc_info=True)
+        return None
+
+async def delete_vpn(tg_id: int) -> bool:
+    """Удаляет запись с VPN по ID пользователя"""
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "DELETE FROM vpn WHERE tg_user_id = %s",
+                    (tg_id,)
+                )
+                await conn.commit()
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка удаления VPN для пользователя {tg_id}: {e}", exc_info=True)
         return False
 
 async def get_user_counts_by_period(days: int) -> int:

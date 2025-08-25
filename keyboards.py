@@ -178,6 +178,11 @@ def get_back_to_main_panel_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 В главное меню", callback_data="back_to_main_panel")
     return builder.as_markup()
+    
+def back_to_panel():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 Назад", callback_data="go_to_control_panel")
+    return builder.as_markup()
 
 def get_user_list_paginator(page: int, total_pages: int, view_mode: str):
     builder = InlineKeyboardBuilder()
@@ -243,7 +248,9 @@ def get_management_keyboard(ip: str, port: int, is_running: bool, ub_username: s
         builder.button(text="🔴 Управление отключено", callback_data=f"noop:{owner_id_str}")
     elif is_running:
         builder.button(text="🔴 Выключить", callback_data=create_callback("stop"))
-        builder.button(text="🌐 Веб панель", url=f"http://{ip}:{port}")
+        builder.button(text="🌐 Веб панель", url=f"https://{ub_username}.sharkhost.space")
+        builder.button(text="🔑 Данные для авторизации", callback_data=create_callback("auth"))
+        builder.button(text="🇩🇪VPN", callback_data=create_callback("vpn"))
         builder.button(text="🔄 Перезагрузить", callback_data=create_callback("restart"))
         builder.button(text="🔀 Переустановка", callback_data=create_callback("recreate"))
     else:
@@ -621,9 +628,8 @@ def get_accept_share_panel_keyboard(ub_username: str, owner_id: int):
     builder.adjust(2)
     return builder.as_markup()
     
-def userbot_panel(ip: str, port: int):
+def userbot_panel():
     builder = InlineKeyboardBuilder()
-    builder.button(text="🌐 Перейти по ссылке", url=f"http://{ip}:{port}")
     builder.button(text="⬅️ Назад", callback_data="back_to_main_panel")
     builder.adjust(2)
     return builder.as_markup()

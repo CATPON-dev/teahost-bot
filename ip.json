@@ -260,7 +260,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 20,
         "api_url": "http://80.76.60.74:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
@@ -526,7 +526,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "test",
+        "status": "true",
         "slots": 20,
         "api_url": "http://213.171.4.47:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
@@ -776,6 +776,25 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://188.225.43.120:8000",
+        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+    },
+    "4.227.83.2": {
+        "ssh_user": "root",
+        "ssh_pass": "Amina12483848_9284838&38Amina12483848_9284838&38",
+        "name": "serv40",
+        "country": "United States",
+        "city": "Phoenix",
+        "regionName": "Arizona",
+        "flag": "🇺🇸",
+        "code": "Phoenix",
+        "org": "Microsoft Azure Cloud (westus3)",
+        "timezone": "America/Phoenix",
+        "hosting": true,
+        "proxy": false,
+        "vpn": false,
+        "status": "test",
+        "slots": 1,
+        "api_url": "http://4.227.83.2:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
     }
 }

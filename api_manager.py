@@ -1,6 +1,7 @@
 import aiohttp
 import logging
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from config_manager import config
 import server_config
@@ -9,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 class APIManager:
     def __init__(self):
+        self.vpn_base_url = "https://vpn.dev3quest.lol:8000"
+        self.vpn_username = "sharkhost"
+        self.vpn_password = "sharkhost"
         self.base_url = "http://m7.sharkhost.space:8000"
         self.token = "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZve0zvr8y"
     
@@ -23,6 +27,131 @@ class APIManager:
             
         return api_url, api_token
     
+    async def get_vpn_token(self) -> Optional[str]:
+        token_url = f"{self.vpn_base_url}/api/admin/token"
+        
+        token_data = {
+            "grant_type": "password",
+            "username": self.vpn_username,
+            "password": self.vpn_password,
+            "scope": "",
+            "client_id": "string",
+            "client_secret": "string"
+        }
+        
+        token_headers = {
+            "accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    token_url, 
+                    data=token_data,
+                    headers=token_headers,
+                    ssl=False
+                ) as token_response:
+                    
+                    if token_response.status == 200:
+                        token_result = await token_response.json()
+                        return token_result.get("access_token")
+                    else:
+                        error_text = await token_response.text()
+                        logger.error(f"Ошибка получения токена VPN: {token_response.status} - {error_text}")
+                        return None
+                        
+        except Exception as e:
+            logger.error(f"Ошибка при получении токена VPN: {e}", exc_info=True)
+            return None
+    
+    async def create_vpn(self, name: str) -> Dict[str, Any]:
+        access_token = await self.get_vpn_token()
+        if not access_token:
+            return {"success": False, "error": "Не удалось получить токен доступа VPN"}
+        
+        url = f"{self.vpn_base_url}/api/user"
+        
+        data = {
+            "username": name,
+            "proxies": {
+                "vless": {}
+            },
+            "inbounds": {
+                "vless": [
+                    "VLESS TCP REALITY"
+                ]
+            },
+            "expire": None,
+            "data_limit": 0,
+            "data_limit_reset_strategy": "no_reset",
+            "status": "active",
+            "note": "Created automatically without expiration"
+        }
+        
+        headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        try:
+            timeout = aiohttp.ClientTimeout(total=30.0)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    url, 
+                    json=data,
+                    headers=headers,
+                    ssl=False
+                ) as response:
+                    
+                    if response.status == 200:
+                        result = await response.json()
+                        logger.info(f"VPN пользователь {name} успешно создан (без лимита времени)")
+                        return {"success": True, "data": result}
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Ошибка создания VPN пользователя {name}: {response.status} - {error_text}")
+                        return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
+                        
+        except Exception as e:
+            logger.error(f"Ошибка при создании VPN пользователя {name}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+            
+    async def delete_vpn(self, username: str) -> Dict[str, Any]:
+        access_token = await self.get_vpn_token()
+        if not access_token:
+            return {"success": False, "error": "Не удалось получить токен доступа VPN"}
+        
+        url = f"{self.vpn_base_url}/api/user/{username}"
+        
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        try:
+            timeout = aiohttp.ClientTimeout(total=30.0)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.delete(
+                    url, 
+                    headers=headers,
+                    ssl=False
+                ) as response:
+                    
+                    if response.status == 200:
+                        result = await response.json()
+                        logger.info(f"VPN пользователь {username} успешно удален")
+                        return {"success": True, "data": result}
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Ошибка удаления VPN пользователя {username}: {response.status} - {error_text}")
+                        return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
+                        
+        except Exception as e:
+            logger.error(f"Ошибка при удалении VPN пользователя {username}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
     async def create_container(self, name: str, port: int, userbot: str, server_ip: str) -> Dict[str, Any]:
         api_url, api_token = self.get_server_api_config(server_ip)
         url = f"{api_url}/api/host/create"
@@ -48,7 +177,7 @@ class APIManager:
                         logger.error(f"Ошибка создания контейнера {name}: {response.status} - {error_text}")
                         return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
         except Exception as e:
-            logger.error(f"Ошибка при создании контейнера {name}: {e}", exc_info=True)
+            logger.error(f"Ошибка при создании контейнеров {name}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
     
     async def delete_container(self, name: str, server_ip: str) -> Dict[str, Any]:
@@ -331,15 +460,15 @@ class APIManager:
                         return {"success": True, "data": result}
                     else:
                         error_text = await response.text()
-                        logger.error(f"Ошибка выполнения команды в контейнере {name}: {response.status} - {error_text}")
+                        logger.error(f"Ошибка выполнения команды во всех контейнерах: {response.status} - {error_text}")
                         return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
         except Exception as e:
-            logger.error(f"Ошибка при выполнении команды в контейнере {name}: {e}", exc_info=True)
+            logger.error(f"Ошибка при выполнении команды во всех контейнерах: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
             
     async def check_session(self, server_ip: str) -> Dict[str, Any]:
         api_url, api_token = self.get_server_api_config(server_ip)
-        url = f"{api_url}​/api​/host​/check_session"
+        url = f"{api_url}/api/host/check_session"
         headers = {
             "accept": "application/json",
             "token": api_token
@@ -354,10 +483,10 @@ class APIManager:
                         return {"success": True, "data": result}
                     else:
                         error_text = await response.text()
-                        logger.error(f"Ошибка выполнения команды в контейнере {name}: {response.status} - {error_text}")
+                        logger.error(f"Ошибка проверки сессии: {response.status} - {error_text}")
                         return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
         except Exception as e:
-            logger.error(f"Ошибка при выполнении команды в контейнере {name}: {e}", exc_info=True)
+            logger.error(f"Ошибка при проверке сессии: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
             
     async def reinstall_ub(self, name: str, userbot: str, server_ip: str) -> Dict[str, Any]:
@@ -378,9 +507,10 @@ class APIManager:
                         return {"success": True, "data": result}
                     else:
                         error_text = await response.text()
-                        logger.error(f"Ошибка выполнения команды в контейнере {name}: {response.status} - {error_text}")
+                        logger.error(f"Ошибка переустановки юзербота {name}: {response.status} - {error_text}")
                         return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
         except Exception as e:
-            logger.error(f"Ошибка при выполнении команды в контейнере {name}: {e}", exc_info=True)
+            logger.error(f"Ошибка при переустановке юзербота {name}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
+
 api_manager = APIManager()

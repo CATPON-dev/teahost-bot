@@ -35,6 +35,7 @@ from admin_manager import get_all_admins
 from config_manager import config
 from channel_logger import log_event
 import math
+from utils.copy import CopyTextButton
 from filters import IsBotEnabled, IsSubscribed, IsAdmin
 # from system_manager import get_service_process_uptime
 
@@ -471,38 +472,79 @@ async def _safe_cleanup_on_failure(ub_username: str, server_ip: str, state: FSMC
     
     await state.clear()
 
-async def _show_login_link_success_from_new_message(bot: Bot, chat_id: int, ub_username: str, login_url: str | None, state: FSMContext):
+async def _show_login_link_success_from_new_message(
+    bot: Bot,
+    chat_id: int,
+    ub_username: str,
+    login_url: str | None,
+    state: FSMContext
+):
     data = await state.get_data()
     ub_type = data.get("selected_ub_type")
     server_ip = data.get("server_ip")
 
-    # Получаем данные из базы данных
     ub_data = await db.get_userbot_data(ub_username=ub_username)
-    if ub_data:
-        webui_port = ub_data.get("webui_port")
-        if webui_port:
-            # Формируем правильную ссылку с IP сервера и портом из БД
-            correct_url = f"http://{server_ip}:{webui_port}"
-            text_parts = ["<b>✅ Установка завершена</b>\n"]
-            text_parts.append(f"\nНажмите на кнопку ниже для перехода в веб панель.\n")
-        else:
-            # Fallback на старую логику если порт не найден
-            text_parts = ["<b>✅ Установка завершена</b>\n"]
-            if login_url:
-                text_parts.append(f"\nПерейдите по этой <a href='{login_url}'>ссылке</a>.\n")
-    else:
-        # Fallback на старую логику если данные не найдены
-        text_parts = ["<b>✅ Установка завершена</b>\n"]
-        if login_url:
-            text_parts.append(f"\nПерейдите по этой <a href='{login_url}'>ссылке</a>.\n")
+    auth_data = await db.get_password(chat_id)
+    username = auth_data.get("username", "unknown")
+    password = auth_data.get("password", "unknown")
 
-    text_parts.append("\n<i>Для управления юзерботом > /start > Панель управление</i>\n\n")
-    text_parts.append("<u><b>❤️ Спасибо что выбрали SharkHost!</b></u>")
+    final_url = None
+    if ub_data and ub_data.get("webui_port"):
+        final_url = f"https://{ub_username}.sharkhost.space"
+    elif login_url:
+        final_url = login_url
+
+    text_parts = [
+        "<blockquote>🌟 <b>Установка успешно завершена!</b></blockquote>\n",
+        "<blockquote>🎉 Ваш юзербот готов к работе!</blockquote>\n",
+        "<blockquote>🔑 Ваши данные для авторизации ниже:\n",
+        f"<b>👤UserName</b>: <code>{username}</code></blockquote>\n",
+        "<blockquote>⚠️ <b>Важная информация:</b>\n"
+        "• Если возникает ошибка <b>401</b> - используйте браузер <b>Chrome</b>\n"
+        "• Данные для авторизации можно посмотреть в панели управления бота\n"
+        "• Логин и пароль генерируются автоматически\n"
+        "• Если не работает сайт - используйте VPN из панели управления\n"
+        "• Для VPN скачайте V2RAYTUN или HIDDEFY</blockquote>\n",
+        "<blockquote>🎯 <b>Управление юзерботом:</b>\n"
+        "• Для управления перейдите в /start → Панель управления\n"
+        "• Там вы найдете все необходимые инструменты</blockquote>\n",
+        "<blockquote>💫 <b>Спасибо, что выбрали SharkHost!</b>\n"
+        "Мы ценим ваше доверие ❤️</blockquote>",
+    ]
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+
+    buttons: list[list[InlineKeyboardButton]] = []
+
+    if final_url:
+        buttons.append([
+            InlineKeyboardButton(
+                text="🚀 Перейти в панель управления",
+                web_app=WebAppInfo(url=final_url)
+            )
+        ])
+
+    buttons.append([
+        InlineKeyboardButton(
+            text="🔑 Скопировать пароль",
+            copy_text=CopyTextButton(text=password)
+        )
+    ])
+
+    panel = kb.userbot_panel()
+    if isinstance(panel, InlineKeyboardMarkup):
+        buttons.extend(panel.inline_keyboard)
+
+    markup = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     await bot.send_message(
-        chat_id=chat_id, text="".join(text_parts), 
-        reply_markup=kb.userbot_panel(ip=server_ip, port=webui_port), disable_web_page_preview=True
+        chat_id=chat_id,
+        text="".join(text_parts),
+        reply_markup=markup,
+        disable_web_page_preview=True,
+        parse_mode="HTML",
     )
+
     await state.clear()
 
 async def _show_login_link_fail_from_message(bot: Bot, chat_id: int, message_id: int, ub_username: str, timeout: bool = False):
@@ -533,7 +575,7 @@ async def wait_for_webui_ready(ub_username: str, server_ip: str, max_wait_time: 
     ]
     
     start_time = time.time()
-    check_interval = 10  # секунд
+    check_interval = 10
     
     while time.time() - start_time < max_wait_time:
         try:
@@ -609,6 +651,12 @@ async def perform_installation_and_find_link(tg_user_id: int, chat_id: int, mess
         userbot=ub_type,
         server_ip=server_ip
     )
+    vpn_result = await api_manager.create_vpn(f"ub{tg_user_id}")
+    vless_link = None
+    for link in vpn_result.get("data", {}).get("links", []):
+        vless_link = link
+        await db.add_vpn(tg_user_id, link)
+        continue
 
     if not container_result.get("success"):
         err = container_result.get('error', 'Неизвестная ошибка.')
@@ -616,9 +664,25 @@ async def perform_installation_and_find_link(tg_user_id: int, chat_id: int, mess
             caption=f"❌ <b>Ошибка создания контейнера:</b>\n{html.quote(err)}\n\n/start",
             chat_id=chat_id, message_id=message_id
         )
+        # Сохраняем пароль даже при ошибке (если он есть в ответе)
+        container_data = container_result.get("data", {}).get("data", {})
+        username = container_data.get("username")
+        password = container_data.get("password")
+        if username and password:
+            await db.add_password(tg_user_id, username, password)
         log_data["error"] = err
         await log_event(bot, "installation_failed", log_data)
         return
+
+    # Извлекаем данные из успешного ответа
+    container_data = container_result.get("data", {}).get("data", {})
+    username = container_data.get("username")
+    password = container_data.get("password")
+    subdomain = container_data.get("subdomain")
+    
+    # Сохраняем пароль в базу данных
+    if username and password:
+        await db.add_password(tg_user_id, username, password)
 
     # Добавляем запись в базу данных
     db_success = await db.add_userbot_record(
@@ -1140,18 +1204,15 @@ async def cq_show_container_stats(call: types.CallbackQuery, state: FSMContext, 
 async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
     """Обработчик для управления контейнером (старт/стоп/рестарт/переустановка)"""
     try:
-        # Базовый парсинг
         parts = call.data.split(":")
         action = parts[1]
         ub_username = parts[2]
         owner_id_str = parts[3]
         owner_id = int(owner_id_str)
 
-        # Проверка прав доступа
         if not check_panel_owner(call, owner_id):
             return
 
-        # Получаем данные юзербота (если не recreate)
         ub_data = None
         server_ip = None
         if action not in ["recreate"]:
@@ -1165,7 +1226,6 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                 await safe_callback_answer(call, "❌ Сервер не найден", show_alert=True)
                 return
 
-        # Обработка действий
         if action == "start":
             await safe_callback_answer(call, "", show_alert=True)
             await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
@@ -1203,11 +1263,61 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
             update_info = await db.update_type(ub_username, userbot)
             action_text = f"переустановка ({userbot})"
 
+        elif action == "vpn":
+            tg_id = call.from_user.id
+            vpn_data = await db.get_vpn(tg_id)
+            
+            if not vpn_data:
+                name = f"ub{tg_id}"
+                vpn_result = await api_manager.create_vpn(name)
+                
+                if vpn_result.get("success"):
+                    vless_link = None
+                    for link in vpn_result.get("data", {}).get("links", []):
+                        if link.startswith("vless://"):
+                            vless_link = link
+                            break
+                    
+                    if vless_link:
+                        await db.add_vpn(tg_id, vless_link)
+                        vpn_data = vless_link
+                    else:
+                        await safe_callback_answer(call, "❌ Не удалось получить VPN ссылку", show_alert=True)
+                        return
+                else:
+                    error_msg = vpn_result.get("error", "Неизвестная ошибка")
+                    await safe_callback_answer(call, f"❌ Ошибка создания VPN: {error_msg}", show_alert=True)
+                    return
+            
+            vpn_message = f"🔐 <b>Ваш VPN доступ</b>\n\n<blockquote><code>{vpn_data}</code></blockquote>"
+            await call.message.edit_caption(
+                caption=vpn_message,
+                reply_markup=kb.back_to_panel()
+            )
+            return
+
+        elif action == "auth":
+            tg_id = call.from_user.id
+            auth_data = await db.get_password(tg_id)
+            logger.error(auth_data)
+            
+            if not auth_data:
+                auth_message = "❌ Нету данных для авторизации."
+            else:
+                username = auth_data.get('username', 'Не указан')
+                password = auth_data.get('password', 'Не указан')
+                auth_message = f"🔐 <b>Данные для авторизации</b>\n\n👤 <b>Username:</b> {username}\n🔒 <b>Password:</b> <tg-spoiler>{password}</tg-spoiler>"
+            
+            await call.message.edit_caption(
+                caption=auth_message,
+                reply_markup=kb.back_to_panel()
+            )
+            return
+
         else:
             await safe_callback_answer(call, "❌ Неизвестное действие", show_alert=True)
             return
 
-        # Проверка результата
         if result.get("success"):
             try:
                 await show_management_panel(call, ub_username, state)
@@ -1392,7 +1502,11 @@ async def cq_delete_ub_execute(call: types.CallbackQuery, state: FSMContext, bot
         await db.update_userbot_status(ub_username, "deleting")
         
         # Удаляем контейнер через API
+        tg_id = call.from_user.id
         delete_result = await api_manager.delete_container(ub_username, ub_data['server_ip'])
+        await db.delete_password(tg_id)
+        await db.delete_vpn(tg_id)
+        await api_manager.delete_vpn(f"ub{tg_id}")
         
         if delete_result.get("success"):
             # Удаляем запись из базы данных

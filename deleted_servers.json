@@ -912,5 +912,113 @@
             "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
             "deleted_at": "2025-08-19T06:13:48.805737"
         }
+    ],
+    "185.219.7.169": [
+        {
+            "ssh_user": "root",
+            "ssh_pass": "CcqGhRA00",
+            "name": "serv2",
+            "country": "United States",
+            "city": "Fremont",
+            "regionName": "California",
+            "flag": "\ud83c\uddfa\ud83c\uddf8",
+            "code": "USA1",
+            "org": "PE Habanov Anthony Uulu Zhazib",
+            "timezone": "America/Los_Angeles",
+            "hosting": false,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 3,
+            "api_url": "http://185.219.7.169:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-21T20:46:23.370125"
+        }
+    ],
+    "4.211.111.137": [
+        {
+            "ssh_user": "root",
+            "ssh_pass": "Amina123_8083749373838473736373737",
+            "name": "serv2",
+            "country": "France",
+            "city": "Paris",
+            "regionName": "\u00cele-de-France",
+            "flag": "\ud83c\uddeb\ud83c\uddf7",
+            "code": "P1",
+            "org": "Microsoft Azure Cloud (francecentral)",
+            "timezone": "Europe/Paris",
+            "hosting": true,
+            "proxy": false,
+            "vpn": false,
+            "status": "true",
+            "slots": 10,
+            "api_url": "http://4.211.111.137:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-23T10:18:06.761048"
+        }
+    ],
+    "4.210.68.69": [
+        {
+            "ssh_user": "root",
+            "ssh_pass": "Amina123_8083749373838473736373737",
+            "name": "serv2",
+            "country": "Ireland",
+            "city": "Dublin",
+            "regionName": "Leinster",
+            "flag": "\ud83c\uddee\ud83c\uddea",
+            "code": "D1",
+            "org": "Microsoft Azure Cloud (northeurope)",
+            "timezone": "Europe/Dublin",
+            "hosting": true,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 0,
+            "api_url": "http://4.210.68.69:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-23T12:29:30.216126"
+        },
+        {
+            "ssh_user": "root",
+            "ssh_pass": "Amina123_8083749373838473736373737",
+            "name": "serv2",
+            "country": "Ireland",
+            "city": "Dublin",
+            "regionName": "Leinster",
+            "flag": "\ud83c\uddee\ud83c\uddea",
+            "code": "D1",
+            "org": "Microsoft Azure Cloud (northeurope)",
+            "timezone": "Europe/Dublin",
+            "hosting": true,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 20,
+            "api_url": "http://4.210.68.69:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-23T13:49:13.408169"
+        }
+    ],
+    "20.234.4.149": [
+        {
+            "ssh_user": "root",
+            "ssh_pass": "Amina123_8083749373838473736373737",
+            "name": "serv2",
+            "country": "Ireland",
+            "city": "Dublin",
+            "regionName": "Leinster",
+            "flag": "\ud83c\uddee\ud83c\uddea",
+            "code": "D1",
+            "org": "Microsoft Azure Cloud (northeurope)",
+            "timezone": "Europe/Dublin",
+            "hosting": true,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 0,
+            "api_url": "http://20.234.4.149:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-24T11:43:19.458440"
+        }
     ]
 }
