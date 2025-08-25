@@ -1293,7 +1293,7 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                 "<b>Ссылка для подключения:</b>\n"
                 f"<code>{vpn_data}</code>\n\n"
                 "<b>Как подключиться:</b>\n"
-                "1. Скачайте <a href='https://apps.apple.com/ru/app/v2raytun/id6449256074'>v2raytun (iOS)</a> или <a href='https://hiddify.com/ru/download/'>Hiddify (Android/Windows/Mac)</a>\n"
+                "1. Скачайте <a href='https://apps.apple.com/ru/app/v2raytun/id6476628951'>v2raytun (iOS/Mac)</a> или <a href='https://play.google.com/store/apps/details?id=com.v2raytun.android&hl=ru'>V2RayTun (Android)</a>\n"
                 "2. Откройте приложение и выберите импорт по ссылке\n"
                 "3. Вставьте ссылку выше и подключитесь\n"
                 "\n"
