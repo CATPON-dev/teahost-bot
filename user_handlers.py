@@ -1265,7 +1265,6 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
         elif action == "vpn":
             tg_id = call.from_user.id
             vpn_data = await db.get_vpn(tg_id)
-            from utils.copy import CopyTextButton
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             
             if not vpn_data:
