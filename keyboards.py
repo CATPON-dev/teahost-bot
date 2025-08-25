@@ -248,7 +248,7 @@ def get_management_keyboard(ip: str, port: int, is_running: bool, ub_username: s
         builder.button(text="🔴 Управление отключено", callback_data=f"noop:{owner_id_str}")
     elif is_running:
         builder.button(text="🔴 Выключить", callback_data=create_callback("stop"))
-        builder.button(text="🌐 Веб панель", url=f"https://{ub_username}.sharkhost.space")
+        builder.button(text="🌐 Веб панель", web_app=WebAppInfo(url=f"https://{ub_username}.sharkhost.space"))
         builder.button(text="🔑 Данные для авторизации", callback_data=create_callback("auth"))
         builder.button(text="🇩🇪VPN", callback_data=create_callback("vpn"))
         builder.button(text="🔄 Перезагрузить", callback_data=create_callback("restart"))

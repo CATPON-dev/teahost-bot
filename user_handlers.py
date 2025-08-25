@@ -497,14 +497,13 @@ async def _show_login_link_success_from_new_message(
     text_parts = [
         "<blockquote>🌟 <b>Установка успешно завершена!</b></blockquote>\n",
         "<blockquote>🎉 Ваш юзербот готов к работе!</blockquote>\n",
-        "<blockquote>🔑 Ваши данные для авторизации ниже:\n",
-        f"<b>👤UserName</b>: <code>{username}</code></blockquote>\n",
+        "<blockquote>🔑 Ваш пароль для авторизации ниже, вы можете его скопировать нажав на кнопку</blockquote>\n",
         "<blockquote>⚠️ <b>Важная информация:</b>\n"
         "• Если возникает ошибка <b>401</b> - используйте браузер <b>Chrome</b>\n"
         "• Данные для авторизации можно посмотреть в панели управления бота\n"
         "• Логин и пароль генерируются автоматически\n"
         "• Если не работает сайт - используйте VPN из панели управления\n"
-        "• Для VPN скачайте V2RAYTUN или HIDDEFY</blockquote>\n",
+        "• Для VPN скачайте v2raytun или hiddefi</blockquote>\n",
         "<blockquote>🎯 <b>Управление юзерботом:</b>\n"
         "• Для управления перейдите в /start → Панель управления\n"
         "• Там вы найдете все необходимые инструменты</blockquote>\n",
@@ -1266,18 +1265,18 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
         elif action == "vpn":
             tg_id = call.from_user.id
             vpn_data = await db.get_vpn(tg_id)
+            from utils.copy import CopyTextButton
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             
             if not vpn_data:
                 name = f"ub{tg_id}"
                 vpn_result = await api_manager.create_vpn(name)
-                
                 if vpn_result.get("success"):
                     vless_link = None
                     for link in vpn_result.get("data", {}).get("links", []):
                         if link.startswith("vless://"):
                             vless_link = link
                             break
-                    
                     if vless_link:
                         await db.add_vpn(tg_id, vless_link)
                         vpn_data = vless_link
@@ -1289,28 +1288,62 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                     await safe_callback_answer(call, f"❌ Ошибка создания VPN: {error_msg}", show_alert=True)
                     return
             
-            vpn_message = f"🔐 <b>Ваш VPN доступ</b>\n\n<blockquote><code>{vpn_data}</code></blockquote>"
+            vpn_text = (
+                "<b>🔐 Ваш VPN доступ</b>\n\n"
+                "<blockquote>"
+                "<b>Ссылка для подключения:</b>\n"
+                f"<code>{vpn_data}</code>\n\n"
+                "<b>Как подключиться:</b>\n"
+                "1. Скачайте <a href='https://apps.apple.com/ru/app/v2raytun/id6449256074'>v2raytun (iOS)</a> или <a href='https://hiddify.com/ru/download/'>Hiddify (Android/Windows/Mac)</a>\n"
+                "2. Откройте приложение и выберите импорт по ссылке\n"
+                "3. Вставьте ссылку выше и подключитесь\n"
+                "\n"
+                "<b>ℹ️ Если не удаётся подключиться:</b>\n"
+                "- Попробуйте другой клиент (например, Hiddify)\n"
+                "- Проверьте интернет\n"
+                "- Обратитесь в поддержку @SharkHost_support"
+                "</blockquote>"
+            )
+            buttons = [
+                [InlineKeyboardButton(text="🔗 Скопировать ссылку", copy_text=CopyTextButton(text=vpn_data))],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="go_to_control_panel")]
+            ]
+            markup = InlineKeyboardMarkup(inline_keyboard=buttons)
             await call.message.edit_caption(
-                caption=vpn_message,
-                reply_markup=kb.back_to_panel()
+                caption=vpn_text,
+                reply_markup=markup,
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
             return
 
         elif action == "auth":
             tg_id = call.from_user.id
             auth_data = await db.get_password(tg_id)
-            logger.error(auth_data)
+            from utils.copy import CopyTextButton
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             
             if not auth_data:
-                auth_message = "❌ Нету данных для авторизации."
+                auth_message = "❌ Нет данных для авторизации."
+                markup = kb.back_to_panel()
             else:
-                username = auth_data.get('username', 'Не указан')
                 password = auth_data.get('password', 'Не указан')
-                auth_message = f"🔐 <b>Данные для авторизации</b>\n\n👤 <b>Username:</b> {username}\n🔒 <b>Password:</b> <tg-spoiler>{password}</tg-spoiler>"
-            
+                auth_message = (
+                    "<b>🔑 Ваш пароль для входа</b>\n\n"
+                    f"<b>Пароль:</b> <tg-spoiler>{password}</tg-spoiler>\n\n"
+                    "<i>Скопируйте пароль кнопкой ниже и вставьте его в форму входа на панели управления.</i>\n\n"
+                    "<b>❗️ Не делитесь этим паролем с другими!</b>"
+                )
+                buttons = [
+                    [InlineKeyboardButton(text="🔑 Скопировать пароль", copy_text=CopyTextButton(text=password))],
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="go_to_control_panel")]
+                ]
+                markup = InlineKeyboardMarkup(inline_keyboard=buttons)
             await call.message.edit_caption(
                 caption=auth_message,
-                reply_markup=kb.back_to_panel()
+                reply_markup=markup,
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
             return
 
