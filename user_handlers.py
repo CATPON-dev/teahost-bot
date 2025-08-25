@@ -1304,7 +1304,6 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                 "</blockquote>"
             )
             buttons = [
-                [InlineKeyboardButton(text="🔗 Скопировать ссылку", copy_text=CopyTextButton(text=vpn_data))],
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="go_to_control_panel")]
             ]
             markup = InlineKeyboardMarkup(inline_keyboard=buttons)
