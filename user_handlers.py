@@ -1201,7 +1201,7 @@ async def cq_show_container_stats(call: types.CallbackQuery, state: FSMContext, 
 
 @router.callback_query(F.data.startswith("manage_ub:"))
 async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
-    """Обработчик для управления контейнером (старт/стоп/рестарт/переустановка)"""
+    """Обработчик для управления контейнером (старт/стоп/рестарт/переустановка, VPN, авторизация)"""
     try:
         parts = call.data.split(":")
         action = parts[1]
@@ -1266,7 +1266,7 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
             tg_id = call.from_user.id
             vpn_data = await db.get_vpn(tg_id)
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            
+
             if not vpn_data:
                 name = f"ub{tg_id}"
                 vpn_result = await api_manager.create_vpn(name)
@@ -1286,14 +1286,29 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                     error_msg = vpn_result.get("error", "Неизвестная ошибка")
                     await safe_callback_answer(call, f"❌ Ошибка создания VPN: {error_msg}", show_alert=True)
                     return
-            
+
             vpn_text = (
                 "<b>🔐 Ваш VPN доступ</b>\n\n"
                 "<blockquote>"
                 "<b>Ссылка для подключения:</b>\n"
                 f"<code>{vpn_data}</code>\n\n"
                 "<b>Как подключиться:</b>\n"
-                "1. Скачайте <a href='https://apps.apple.com/ru/app/v2raytun/id6476628951'>v2raytun (iOS/Mac)</a> или <a href='https://play.google.com/store/apps/details?id=com.v2raytun.android&hl=ru'>V2RayTun (Android)</a>\n"
+                "1. Скачайте подходящий клиент для вашего устройства:\n"
+                "\n"
+                "<b>iOS/Mac:</b>\n"
+                "- <a href='https://apps.apple.com/ru/app/v2raytun/id6476628951'>V2RayTun (App Store)</a>\n"
+                "\n"
+                "<b>Android:</b>\n"
+                "- <a href='https://play.google.com/store/apps/details?id=com.v2raytun.android&hl=ru'>V2RayTun (Google Play)</a>\n"
+                "- <a href='https://github.com/MatsuriDayo/NekoBoxForAndroid/releases/download/1.3.9/NekoBox-1.3.9-arm64-v8a.apk'>NekoBox (arm64)</a>\n"
+                "- <a href='https://github.com/MatsuriDayo/NekoBoxForAndroid/releases/download/1.3.9/NekoBox-1.3.9-x86_64.apk'>NekoBox (x86_64)</a>\n"
+                "\n"
+                "<b>Windows:</b>\n"
+                "- <a href='https://github.com/MatsuriDayo/nekoray/releases/download/4.0.1/nekoray-4.0.1-2024-12-12-windows64.zip'>Nekoray (Windows)</a>\n"
+                "\n"
+                "<b>Linux:</b>\n"
+                "- <a href='https://github.com/MatsuriDayo/nekoray/releases/download/4.0.1/nekoray-4.0.1-2024-12-12-linux-x64.AppImage'>Nekoray (Linux x64)</a>\n"
+                "\n"
                 "2. Откройте приложение и выберите импорт по ссылке\n"
                 "3. Вставьте ссылку выше и подключитесь\n"
                 "\n"
@@ -1318,9 +1333,8 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
         elif action == "auth":
             tg_id = call.from_user.id
             auth_data = await db.get_password(tg_id)
-            from utils.copy import CopyTextButton
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            
+
             if not auth_data:
                 auth_message = "❌ Нет данных для авторизации."
                 markup = kb.back_to_panel()
