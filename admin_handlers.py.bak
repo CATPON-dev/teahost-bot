@@ -1243,8 +1243,7 @@ async def serverinfo_page_callback(call: types.CallbackQuery, bot: Bot):
 async def refresh_server_info_handler(call: types.CallbackQuery, bot: Bot):
     await call.answer("Обновляю...")
     
-
-    info_text, markup, _, _ = await _get_server_info_content()
+    info_text, markup = await _get_server_info_content()
 
     try:
         await call.message.edit_text(

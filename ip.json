@@ -792,9 +792,28 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "test",
-        "slots": 1,
+        "status": "true",
+        "slots": 40,
         "api_url": "http://4.227.83.2:8000",
+        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+    },
+    "4.210.149.63": {
+        "ssh_user": "root",
+        "ssh_pass": "h#8Tg*7Lq@2Fz%1Km",
+        "name": "serv2",
+        "country": "Netherlands",
+        "city": "Amsterdam",
+        "regionName": "North Holland",
+        "flag": "🇳🇱",
+        "code": "AMST-1",
+        "org": "Microsoft Azure Cloud (westeurope)",
+        "timezone": "Europe/Amsterdam",
+        "hosting": true,
+        "proxy": false,
+        "vpn": false,
+        "status": "true",
+        "slots": 35,
+        "api_url": "http://4.210.149.63:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
     }
 }

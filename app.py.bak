@@ -227,7 +227,37 @@ async def get_user_info(request: Request, identifier: str = Path(...), current_u
     asyncio.create_task(log_api_action("api_get_user_info", log_data))
 
     return APIResponse(data=response_data)
-  
+   
+@router.get("/users/me", response_model=APIResponse, tags=["Users"])
+async def get_me(current_user: dict = Depends(verify_token)):
+    target_id = current_user['tg_user_id']
+    user_bots = await db.get_userbots_by_tg_id(target_id)
+    userbot_info_obj = None
+
+    if user_bots:
+        ub = user_bots[0]
+        status_res = await api_manager.get_container_status(ub['ub_username'], ub['server_ip'])
+        status_str = status_res.get("data", {}).get("status", "unknown") if status_res.get("success") else "error"
+        
+        server_details = server_config.get_servers().get(ub['server_ip'], {})
+        userbot_info_obj = {
+            "ub_username": ub['ub_username'],
+            "ub_type": ub.get('ub_type'),
+            "status": status_str,
+            "server_code": server_details.get('code', 'N/A'),
+            "created_at": ub.get('created_at')
+        }
+
+    response_data = {
+        "owner": {
+            "id": target_id,
+            "username": current_user.get('username'),
+            "full_name": current_user.get('full_name'),
+            "registered_at": current_user.get('registered_at')
+        },
+        "userbot": userbot_info_obj
+    }
+    return APIResponse(data=response_data)
 
 @router.get("/userbots/{ub_username}/logs", response_model=APIResponse, tags=["Userbots"])
 async def get_my_userbot_logs(request: Request, ub_username: str, lines: int = Query(200, ge=1, le=1000), current_user: dict = Depends(verify_token)):

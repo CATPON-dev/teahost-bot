@@ -1020,5 +1020,47 @@
             "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
             "deleted_at": "2025-08-24T11:43:19.458440"
         }
+    ],
+    "4.210.138.76": [
+        {
+            "ssh_user": "root",
+            "ssh_pass": "Amina123_8029383949&",
+            "name": "serv2",
+            "country": "Netherlands",
+            "city": "Amsterdam",
+            "regionName": "North Holland",
+            "flag": "\ud83c\uddf3\ud83c\uddf1",
+            "code": "AMS-1",
+            "org": "Microsoft Azure Cloud (westeurope)",
+            "timezone": "Europe/Amsterdam",
+            "hosting": true,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 0,
+            "api_url": "http://4.210.138.76:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-26T09:47:40.732636"
+        },
+        {
+            "ssh_user": "root",
+            "ssh_pass": "Amina123_8029383949&",
+            "name": "serv2",
+            "country": "Netherlands",
+            "city": "Amsterdam",
+            "regionName": "North Holland",
+            "flag": "\ud83c\uddf3\ud83c\uddf1",
+            "code": "AMS-1",
+            "org": "Microsoft Azure Cloud (westeurope)",
+            "timezone": "Europe/Amsterdam",
+            "hosting": true,
+            "proxy": false,
+            "vpn": false,
+            "status": "test",
+            "slots": 35,
+            "api_url": "http://4.210.138.76:8000",
+            "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y",
+            "deleted_at": "2025-08-26T10:48:58.166774"
+        }
     ]
 }

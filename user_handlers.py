@@ -372,13 +372,13 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
         if stats_result.get("success"):
             info = stats_result.get("data", {}).get("info", {})
             if info:
-                resources['cpu_percent'] = round(info.get("cpu_percent", 0), 1)
-                resources['ram_used'] = round(info.get("ram_usage_mb", 0))
-                resources['ram_limit'] = round(info.get("ram_limit_mb", 0))
-                resources['ram_percent'] = round(info.get("ram_percent", 0), 1)
-                resources['disk_used'] = round(info.get("disk_usage_mb", 0))
-                resources['disk_limit'] = round(info.get("disk_limit_mb", 0))
-                resources['disk_percent'] = round(info.get("disk_percent", 0), 1)
+                resources['cpu_percent'] = round(info.get("cpu_percent") or 0.0, 1)
+                resources['ram_used'] = round(info.get("ram_usage_mb") or 0)
+                resources['ram_limit'] = round(info.get("ram_limit_mb") or 0)
+                resources['ram_percent'] = round(info.get("ram_percent") or 0.0, 1)
+                resources['disk_used'] = round(info.get("disk_usage_mb") or 0)
+                resources['disk_limit'] = round(info.get("disk_limit_mb") or 0)
+                resources['disk_percent'] = round(info.get("disk_percent") or 0.0, 1)
 
     webui_port = ub_data.get('webui_port')
     
