@@ -115,7 +115,7 @@ async def _update_container_message(message: types.Message, page: int, expanded_
         if "message is not modified" not in str(e).lower():
             logging.error(f"Ошибка обновления списка контейнеров: {e}")
 
-@router.message(Command("container"), IsAdmin())
+@router.message(Command("container"), IsSuperAdmin())
 async def cmd_container(message: types.Message, command: CommandObject, bot: Bot):
     args = command.args.split() if command.args else []
     action = args[0].lower() if args else "help"
@@ -1283,7 +1283,7 @@ async def cmd_stop_bot(message: types.Message):
     loop = asyncio.get_running_loop()
     loop.stop()
 
-@router.message(Command("server"))
+@router.message(Command("server"), IsSuperAdmin())
 async def cmd_server_toggle(message: types.Message, command: CommandObject, bot: Bot):
     arg = command.args.lower() if command.args else None
     current_status_is_on = not maintenance_manager.is_maintenance_mode()
@@ -1395,7 +1395,7 @@ async def cmd_ahelp(message: types.Message):
     )
     await message.reply(text, disable_web_page_preview=True)
 
-@router.message(Command("check"), IsAdmin())
+@router.message(Command("check"), IsSuperAdmin())
 async def cmd_check_sessions(message: types.Message):
     msg = await message.reply("⏳ Проверяю сессии на всех удалённых серверах...")
     try:
@@ -1458,7 +1458,7 @@ async def cmd_check_sessions(message: types.Message):
         logging.error(f"Ошибка во время выполнения /check: {e}", exc_info=True)
         await msg.edit_text(f"❌ Произошла ошибка во время проверки: {e}")
 
-@router.callback_query(F.data.startswith("check_view_toggle:"))
+@router.callback_query(F.data.startswith("check_view_toggle:"), IsSuperAdmin())
 async def check_view_toggle_handler(call: types.CallbackQuery):
     await call.answer()
     cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
@@ -1513,7 +1513,7 @@ async def no_action_handler(call: types.CallbackQuery):
 async def admin_noop_handler(call: types.CallbackQuery):
     await call.answer("Функция управления временно недоступна.")
 
-@router.callback_query(F.data.startswith("check_page:"))
+@router.callback_query(F.data.startswith("check_page:"), IsSuperAdmin())
 async def check_page_handler(call: types.CallbackQuery):
     await call.answer()
     cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
@@ -1564,7 +1564,7 @@ async def check_page_handler(call: types.CallbackQuery):
                 logging.error(f"Ошибка обновления страницы отчета /check: {e}")
                 await call.answer("Произошла ошибка при обновлении", show_alert=True)
 
-@router.callback_query(F.data == "refresh_session_check")
+@router.callback_query(F.data == "refresh_session_check", IsSuperAdmin())
 async def refresh_session_check_handler(call: types.CallbackQuery):
     cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
     now = time.time()
@@ -1607,7 +1607,7 @@ async def refresh_session_check_handler(call: types.CallbackQuery):
             logging.error(f"Ошибка обновления отчета /check: {e}")
             await call.answer("Произошла ошибка при обновлении", show_alert=True)
 
-@router.message(Command("bc"))
+@router.message(Command("bc"), IsSuperAdmin())
 async def cmd_broadcast(message: types.Message, command: CommandObject, bot: Bot):
     replied_message = message.reply_to_message
     if not replied_message:
@@ -1969,7 +1969,7 @@ REASON_TEMPLATES = {
 
 # Файл: admin_handlers.py
 
-@router.message(Command("delub"), IsAdmin())
+@router.message(Command("delub"), IsSuperAdmin())
 async def cmd_delub(message: types.Message, command: CommandObject, bot: Bot):
     if not command.args:
         help_text = (
@@ -2418,7 +2418,7 @@ async def _generate_stats_panel(view_mode: str):
     
     return content
 
-@router.message(Command("stats"))
+@router.message(Command("stats"), IsSuperAdmin())
 async def cmd_stats_panel(message: Message):
     msg = await message.reply("⏳ Собираю статистику...")
     content = await _generate_stats_panel("overall")
@@ -3416,7 +3416,7 @@ async def cmd_show_api_config(message: types.Message, command: CommandObject):
     
     await message.reply(text)
 
-@router.message(Command("update"), IsAdmin())
+@router.message(Command("update"), IsSuperAdmin())
 async def cmd_update_commit(message: types.Message, command: CommandObject, bot: Bot):
     if not command.args and not message.reply_to_message:
         await message.reply("<b>Ошибка:</b> Необходимо указать текст коммита или ответить командой на сообщение.")
