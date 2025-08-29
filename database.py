@@ -803,4 +803,22 @@ async def get_user_counts_by_period(days: int) -> int:
     except aiomysql.Error as e:
         logger.error(f"Ошибка подсчета пользователей за период {days} дней: {e}")
         return 0
+        
+async def add_or_update_banned_user(tg_user_id: int, username: Optional[str] = None, full_name: Optional[str] = None) -> bool:
+    sql = """
+        INSERT INTO users (tg_user_id, username, full_name, is_banned, agreement_accepted)
+        VALUES (%s, %s, %s, TRUE, FALSE)
+        ON DUPLICATE KEY UPDATE
+            username = VALUES(username),
+            full_name = VALUES(full_name),
+            is_banned = TRUE;
+    """
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, (tg_user_id, username, full_name))
+                return True
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка при добавлении/обновлении забаненного пользователя {tg_user_id}: {e}")
+        return False
 # --- END OF FILE database.py ---

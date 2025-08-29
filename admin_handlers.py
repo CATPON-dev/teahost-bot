@@ -2557,22 +2557,44 @@ async def monitor_and_restore_server(ip: str, bot: Bot, admin_id: int):
 
 @router.message(Command("ban"), IsSuperAdmin())
 async def cmd_ban(message: types.Message, command: CommandObject, bot: Bot):
-    if not command.args:
-        await message.reply("Использование: <code>/ban [ID или @username]</code>")
+    if not command.args and not message.reply_to_message:
+        await message.reply("Использование: <code>/ban [ID или @username]</code> или ответьте на сообщение пользователя.")
         return
 
-    target_user_data = await db.get_user_by_username_or_id(command.args)
-    if not target_user_data:
-        await message.reply(f"❌ Пользователь <code>{html.quote(command.args)}</code> не найден в базе данных.")
+    target_id = None
+
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+    else:
+        identifier = command.args.strip().lstrip('@')
+        
+        if identifier.isdigit():
+            target_id = int(identifier)
+        else:
+            user_in_db = await db.get_user_by_username_or_id(identifier)
+            if user_in_db:
+                target_id = user_in_db['tg_user_id']
+            else:
+                await message.reply(f"❌ Пользователь с юзернеймом <code>{html.quote(identifier)}</code> не найден. Попробуйте использовать ID.")
+                return
+
+    if not target_id:
+        await message.reply("❌ Не удалось определить ID пользователя для бана.")
         return
 
-    target_user_id = target_user_data['tg_user_id']
-    if await db.is_user_banned(target_user_id):
+    if target_id == message.from_user.id:
+        await message.reply("Вы не можете забанить самого себя.")
+        return
+
+    if await db.is_user_banned(target_id):
         await message.reply("Этот пользователь уже забанен.")
         return
+    
+    minimal_target_info = {"id": target_id}
 
-    await ban_manager.execute_ban(target_user_id, message.from_user, bot)
-    await message.reply(f"✅ Пользователь <code>{target_user_id}</code> успешно забанен. Его юзерботы остановлены.")
+    await ban_manager.execute_ban(minimal_target_info, message.from_user, bot)
+    
+    await message.reply(f"✅ Пользователь с ID <code>{target_id}</code> успешно добавлен в черный список. Его юзерботы (если есть) будут остановлены.")
 
 @router.message(Command("unban"), IsSuperAdmin())
 async def cmd_unban(message: types.Message, command: CommandObject, bot: Bot):
