@@ -227,7 +227,6 @@ async def get_user_info(request: Request, identifier: str = Path(...), current_u
     asyncio.create_task(log_api_action("api_get_user_info", log_data))
 
     return APIResponse(data=response_data)
-  
 
 @router.get("/userbots/{ub_username}/logs", response_model=APIResponse, tags=["Userbots"])
 async def get_my_userbot_logs(request: Request, ub_username: str, lines: int = Query(200, ge=1, le=1000), current_user: dict = Depends(verify_token)):
@@ -363,10 +362,6 @@ async def manage_userbot(request: Request, ub_username: str, request_data: Userb
     await db.update_userbot_status(ub_username, new_status)
 
     return APIResponse(data={"new_status": new_status})
-
-@router.post("/userbots/{ub_username}/transfer", response_model=APIResponse, tags=["Userbots"])
-async def transfer_userbot(ub_username: str, request_data: UserbotTransferRequest, current_user: dict = Depends(verify_token)):
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="This feature is temporarily disabled.")
 
 @router.post("/userbots/exec", response_model=APIResponse, tags=["Userbots"])
 async def exec_command(request: Request, request_data: UserbotExecRequest, current_user: dict = Depends(verify_token)):
