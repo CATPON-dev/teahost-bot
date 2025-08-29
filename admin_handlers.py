@@ -2964,17 +2964,105 @@ async def cmd_user_info(message: types.Message, command: CommandObject, bot: Bot
 
     await _display_user_info_panel(bot, user_data['tg_user_id'], msg.chat.id, msg.message_id)
 
+async def _display_admin_ub_management_panel(call: types.CallbackQuery, bot: Bot, ub_username: str, user_id: int):
+    ub_data = await db.get_userbot_data(ub_username)
+    owner_data = await db.get_user_data(user_id)
+    
+    if not ub_data or not owner_data:
+        await call.answer("❌ Не удалось найти данные. Возможно, юзербот был удален.", show_alert=True)
+        return
+        
+    server_ip = ub_data.get('server_ip')
+    container_status = await api_manager.get_container_status(ub_username, server_ip)
+    is_active = container_status.get("success", False) and container_status.get("data", {}).get("status") == "running"
+    
+    servers = server_config.get_servers()
+    server_details = servers.get(server_ip, {})
+    server_code = server_details.get("code", "N/A")
+    server_flag = server_details.get("flag", "🏳️")
+    server_location = f"{server_details.get('country', 'N/A')}, {server_details.get('city', 'N/A')}"
+    
+    ping_ms_val = await api_manager.get_server_ping(server_ip)
+    
+    resources = {
+        'cpu_percent': 0.0, 'ram_percent': 0.0, 'ram_used': 0, 'ram_limit': 0,
+        'disk_percent': 0.0, 'disk_used': 0, 'disk_limit': 0
+    }
+    
+    if is_active:
+        stats_result = await api_manager.get_container_stats(ub_username, server_ip)
+        if stats_result.get("success"):
+            info = stats_result.get("data", {}).get("info", {})
+            if info:
+                resources['cpu_percent'] = round(info.get("cpu_percent", 0.0), 1)
+                resources['ram_used'] = round(info.get("ram_usage_mb", 0))
+                resources['ram_limit'] = round(info.get("ram_limit_mb", 0))
+                resources['ram_percent'] = round(info.get("ram_percent", 0.0), 1)
+                resources['disk_used'] = round(info.get("disk_usage_mb", 0))
+                resources['disk_limit'] = round(info.get("disk_limit_mb", 0))
+                resources['disk_percent'] = round(info.get("disk_percent", 0.0), 1)
+
+    status_text = "🟢 Включен" if is_active else "🔴 Выключен"
+    ping_display = f"📡 Пинг: {ping_ms_val:.1f} мс" if ping_ms_val is not None else "📡 Пинг: N/A"
+    owner_username = f"@{owner_data['username']}" if owner_data.get('username') else 'N/A'
+    
+    text_lines = [
+        "<b>🎛️ Управление юзерботом</b>\n",
+        "<blockquote>"
+        "<b>Основная информация:</b>\n"
+        f"🤖 Юзербот: <code>{html.quote(ub_username)}</code>\n"
+        f"👤 Владелец: {html.quote(owner_data.get('full_name', ''))} ({owner_username}, <code>{user_id}</code>)\n"
+        f"💡 Статус: {status_text}\n"
+        f"⚙️ Тип: {ub_data.get('ub_type', 'N/A').capitalize()}"
+        "</blockquote>",
+        "<blockquote><b>Информация о сервере:</b>\n"
+        f"🖥 Сервер: {server_flag} {server_code}\n"
+        f"🌍 Локация: {server_location}\n"
+        f"{ping_display}"
+        "</blockquote>",
+        "<blockquote>"
+        "<b>Потребление ресурсов:</b>\n"
+        f"🧠 CPU: {create_progress_bar(str(resources.get('cpu_percent', 0)))} ({resources.get('cpu_percent', 0)}%)\n"
+        f"💾 RAM: {create_progress_bar(str(resources.get('ram_percent', 0)))} ({resources.get('ram_used', 0)} / {resources.get('ram_limit', 0)} МБ)\n"
+        f"💽 ROM: {create_progress_bar(str(resources.get('disk_percent', 0)))} ({resources.get('disk_used', 0)} / {resources.get('disk_limit', 0)} МБ)"
+        "</blockquote>\n"
+    ]
+    update_time_str = datetime.now(pytz.timezone("Europe/Moscow")).strftime('%H:%M:%S')
+    text_lines.append(f"<i>Последнее обновление: {update_time_str} MSK</i>")
+    text = "\n".join(text_lines)
+    
+    markup = kb.get_admin_ub_management_keyboard(ub_username, user_id, is_active)
+    
+    await call.message.edit_text(text, reply_markup=markup)
+
 @router.callback_query(F.data.startswith("show_user_bots:"), IsAdmin())
-async def cq_show_user_bots_list(call: types.CallbackQuery):
+async def cq_show_user_bots_list(call: types.CallbackQuery, bot: Bot):
     await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
     await call.answer()
+    
     user_id = int(call.data.split(":")[1])
     user_bots = await db.get_userbots_by_tg_id(user_id)
     
-    text = "🤖 **Юзерботы пользователя:**\n\nВыберите юзербота для управления."
-    markup = kb.get_user_bots_list_keyboard(user_bots, user_id)
+    if not user_bots:
+        text = "🤖 У этого пользователя нет юзерботов."
+        markup = kb.get_user_bots_list_keyboard([], user_id)
+        await call.message.edit_text(text, reply_markup=markup)
+        return
     
-    await call.message.edit_text(text, reply_markup=markup)
+    first_bot = user_bots[0]
+    ub_username = first_bot['ub_username']
+    
+    await _display_admin_ub_management_panel(call, bot, ub_username, user_id)
+
+@router.callback_query(F.data.startswith("select_user_bot:"), IsAdmin())
+async def cq_select_user_bot_for_admin(call: types.CallbackQuery, bot: Bot):
+    await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
+    await call.answer()
+    
+    _, ub_username, user_id_str = call.data.split(":")
+    user_id = int(user_id_str)
+    
+    await _display_admin_ub_management_panel(call, bot, ub_username, user_id)
 
 @router.callback_query(F.data.startswith("back_to_user_info:"), IsAdmin())
 async def cq_back_to_user_info(call: types.CallbackQuery, bot: Bot):
@@ -2983,62 +3071,45 @@ async def cq_back_to_user_info(call: types.CallbackQuery, bot: Bot):
     user_id = int(call.data.split(":")[1])
     await _display_user_info_panel(bot, user_id, call.message.chat.id, call.message.message_id)
 
-@router.callback_query(F.data.startswith("select_user_bot:"), IsAdmin())
-async def cq_select_user_bot_for_admin(call: types.CallbackQuery, bot: Bot):
+@router.callback_query(F.data.startswith("admin_manage_ub:"), IsAdmin())
+async def cq_admin_manage_ub(call: types.CallbackQuery, bot: Bot):
+    await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
+    
     try:
-        await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e).lower():
-            raise
-    
-    await call.answer()
-    _, ub_username, user_id_str = call.data.split(":")
-    user_id = int(user_id_str)
-    
-    ub_data = await db.get_userbot_data(ub_username)
-    owner_data = await db.get_user_data(user_id)
-    
-    if not ub_data or not owner_data:
-        await call.answer("❌ Не удалось найти данные. Возможно, юзербот был удален.", show_alert=True)
+        _, action, ub_username, user_id_str = call.data.split(":")
+        user_id = int(user_id_str)
+    except ValueError:
+        await call.answer("Ошибка в данных, обновите панель.", show_alert=True)
         return
-        
-            # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
-        is_active = False
-    
-    owner_username = f"@{owner_data['username']}" if owner_data.get('username') else 'N/A'
 
-    text = (
-        f"<b>Управление:</b> <code>{html.quote(ub_username)}</code>\n"
-        f"<b>Владелец:</b> {html.quote(owner_data.get('full_name', ''))} ({owner_username}, <code>{user_id}</code>)\n"
-        f"<b>Тип:</b> {html.quote(ub_data.get('ub_type', 'N/A').capitalize())}\n"
-        f"<b>Сервер:</b> <code>{ub_data.get('server_ip', 'N/A')}</code>"
-    )
-    markup = kb.get_admin_ub_management_keyboard(ub_username, user_id, is_active)
-    
-    await call.message.edit_text(text, reply_markup=markup)
+    await call.answer(f"Выполняю действие: {action}...")
 
-# @router.callback_query(F.data.startswith("admin_manage_ub:"), IsAdmin())
-# async def cq_admin_manage_ub(call: types.CallbackQuery, bot: Bot):
-#     await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
-#     _, action, ub_username = call.data.split(":")
-#     await call.answer(f"Выполняю '{action}'...")
-#     
-#     ub_data = await db.get_userbot_data(ub_username)
-#     if not ub_data:
-#         await call.answer("❌ Юзербот не найден.", show_alert=True)
-#         return
-#         
-#             # await sm.manage_ub_service(ub_username, action, ub_data['server_ip'])
-#     await asyncio.sleep(1.5)
-#     
-#     user_id = ub_data['tg_user_id']
-#     is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
-#     markup = kb.get_admin_ub_management_keyboard(ub_username, user_id, is_active)
-#     
-#     try:
-#         await call.message.edit_reply_markup(reply_markup=markup)
-#     except TelegramBadRequest:
-#         pass
+    ub_data = await db.get_userbot_data(ub_username)
+    if not ub_data:
+        await call.answer("❌ Юзербот не найден.", show_alert=True)
+        await _display_user_info_panel(bot, user_id, call.message.chat.id, call.message.message_id)
+        return
+
+    server_ip = ub_data['server_ip']
+    result = None
+    
+    if action == "start":
+        result = await api_manager.start_container(ub_username, server_ip)
+    elif action == "stop":
+        result = await api_manager.stop_container(ub_username, server_ip)
+    elif action == "restart":
+        result = await api_manager.restart_container(ub_username, server_ip)
+
+    if not result or not result.get("success"):
+        error_msg = result.get('error', 'Неизвестная ошибка') if result else 'Нет ответа от API'
+        try:
+            await call.answer(f"❌ Ошибка: {error_msg[:150]}", show_alert=True)
+        except TelegramBadRequest:
+            pass
+
+    await asyncio.sleep(1.5)
+    
+    await _display_admin_ub_management_panel(call, bot, ub_username, user_id)
 
 @router.callback_query(F.data.startswith("admin_delete_ub:"), IsAdmin())
 async def cq_admin_delete_ub(call: types.CallbackQuery):

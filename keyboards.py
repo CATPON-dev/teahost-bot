@@ -494,20 +494,16 @@ def get_admin_ub_management_keyboard(ub_username: str, user_id: int, is_active: 
     builder = InlineKeyboardBuilder()
     
     if is_active:
-        # builder.button(text="🔴 Выключить", callback_data=f"admin_manage_ub:stop:{ub_username}")
-        # builder.button(text="🔄 Перезагрузить", callback_data=f"admin_manage_ub:restart:{ub_username}")
-        builder.button(text="🔴 Выключить", callback_data="admin_noop")
-        builder.button(text="🔄 Перезагрузить", callback_data="admin_noop")
+        builder.button(text="🔴 Выключить", callback_data=f"admin_manage_ub:stop:{ub_username}:{user_id}")
+        builder.button(text="🔄 Перезагрузить", callback_data=f"admin_manage_ub:restart:{ub_username}:{user_id}")
     else:
-        # builder.button(text="🚀 Включить", callback_data=f"admin_manage_ub:start:{ub_username}")
-        builder.button(text="🚀 Включить", callback_data="admin_noop")
+        builder.button(text="🚀 Включить", callback_data=f"admin_manage_ub:start:{ub_username}:{user_id}")
     
     builder.button(text="📜 Логи", callback_data=f"admin_show_logs:docker:{ub_username}:1")
-    builder.button(text="🤝 Передать", callback_data=f"admin_transfer_start:{ub_username}")
     builder.button(text="🗑️ Удалить", callback_data=f"admin_delete_ub:{ub_username}")
     
     builder.adjust(2)
-    builder.row(InlineKeyboardButton(text="⬅️ Назад к списку юзерботов", callback_data=f"show_user_bots:{user_id}"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад к пользователю", callback_data=f"back_to_user_info:{user_id}"))
     
     return builder.as_markup()
     
