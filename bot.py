@@ -24,6 +24,7 @@ import server_config
 import user_handlers
 import admin_handlers
 import keyboards as kb
+import session_checker
 import inline_handlers
 from admin_handlers import auto_backup_task
 from middlewares.error_handler import handle_errors
@@ -586,6 +587,7 @@ async def main():
         scheduler.add_job(monitor_servers_health, 'interval', minutes=10, args=[bot])
         scheduler.add_job(update_status_message, 'interval', minutes=3, args=[bot, False, 1])
         scheduler.add_job(update_stats_message, 'interval', minutes=10, args=[bot, False])
+        scheduler.add_job(session_checker.check_and_log_session_violations, 'interval', minutes=10, args=[bot])
         scheduler.add_job(daily_log_cleanup, 'cron', hour=3, minute=0, id="daily_log_cleanup")
         scheduler.add_job(auto_backup_task, 'cron', minute='0,30', timezone='Europe/Moscow', args=[bot], id="auto_backup")
         scheduler.start()

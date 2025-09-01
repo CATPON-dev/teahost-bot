@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 from html import escape
+from aiogram import Bot
 import server_config
 import system_manager as sm
 import database as db
@@ -159,3 +160,75 @@ async def format_session_check_report(server_results: dict, view_mode: str, page
         full_text = "<blockquote>" + header + "\n" + content_text + pagination_info + "</blockquote>"
             
         return full_text, total_pages
+        
+SESSION_VIOLATION_CACHE = set()
+
+async def check_and_log_session_violations(bot: Bot, force: bool = False) -> int:
+    from channel_logger import log_to_channel
+
+    if not force:
+        logging.info("Running scheduled check for session violations...")
+    
+    server_results = await check_all_remote_sessions()
+    if not server_results:
+        return 0
+
+    servers_info = server_config.get_servers()
+    all_suspicious_users = {}
+
+    for ip, data in server_results.items():
+        for username, session_data in data.get("suspicious", {}).items():
+            if username not in all_suspicious_users:
+                all_suspicious_users[username] = {
+                    'ip': ip,
+                    'count': session_data['count'],
+                    'files': session_data['files']
+                }
+
+    if not all_suspicious_users:
+        if not force:
+            logging.info("No session violations found.")
+        return 0
+
+    violations_found_count = 0
+    for username, details in all_suspicious_users.items():
+        if not force and username in SESSION_VIOLATION_CACHE:
+            continue
+
+        violations_found_count += 1
+        ub_data = await db.get_userbot_data(username)
+        if not ub_data:
+            continue
+
+        owner_id = ub_data.get('tg_user_id')
+        owner_data = await db.get_user_data(owner_id) if owner_id else None
+
+        user_info = f"<code>{username}</code>"
+        if owner_data:
+            full_name = escape(owner_data.get('full_name', ''))
+            user_link = f"<a href='tg://user?id={owner_id}'>{full_name}</a>"
+            user_info = f"{user_link} (<code>{owner_id}</code>)"
+        
+        server_details = servers_info.get(details['ip'], {})
+        server_flag = server_details.get("flag", "🏳️")
+        server_code = server_details.get("code", "N/A")
+        
+        files_str = "\n".join([f"    - <code>{escape(f)}</code>" for f in details['files']])
+
+        log_tag = "#Принудительная_проверка_сессий" if force else "#Нарушение_правил"
+        
+        log_text = (
+            f"<b>{log_tag} (Обнаружено >1 сессии)</b>\n\n"
+            f"👤 <b>Пользователь:</b> {user_info}\n"
+            f"🤖 <b>Юзербот:</b> <code>{escape(username)}</code>\n"
+            f"🖥️ <b>Сервер:</b> {server_flag} {server_code}\n\n"
+            f"🔎 <b>Обнаружено сессий:</b> {details['count']} шт.\n"
+            f"📂 <b>Файлы сессий:</b>\n{files_str}"
+        )
+
+        await log_to_channel(bot, log_text)
+        if not force:
+            SESSION_VIOLATION_CACHE.add(username)
+        await asyncio.sleep(1)
+
+    return violations_found_count
