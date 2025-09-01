@@ -153,7 +153,13 @@ async def log_event(bot: Bot, event_type: str, data: dict):
         message_body = f"<b>Пользователь:</b> {user_link}\n<b>Действие:</b> {action_str} юзербота <code>{ub_name}</code>"
 
     elif event_type == "user_banned":
-        message_body = f"<b>Администратор:</b> {admin_link}\n<b>Забанил пользователя:</b> {user_link}"
+        details = data.get("details", "")
+        message_body = (
+            f"<b>Администратор:</b> {admin_link}\n"
+            f"<b>Забанил пользователя:</b> {user_link}"
+        )
+        if details:
+            message_body += f"\n<b>Детали:</b> {html.quote(details)}"
     
     elif event_type == "user_unbanned":
         message_body = f"<b>Администратор:</b> {admin_link}\n<b>Разбанил пользователя:</b> {user_link}"

@@ -2454,43 +2454,54 @@ async def monitor_and_restore_server(ip: str, bot: Bot, admin_id: int):
 @router.message(Command("ban"), IsSuperAdmin())
 async def cmd_ban(message: types.Message, command: CommandObject, bot: Bot):
     if not command.args and not message.reply_to_message:
-        await message.reply("Использование: <code>/ban [ID или @username]</code> или ответьте на сообщение пользователя.")
+        await message.reply("<b>Использование:</b> <code>/ban [ID или @username]</code>\n<i>Либо ответьте на сообщение пользователя.</i>")
         return
 
     target_id = None
+    identifier_for_log = None
+    is_in_db = False
+    target_user_data = None
 
     if message.reply_to_message:
-        target_id = message.reply_to_message.from_user.id
+        user = message.reply_to_message.from_user
+        target_id = user.id
+        identifier_for_log = f"@{user.username}" if user.username else str(user.id)
+        target_user_data = { "id": user.id, "username": user.username, "full_name": user.full_name }
+        is_in_db = bool(await db.get_user_data(target_id))
     else:
-        identifier = command.args.strip().lstrip('@')
+        identifier = command.args.strip()
+        identifier_for_log = identifier
         
-        if identifier.isdigit():
-            target_id = int(identifier)
+        user_in_db = await db.get_user_by_username_or_id(identifier)
+        if user_in_db:
+            target_id = user_in_db['tg_user_id']
+            target_user_data = { "id": target_id, "username": user_in_db.get('username'), "full_name": user_in_db.get('full_name') }
+            is_in_db = True
         else:
-            user_in_db = await db.get_user_by_username_or_id(identifier)
-            if user_in_db:
-                target_id = user_in_db['tg_user_id']
+            clean_id = identifier.lstrip('@')
+            if clean_id.isdigit():
+                target_id = int(clean_id)
+                target_user_data = {"id": target_id, "full_name": f"ID: {target_id}"}
+                is_in_db = False
             else:
-                await message.reply(f"❌ Пользователь с юзернеймом <code>{html.quote(identifier)}</code> не найден. Попробуйте использовать ID.")
+                await message.reply(f"❌ Пользователь <code>{html.quote(identifier)}</code> не найден в БД, для бана укажите его ID.")
                 return
 
     if not target_id:
-        await message.reply("❌ Не удалось определить ID пользователя для бана.")
+        await message.reply("❌ Не удалось определить ID пользователя.")
         return
 
     if target_id == message.from_user.id:
-        await message.reply("Вы не можете забанить самого себя.")
+        await message.reply("Вы не можете забанить себя.")
         return
 
     if await db.is_user_banned(target_id):
         await message.reply("Этот пользователь уже забанен.")
         return
-    
-    minimal_target_info = {"id": target_id}
 
-    await ban_manager.execute_ban(minimal_target_info, message.from_user, bot)
+    await ban_manager.execute_ban(target_user_data, message.from_user, bot, identifier_for_log, is_in_db)
     
-    await message.reply(f"✅ Пользователь с ID <code>{target_id}</code> успешно добавлен в черный список. Его юзерботы (если есть) будут остановлены.")
+    await message.reply(f"✅ Пользователь <code>{html.quote(identifier_for_log)}</code> заблокирован.")
 
 @router.message(Command("unban"), IsSuperAdmin())
 async def cmd_unban(message: types.Message, command: CommandObject, bot: Bot):
