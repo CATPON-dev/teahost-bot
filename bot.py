@@ -585,7 +585,7 @@ async def main():
         await bot.delete_webhook(drop_pending_updates=True)
         scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
         scheduler.add_job(monitor_servers_health, 'interval', minutes=10, args=[bot])
-        scheduler.add_job(update_status_message, 'interval', minutes=3, args=[bot, False, 1])
+        scheduler.add_job(update_status_message, 'interval', minutes=3, args=[bot, False, 1], coalesce=True, max_instances=1)
         scheduler.add_job(update_stats_message, 'interval', minutes=10, args=[bot, False])
         scheduler.add_job(session_checker.check_and_log_session_violations, 'interval', minutes=10, args=[bot])
         scheduler.add_job(daily_log_cleanup, 'cron', hour=3, minute=0, id="daily_log_cleanup")
