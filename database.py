@@ -29,6 +29,38 @@ async def init_pool():
         logger.critical(f"Не удалось создать пул соединений с MySQL: {e}", exc_info=True)
         raise
 
+async def reconnect_pool():
+    """Переподключает пул соединений с MySQL"""
+    global pool
+    try:
+        if pool:
+            pool.close()
+            await pool.wait_closed()
+        pool = None
+        await init_pool()
+        logger.info("Пул соединений с MySQL успешно переподключен.")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка переподключения к MySQL: {e}", exc_info=True)
+        return False
+
+async def ensure_connection():
+    """Проверяет и восстанавливает соединение с БД при необходимости"""
+    global pool
+    if not pool or pool._closed:
+        logger.warning("Пул соединений недоступен, пытаемся переподключиться...")
+        return await reconnect_pool()
+    
+    try:
+        # Проверяем соединение простым запросом
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT 1")
+        return True
+    except Exception as e:
+        logger.warning(f"Соединение с БД недоступно: {e}, переподключаемся...")
+        return await reconnect_pool()
+
 async def _add_column_if_not_exists(cursor, table_name, column_name, column_definition):
     await cursor.execute(f"""
         SELECT COUNT(*)
@@ -234,6 +266,8 @@ async def register_or_update_user(tg_user_id: int, username: Optional[str], full
             full_name = new_values.full_name;
     """
     try:
+        if not await ensure_connection():
+            return False
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(sql_insert, (tg_user_id, username, full_name))
@@ -258,6 +292,8 @@ async def has_user_accepted_agreement(tg_user_id: int) -> bool:
 
 async def get_user_data(tg_user_id: int) -> Optional[Dict[str, Any]]:
     try:
+        if not await ensure_connection():
+            return None
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM users WHERE tg_user_id = %s", (tg_user_id,))
@@ -334,6 +370,8 @@ async def add_userbot_record(tg_user_id: int, ub_username: str, ub_type: str, se
         VALUES (%s, %s, %s, %s, 'installing', FALSE, %s)
     """
     try:
+        if not await ensure_connection():
+            return False
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(sql, (tg_user_id, ub_username, ub_type, server_ip, webui_port))
@@ -367,6 +405,8 @@ async def block_userbot(ub_username: str, blocked_status: bool) -> bool:
 
 async def get_userbot_data(ub_username: str) -> Optional[Dict[str, Any]]:
     try:
+        if not await ensure_connection():
+            return None
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots WHERE ub_username = %s", (ub_username,))
@@ -377,6 +417,8 @@ async def get_userbot_data(ub_username: str) -> Optional[Dict[str, Any]]:
 
 async def get_userbots_by_tg_id(tg_user_id: int) -> List[Dict[str, Any]]:
     try:
+        if not await ensure_connection():
+            return []
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots WHERE tg_user_id = %s", (tg_user_id,))
