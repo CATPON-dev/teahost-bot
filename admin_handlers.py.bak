@@ -59,6 +59,10 @@ CACHE_TTL_SECONDS = 60
 CONTAINER_LIST_CACHE = {}
 CONTAINER_CACHE_TTL = 600 
 
+SERVERS_PAGE_SIZE = 10
+
+API_CONFIG_PAGE_SIZE = 10
+
 SERVERINFO_PAGE_SIZE = 5
 
 async def _generate_container_list_page(containers_on_page: list, total_containers: int, expanded_container_name: str | None = None) -> str:
@@ -115,7 +119,7 @@ async def _update_container_message(message: types.Message, page: int, expanded_
         if "message is not modified" not in str(e).lower():
             logging.error(f"Ошибка обновления списка контейнеров: {e}")
 
-@router.message(Command("container"), IsAdmin())
+@router.message(Command("container"), IsSuperAdmin())
 async def cmd_container(message: types.Message, command: CommandObject, bot: Bot):
     args = command.args.split() if command.args else []
     action = args[0].lower() if args else "help"
@@ -1243,7 +1247,8 @@ async def serverinfo_page_callback(call: types.CallbackQuery, bot: Bot):
 async def refresh_server_info_handler(call: types.CallbackQuery, bot: Bot):
     await call.answer("Обновляю...")
     
-    info_text, markup = await _get_server_info_content()
+
+    info_text, markup, _, _ = await _get_server_info_content()
 
     try:
         await call.message.edit_text(
@@ -1282,7 +1287,7 @@ async def cmd_stop_bot(message: types.Message):
     loop = asyncio.get_running_loop()
     loop.stop()
 
-@router.message(Command("server"))
+@router.message(Command("server"), IsSuperAdmin())
 async def cmd_server_toggle(message: types.Message, command: CommandObject, bot: Bot):
     arg = command.args.lower() if command.args else None
     current_status_is_on = not maintenance_manager.is_maintenance_mode()
@@ -1352,158 +1357,83 @@ async def cmd_remote_control(message: types.Message, command: CommandObject):
         response += f"\n\n<b>❌ Ошибка для:</b>\n" + "\n".join([f"  - <code>{html.quote(ub)}</code>" for ub in error_list])
     await message.reply(response or "Ничего не было сделано.")
 
-# В файле admin_handlers.py
-
-@router.message(Command("ahelp"), IsAdmin())
-async def cmd_ahelp(message: types.Message):
+@router.message(Command("help"), IsAdmin())
+async def cmd_help(message: types.Message):
     text = (
+        "<blockquote>"
         "<b>Админ-панель: Справка по командам</b>\n\n"
         
-        "<b>Управление ботом и пользователями:</b>\n"
-        "<code>/ban [ID|@|имя]</code> - Блокировка пользователя.\n"
-        "<code>/unban [ID|@|имя]</code> - Разблокировка пользователя.\n"
-        "<code>/users</code> - Постраничный список пользователей.\n"
-        "<code>/user [ID|@|имя ub]</code> - Инфо и управление пользователем.\n"
-        "<code>/server [on|off]</code> - Вкл/выкл бота для всех.\n"
-        "<code>/restart</code> - Перезапуск бота.\n"
-        "<code>/stop</code> - Остановка бота.\n\n"
+        "<b>👤 Управление ботом и пользователями</b>\n"
+        "<code>/help</code> (<i>Админ</i>)\n"
+        "<i>- Показать это сообщение.</i>\n\n"
+        "<code>/ban &lt;ID|@&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Заблокировать пользователя.</i>\n\n"
+        "<code>/unban &lt;ID|@&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Разблокировать пользователя.</i>\n\n"
+        "<code>/users</code> (<i>Админ</i>)\n"
+        "<i>- Постраничный список пользователей.</i>\n\n"
+        "<code>/user &lt;ID|@&gt;</code> (<i>Админ</i>)\n"
+        "<i>- Инфо и управление пользователем.</i>\n\n"
+        "<code>/server &lt;on|off&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Включить/выключить тех. работы.</i>\n\n"
+        "<code>/restart</code> (<i>Супер Админ</i>)\n"
+        "<i>- Перезапустить бота.</i>\n\n"
+        "<code>/stop</code> (<i>Супер Админ</i>)\n"
+        "<i>- Остановить процесс бота.</i>\n\n"
 
-        "<b>Разработка и Обновления:</b>\n"
-        "<code>/update [текст]</code> - Опубликовать коммит в канал.\n"
-        "<code>/commits</code> - Просмотреть историю коммитов.\n"
-        "<code>/git [view|change] fox [URL]</code> - Управление репозиториями.\n"
-        "<code>/backup_bot</code> - Создать резервную копию файлов бота.\n\n"
+        "<b>🖥️ Управление серверами и хостами</b>\n"
+        "<code>/serv help</code> (<i>Супер Админ</i>)\n"
+        "<i>- Справка по командам управления серверами.</i>\n\n"
+        "<code>/terminal [код] &lt;команда&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Выполнить команду на хост-сервере.</i>\n\n"
+        "<code>/obs</code> (<i>Супер Админ</i>)\n"
+        "<i>- Обслужить все удаленные серверы.</i>\n\n"
+        "<code>/set_api_token &lt;IP&gt; &lt;токен&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Установить API токен для сервера.</i>\n\n"
+        "<code>/set_api_url &lt;IP&gt; &lt;URL&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Установить API URL для сервера.</i>\n\n"
+        "<code>/show_api_config</code> (<i>Супер Админ</i>)\n"
+        "<i>- Показать текущую API конфигурацию.</i>\n\n"
+        
+        "<b>🐳 Управление контейнерами</b>\n"
+        "<code>/container list</code> (<i>Супер Админ</i>)\n"
+        "<i>- Список всех контейнеров.</i>\n\n"
+        "<code>/container exec &lt;имя&gt; &lt;команда&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Выполнить команду внутри контейнера.</i>\n\n"
+        "<code>/exec_all &lt;код&gt; &lt;команда&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Команда во всех контейнерах на сервере.</i>\n\n"
+        "<code>/ub &lt;имя&gt;</code> (<i>Админ</i>)\n"
+        "<i>- Инфо и управление конкретным юзерботом.</i>\n\n"
+        "<code>/remote &lt;ID|имя&gt; &lt;on|off|restart&gt;</code> (<i>Админ</i>)\n"
+        "<i>- Быстрое управление юзерботом.</i>\n\n"
+        "<code>/delub &lt;имя&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Удалить юзербот с выбором причины.</i>\n\n"
 
-        "<b>Управление серверами (Хостами):</b>\n"
-        "<code>/serv help</code> - Справка по командам управления серверами.\n"
-        "<code>/serverinfo</code> - Общая статистика по серверам.\n"
-        "<code>/obs</code> - Полное обслуживание всех удаленных серверов.\n"
-        "<code>/cpu_ub</code> - Нагрузка на CPU по юзерботам.\n"
-        "<code>/terminal [код] [команда]</code> - Выполнить команду на сервере.\n\n"
-        "<code>/exec_all [код] [команда]</code> - Выполнить команду во всех контейнерах на сервере. \n\n"
-        
-        "<b>Управление юзерботами:</b>\n"
-        "<code>/ub [имя]</code> - Инфо и управление конкретным юзерботом.\n"
-        "<code>/remote [ID|имя] [on|off|restart]</code> - Массовое управление UB.\n"
-        "<code>/delub [имя]</code> - Удаление UB с выбором причины.\n"
-        "<code>/check</code> - Проверка посторонних сессий на серверах.\n\n"
-        
-        "<b>Рассылки и связь:</b>\n"
-        "<code>/bc [ID|@]</code> - Рассылка (ответом на сообщение).\n"
-        "<code>/stats</code> - Расширенная статистика по боту.\n"
+        "<b>📊 Статистика и мониторинг</b>\n"
+        "<code>/serverinfo</code> (<i>Админ</i>)\n"
+        "<i>- Интерактивный мониторинг серверов.</i>\n\n"
+        "<code>/stats</code> (<i>Супер Админ</i>)\n"
+        "<i>- Расширенная статистика по боту.</i>\n\n"
+        "<code>/cpu_ub</code> (<i>Админ</i>)\n"
+        "<i>- Нагрузка на CPU по юзерботам.</i>\n\n"
+        "<code>/check</code> (<i>Супер Админ</i>)\n"
+        "<i>- Проверка наличия сессий на серверах.</i>\n\n"
+
+        "<b>🚀 Разное</b>\n"
+        "<code>/bc [ID|@]</code> (<i>Супер Админ</i>)\n"
+        "<i>- Рассылка сообщений (ответом на сообщение).</i>\n\n"
+        "<code>/update &lt;текст&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Опубликовать коммит в канал.</i>\n\n"
+        "<code>/git &lt;команда&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Управление Git-репозиторием бота.</i>\n\n"
+        "<code>/backup_bot</code> (<i>Супер Админ</i>)\n"
+        "<i>- Создать полную резервную копию бота.</i>\n\n"
+        "<code>/auto_backup</code> (<i>Супер Админ</i>)\n"
+        "<i>- Показать справку по авто-бэкапам.</i>"
+        "</blockquote>"
     )
     await message.reply(text, disable_web_page_preview=True)
-
-@router.message(Command("check"), IsAdmin())
-async def cmd_check_sessions(message: types.Message):
-    msg = await message.reply("⏳ Проверяю сессии на всех удалённых серверах...")
-    try:
-        server_results = await session_checker.check_all_remote_sessions()
-        
-        # Кешируем данные для быстрого доступа
-        cached_data = {
-            "data": server_results,
-            "timestamp": time.time(),
-            "reports": {
-                "has_session": {},
-                "no_session": {}
-            }
-        }
-        
-        # Генерируем отчеты для всех страниц и режимов
-        await msg.edit_text("⏳ Генерирую отчеты для всех режимов...")
-        
-        for view_mode in ["has_session", "no_session"]:
-            for page in range(10):  # Максимум 10 страниц
-                try:
-                    report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=page)
-                    if total_pages <= page:  # Если страница выходит за пределы
-                        break
-                    cached_data["reports"][view_mode][page] = {
-                        "report": report,
-                        "total_pages": total_pages
-                    }
-                except Exception as e:
-                    logging.error(f"Error generating report for {view_mode} page {page}: {e}")
-                    break
-        
-        SESSION_CHECK_CACHE[msg.chat.id] = cached_data
-        
-        # Отображаем первую страницу
-        first_page_data = cached_data["reports"]["has_session"][0]
-        markup = kb.get_session_check_keyboard("has_session", page=0, total_pages=first_page_data["total_pages"])
-        
-        # Отладочная информация
-        logging.info(f"Report length: {len(first_page_data['report'])}, Total pages: {first_page_data['total_pages']}")
-        
-        # Проверяем длину сообщения
-        if len(first_page_data["report"]) > 3000:
-            # Если сообщение слишком длинное, отправляем как файл
-            report_file = BufferedInputFile(first_page_data["report"].encode('utf-8'), filename="session_check_report.txt")
-            await msg.delete()
-            await message.answer_document(report_file, caption="📊 Отчет о проверке сессий (файл слишком большой для сообщения)")
-        else:
-            try:
-                await msg.edit_text(text=first_page_data["report"], reply_markup=markup)
-            except TelegramBadRequest as e:
-                if "can't parse entities" in str(e):
-                    logging.error(f"HTML parsing error in /check: {e}")
-                    # Пробуем отправить без HTML-разметки
-                    clean_report = first_page_data["report"].replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '').replace('<code>', '').replace('</code>', '').replace('<blockquote>', '').replace('</blockquote>', '')
-                    await msg.edit_text(text=clean_report, reply_markup=markup)
-                else:
-                    raise e
-    except Exception as e:
-        logging.error(f"Ошибка во время выполнения /check: {e}", exc_info=True)
-        await msg.edit_text(f"❌ Произошла ошибка во время проверки: {e}")
-
-@router.callback_query(F.data.startswith("check_view_toggle:"))
-async def check_view_toggle_handler(call: types.CallbackQuery):
-    await call.answer()
-    cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
-    if not cached_data or time.time() - cached_data["timestamp"] > CACHE_TTL:
-        await call.message.edit_text("Данные для этого отчета устарели. Пожалуйста, выполните команду /check снова.", reply_markup=None)
-        return
     
-    new_view_mode = call.data.split(":")[1]
-    
-    # Проверяем, есть ли кешированный отчет
-    if "reports" in cached_data and new_view_mode in cached_data["reports"] and 0 in cached_data["reports"][new_view_mode]:
-        page_data = cached_data["reports"][new_view_mode][0]
-        report = page_data["report"]
-        total_pages = page_data["total_pages"]
-        markup = kb.get_session_check_keyboard(new_view_mode, page=0, total_pages=total_pages)
-        
-        # Проверяем длину сообщения
-        if len(report) > 3000:
-            # Если сообщение слишком длинное, отправляем как файл
-            report_file = BufferedInputFile(report.encode('utf-8'), filename="session_check_report.txt")
-            await call.message.delete()
-            await call.message.answer_document(report_file, caption="📊 Отчет о проверке сессий (файл слишком большой для сообщения)")
-        else:
-            try:
-                await call.message.edit_text(text=report, reply_markup=markup)
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    await call.answer("Данные актуальны, изменений нет")
-                else:
-                    logging.error(f"Ошибка обновления отчета /check: {e}")
-                    await call.answer("Произошла ошибка при обновлении", show_alert=True)
-    else:
-        # Если кеша нет, генерируем заново (fallback)
-        server_results = cached_data["data"]
-        report, total_pages = await session_checker.format_session_check_report(server_results, new_view_mode, page=0)
-        markup = kb.get_session_check_keyboard(new_view_mode, page=0, total_pages=total_pages)
-        
-        try:
-            await call.message.edit_text(text=report, reply_markup=markup)
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                await call.answer("Данные актуальны, изменений нет")
-            else:
-                logging.error(f"Ошибка обновления отчета /check: {e}")
-                await call.answer("Произошла ошибка при обновлении", show_alert=True)
-
 @router.callback_query(F.data == "no_action")
 async def no_action_handler(call: types.CallbackQuery):
     await call.answer()
@@ -1512,101 +1442,107 @@ async def no_action_handler(call: types.CallbackQuery):
 async def admin_noop_handler(call: types.CallbackQuery):
     await call.answer("Функция управления временно недоступна.")
 
-@router.callback_query(F.data.startswith("check_page:"))
+@router.message(Command("check"), IsSuperAdmin())
+async def cmd_check_sessions(message: types.Message):
+    msg = await message.reply("⏳ Ищу пользователей с несколькими сессиями на серверах...")
+    try:
+        server_results = await session_checker.check_all_remote_sessions()
+        
+        SESSION_CHECK_CACHE[message.chat.id] = {
+            "data": server_results,
+            "timestamp": time.time()
+        }
+        
+        # По умолчанию показываем подозрительных
+        view_mode = "suspicious"
+        report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=0)
+        markup = kb.get_session_check_keyboard(view_mode, page=0, total_pages=total_pages)
+        
+        await msg.edit_text(text=report, reply_markup=markup)
+
+    except Exception as e:
+        logging.error(f"Ошибка во время выполнения /check: {e}", exc_info=True)
+        await msg.edit_text(f"❌ Произошла ошибка во время проверки: {e}")
+
+@router.callback_query(F.data.startswith("check_view_toggle:"), IsSuperAdmin())
+async def check_view_toggle_handler(call: types.CallbackQuery):
+    await call.answer()
+    await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+
+    cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
+    if not cached_data or time.time() - cached_data["timestamp"] > CACHE_TTL:
+        await call.message.edit_text("Данные для этого отчета устарели. Пожалуйста, выполните /check снова.", reply_markup=None)
+        return
+    
+    new_view_mode = call.data.split(":")[1]
+    
+    server_results = cached_data["data"]
+    report, total_pages = await session_checker.format_session_check_report(server_results, new_view_mode, page=0)
+    markup = kb.get_session_check_keyboard(new_view_mode, page=0, total_pages=total_pages)
+    
+    try:
+        await call.message.edit_text(text=report, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка обновления отчета /check: {e}")
+
+@router.callback_query(F.data.startswith("check_page:"), IsSuperAdmin())
 async def check_page_handler(call: types.CallbackQuery):
     await call.answer()
     cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
     if not cached_data or time.time() - cached_data["timestamp"] > CACHE_TTL:
-        await call.message.edit_text("Данные для этого отчета устарели. Пожалуйста, выполните команду /check снова.", reply_markup=None)
+        await call.message.edit_text("Данные для этого отчета устарели, выполните /check снова.", reply_markup=None)
         return
     
-    # Парсим данные из callback
-    parts = call.data.split(":")
-    view_mode = parts[1]
-    page = int(parts[2])
-    
-    logging.info(f"Переход на страницу {page} для режима {view_mode}")
-    
-    # Проверяем, есть ли кешированный отчет
-    if "reports" in cached_data and view_mode in cached_data["reports"] and page in cached_data["reports"][view_mode]:
-        page_data = cached_data["reports"][view_mode][page]
-        report = page_data["report"]
-        total_pages = page_data["total_pages"]
-        markup = kb.get_session_check_keyboard(view_mode, page=page, total_pages=total_pages)
-        
-        logging.info(f"Используем кешированный отчет длиной {len(report)}, всего страниц: {total_pages}")
-        
-        try:
-            await call.message.edit_text(text=report, reply_markup=markup)
-            logging.info(f"Сообщение успешно обновлено для страницы {page}")
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                await call.answer("Данные актуальны, изменений нет")
-            else:
-                logging.error(f"Ошибка обновления страницы отчета /check: {e}")
-                await call.answer("Произошла ошибка при обновлении", show_alert=True)
-    else:
-        # Если кеша нет, генерируем заново (fallback)
-        server_results = cached_data["data"]
-        report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=page)
-        markup = kb.get_session_check_keyboard(view_mode, page=page, total_pages=total_pages)
-        
-        logging.info(f"Сгенерирован отчет длиной {len(report)}, всего страниц: {total_pages}")
-        
-        try:
-            await call.message.edit_text(text=report, reply_markup=markup)
-            logging.info(f"Сообщение успешно обновлено для страницы {page}")
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                await call.answer("Данные актуальны, изменений нет")
-            else:
-                logging.error(f"Ошибка обновления страницы отчета /check: {e}")
-                await call.answer("Произошла ошибка при обновлении", show_alert=True)
+    try:
+        _, view_mode, page_str = call.data.split(":")
+        page = int(page_str)
+    except (ValueError, IndexError):
+        return
 
-@router.callback_query(F.data == "refresh_session_check")
+    server_results = cached_data["data"]
+    report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=page)
+    markup = kb.get_session_check_keyboard(view_mode, page=page, total_pages=total_pages)
+    
+    try:
+        await call.message.edit_text(text=report, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка обновления страницы отчета /check: {e}")
+
+@router.callback_query(F.data == "refresh_session_check", IsSuperAdmin())
 async def refresh_session_check_handler(call: types.CallbackQuery):
     cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
     now = time.time()
     if cached_data and now - cached_data["timestamp"] < 5:
         await call.answer("Обновлять можно не чаще, чем раз в 5 секунд!", show_alert=True)
         return
-    # Определяем текущий режим просмотра по кнопкам в сообщении
-    current_view_mode = "has_session"  # по умолчанию
+        
+    current_view_mode = "suspicious" 
     if call.message.reply_markup:
         for row in call.message.reply_markup.inline_keyboard:
             for button in row:
-                if button.callback_data == "check_view_toggle:no_session":
-                    current_view_mode = "has_session"
+                if button.callback_data == "check_view_toggle:normal":
+                    current_view_mode = "suspicious"
                     break
-                elif button.callback_data == "check_view_toggle:has_session":
-                    current_view_mode = "no_session"
+                elif button.callback_data == "check_view_toggle:suspicious":
+                    current_view_mode = "normal"
                     break
-    try:
-        await call.answer("Обновляю...")
-        server_results = await session_checker.check_all_remote_sessions()
-        SESSION_CHECK_CACHE[call.message.chat.id] = {
-            "data": server_results,
-            "timestamp": now
-        }
-        report, total_pages = await session_checker.format_session_check_report(server_results, current_view_mode, page=0)
-        markup = kb.get_session_check_keyboard(current_view_mode, page=0, total_pages=total_pages)
-        
-        # Проверяем длину сообщения
-        if len(report) > 3000:
-            # Если сообщение слишком длинное, отправляем как файл
-            report_file = BufferedInputFile(report.encode('utf-8'), filename="session_check_report.txt")
-            await call.message.delete()
-            await call.message.answer_document(report_file, caption="📊 Отчет о проверке сессий (файл слишком большой для сообщения)")
-        else:
-            await call.message.edit_text(text=report, reply_markup=markup)
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            await call.answer("Данные актуальны, изменений нет")
-        else:
-            logging.error(f"Ошибка обновления отчета /check: {e}")
-            await call.answer("Произошла ошибка при обновлении", show_alert=True)
+    
+    await call.answer("Обновляю...")
+    await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+    
+    server_results = await session_checker.check_all_remote_sessions()
+    SESSION_CHECK_CACHE[call.message.chat.id] = {
+        "data": server_results,
+        "timestamp": now
+    }
+    report, total_pages = await session_checker.format_session_check_report(server_results, current_view_mode, page=0)
+    markup = kb.get_session_check_keyboard(current_view_mode, page=0, total_pages=total_pages)
+    
+    await call.message.edit_text(text=report, reply_markup=markup)
 
-@router.message(Command("bc"))
+@router.message(Command("bc"), IsSuperAdmin())
 async def cmd_broadcast(message: types.Message, command: CommandObject, bot: Bot):
     replied_message = message.reply_to_message
     if not replied_message:
@@ -1968,7 +1904,7 @@ REASON_TEMPLATES = {
 
 # Файл: admin_handlers.py
 
-@router.message(Command("delub"), IsAdmin())
+@router.message(Command("delub"), IsSuperAdmin())
 async def cmd_delub(message: types.Message, command: CommandObject, bot: Bot):
     if not command.args:
         help_text = (
@@ -2417,7 +2353,7 @@ async def _generate_stats_panel(view_mode: str):
     
     return content
 
-@router.message(Command("stats"))
+@router.message(Command("stats"), IsSuperAdmin())
 async def cmd_stats_panel(message: Message):
     msg = await message.reply("⏳ Собираю статистику...")
     content = await _generate_stats_panel("overall")
@@ -2556,22 +2492,55 @@ async def monitor_and_restore_server(ip: str, bot: Bot, admin_id: int):
 
 @router.message(Command("ban"), IsSuperAdmin())
 async def cmd_ban(message: types.Message, command: CommandObject, bot: Bot):
-    if not command.args:
-        await message.reply("Использование: <code>/ban [ID или @username]</code>")
+    if not command.args and not message.reply_to_message:
+        await message.reply("<b>Использование:</b> <code>/ban [ID или @username]</code>\n<i>Либо ответьте на сообщение пользователя.</i>")
         return
 
-    target_user_data = await db.get_user_by_username_or_id(command.args)
-    if not target_user_data:
-        await message.reply(f"❌ Пользователь <code>{html.quote(command.args)}</code> не найден в базе данных.")
+    target_id = None
+    identifier_for_log = None
+    is_in_db = False
+    target_user_data = None
+
+    if message.reply_to_message:
+        user = message.reply_to_message.from_user
+        target_id = user.id
+        identifier_for_log = f"@{user.username}" if user.username else str(user.id)
+        target_user_data = { "id": user.id, "username": user.username, "full_name": user.full_name }
+        is_in_db = bool(await db.get_user_data(target_id))
+    else:
+        identifier = command.args.strip()
+        identifier_for_log = identifier
+        
+        user_in_db = await db.get_user_by_username_or_id(identifier)
+        if user_in_db:
+            target_id = user_in_db['tg_user_id']
+            target_user_data = { "id": target_id, "username": user_in_db.get('username'), "full_name": user_in_db.get('full_name') }
+            is_in_db = True
+        else:
+            clean_id = identifier.lstrip('@')
+            if clean_id.isdigit():
+                target_id = int(clean_id)
+                target_user_data = {"id": target_id, "full_name": f"ID: {target_id}"}
+                is_in_db = False
+            else:
+                await message.reply(f"❌ Пользователь <code>{html.quote(identifier)}</code> не найден в БД, для бана укажите его ID.")
+                return
+
+    if not target_id:
+        await message.reply("❌ Не удалось определить ID пользователя.")
         return
 
-    target_user_id = target_user_data['tg_user_id']
-    if await db.is_user_banned(target_user_id):
+    if target_id == message.from_user.id:
+        await message.reply("Вы не можете забанить себя.")
+        return
+
+    if await db.is_user_banned(target_id):
         await message.reply("Этот пользователь уже забанен.")
         return
 
-    await ban_manager.execute_ban(target_user_id, message.from_user, bot)
-    await message.reply(f"✅ Пользователь <code>{target_user_id}</code> успешно забанен. Его юзерботы остановлены.")
+    await ban_manager.execute_ban(target_user_data, message.from_user, bot, identifier_for_log, is_in_db)
+    
+    await message.reply(f"✅ Пользователь <code>{html.quote(identifier_for_log)}</code> заблокирован.")
 
 @router.message(Command("unban"), IsSuperAdmin())
 async def cmd_unban(message: types.Message, command: CommandObject, bot: Bot):
@@ -2760,53 +2729,104 @@ async def cmd_auto_backup_control(message: types.Message):
     )
     
     await message.reply(help_text)
-@router.message(Command("git")) 
+    
+@router.message(Command("git"), IsSuperAdmin())
 async def cmd_git_manager(message: types.Message, command: CommandObject):
-    FOX_OWNER_ID = 1863611627
-    authorized_ids = config.SUPER_ADMIN_IDS + [FOX_OWNER_ID]
-
-    if message.from_user.id not in authorized_ids:
-        return
-
-    args = command.args.split() if command.args else []
-
-    if not args or len(args) < 2:
+    if not command.args:
         help_text = (
-            "<b>ℹ️ Использование команды /git:</b>\n\n"
-            f"<code>/git change fox {escape('<новая_ссылка_на_github>')}</code>\n"
-            "<i>- Изменяет репозиторий для установки FoxUserbot.</i>\n\n"
-            "<code>/git view fox</code>\n"
-            "<i>- Показывает текущий репозиторий для установки.</i>"
+            "<b>⚙️ Управление Git-репозиторием</b>\n\n"
+            "<code>/git status</code>\n"
+            "<i>- Проверить текущий статус.</i>\n\n"
+            "<code>/git add &lt;файл1&gt; [файл2]...</code>\n"
+            "<i>- Добавить файлы в следующий коммит.</i>\n\n"
+            "<code>/git commit -m \"&lt;сообщение&gt;\"</code>\n"
+            "<i>- Зафиксировать изменения.</i>\n\n"
+            "<code>/git push</code>\n"
+            "<i>- Отправить изменения на сервер.</i>"
         )
         await message.reply(help_text)
         return
 
-    action = args[0].lower()
-    ub_type = args[1].lower()
-
-    if ub_type != "fox":
-        await message.reply("❌ В данный момент поддерживается изменение репозитория только для <b>fox</b>.")
+    try:
+        args = shlex.split(command.args)
+    except ValueError:
+        await message.reply("❌ <b>Ошибка:</b> Некорректное экранирование в команде.")
         return
+        
+    action = args[0].lower() if args else None
 
-    if action == "change":
-        if len(args) != 3:
-            await message.reply(f"Использование: <code>/git change fox {escape('<URL>')}</code>")
+    if action == "add":
+        if len(args) < 2:
+            await message.reply("<b>Ошибка:</b> Укажите один или несколько файлов.\nПример: <code>/git add app.py</code>")
             return
-        
-        new_url = args[2]
-        if not new_url.startswith("https://github.com/"):
-            await message.reply("❌ URL должен быть действительной ссылкой на репозиторий GitHub.")
-            return
-        
-        # sm.update_git_repository(ub_type, new_url)
-        await message.reply(f"✅ URL репозитория для <b>{ub_type}</b> успешно обновлен на:\n<code>{escape(new_url)}</code>")
 
-    elif action == "view":
-        # current_url = sm.get_current_repo_url(ub_type)
-        await message.reply(f"ℹ️ Текущий URL для <b>{ub_type}</b>:\n<code>{escape(current_url)}</code>")
+        files_to_add = args[1:]
         
+        valid_filename_pattern = re.compile(r"^[a-zA-Z0-9._/-]+$")
+        sanitized_files = []
+        for f in files_to_add:
+            if ".." in f or not valid_filename_pattern.match(f):
+                await message.reply(f"<b>Ошибка:</b> Недопустимое имя файла: <code>{html.quote(f)}</code>")
+                return
+            if not os.path.exists(f):
+                await message.reply(f"<b>Ошибка:</b> Файл не найден: <code>{html.quote(f)}</code>")
+                return
+            sanitized_files.append(shlex.quote(f))
+
+        git_command = f"git add {' '.join(sanitized_files)}"
+        
+        msg = await message.reply(f"⏳ Выполняю: <code>{html.quote(git_command)}</code>...")
+        res = await sm.run_command_async(git_command, sm.LOCAL_IP)
+
+        if res["success"]:
+            await msg.edit_text("✅ Файлы успешно добавлены в индекс.")
+        else:
+            error_output = res.get('error') or res.get('output', 'Неизвестная ошибка Git.')
+            await msg.edit_text(f"❌ <b>Ошибка при добавлении:</b>\n<pre>{html.quote(error_output)}</pre>")
+
+    elif action == "commit":
+        if len(args) < 3 or args[1] != '-m':
+            await message.reply('<b>Ошибка:</b> Неверный формат.\nИспользуйте: <code>/git commit -m "Ваш текст"</code>')
+            return
+
+        commit_message = args[2]
+        git_command = f"git commit -m {shlex.quote(commit_message)}"
+        
+        msg = await message.reply("⏳ Создаю коммит...")
+        res = await sm.run_command_async(git_command, sm.LOCAL_IP)
+
+        if res["success"]:
+            output = res.get('output', 'Коммит успешно создан.')
+            await msg.edit_text(f"✅ <b>Коммит создан:</b>\n<pre>{html.quote(output)}</pre>")
+        else:
+            error_output = res.get('error') or res.get('output', 'Неизвестная ошибка Git.')
+            await msg.edit_text(f"❌ <b>Ошибка при создании коммита:</b>\n<pre>{html.quote(error_output)}</pre>")
+
+    elif action == "push":
+        msg = await message.reply("⏳ Выполняю <code>git push origin main --force</code>...")
+        
+        git_command = "git push origin main --force"
+        res = await sm.run_command_async(git_command, sm.LOCAL_IP, timeout=180)
+
+        if res["success"]:
+            output = res.get('output') or res.get('error', 'Push выполнен, но Git не вернул вывод.')
+            await msg.edit_text(f"✅ <b>Push выполнен успешно.</b>\n\n<pre>{html.quote(output)}</pre>")
+        else:
+            error_output = res.get('error') or res.get('output', 'Неизвестная ошибка Git.')
+            await msg.edit_text(f"❌ <b>Ошибка во время push:</b>\n\n<pre>{html.quote(error_output)}</pre>")
+        
+    elif action == "status":
+        msg = await message.reply("⏳ Получаю статус Git...")
+        res = await sm.run_command_async("git status", sm.LOCAL_IP)
+        if res["success"]:
+            output = res.get('output', 'Git не вернул вывод.')
+            await msg.edit_text(f"<b>Статус репозитория:</b>\n<pre>{html.quote(output)}</pre>")
+        else:
+            error_output = res.get('error') or res.get('output', 'Неизвестная ошибка.')
+            await msg.edit_text(f"❌ <b>Ошибка получения статуса:</b>\n<pre>{html.quote(error_output)}</pre>")
+            
     else:
-        await message.reply("Неизвестное действие. Используйте 'change' или 'view'.")
+        await message.reply(f"Неизвестная команда '<code>{action}</code>'. Используйте <code>/git</code> для справки.")
         
        
 @router.callback_query(F.data == "reject_review", IsAdmin())
@@ -2941,17 +2961,105 @@ async def cmd_user_info(message: types.Message, command: CommandObject, bot: Bot
 
     await _display_user_info_panel(bot, user_data['tg_user_id'], msg.chat.id, msg.message_id)
 
+async def _display_admin_ub_management_panel(call: types.CallbackQuery, bot: Bot, ub_username: str, user_id: int):
+    ub_data = await db.get_userbot_data(ub_username)
+    owner_data = await db.get_user_data(user_id)
+    
+    if not ub_data or not owner_data:
+        await call.answer("❌ Не удалось найти данные. Возможно, юзербот был удален.", show_alert=True)
+        return
+        
+    server_ip = ub_data.get('server_ip')
+    container_status = await api_manager.get_container_status(ub_username, server_ip)
+    is_active = container_status.get("success", False) and container_status.get("data", {}).get("status") == "running"
+    
+    servers = server_config.get_servers()
+    server_details = servers.get(server_ip, {})
+    server_code = server_details.get("code", "N/A")
+    server_flag = server_details.get("flag", "🏳️")
+    server_location = f"{server_details.get('country', 'N/A')}, {server_details.get('city', 'N/A')}"
+    
+    ping_ms_val = await api_manager.get_server_ping(server_ip)
+    
+    resources = {
+        'cpu_percent': 0.0, 'ram_percent': 0.0, 'ram_used': 0, 'ram_limit': 0,
+        'disk_percent': 0.0, 'disk_used': 0, 'disk_limit': 0
+    }
+    
+    if is_active:
+        stats_result = await api_manager.get_container_stats(ub_username, server_ip)
+        if stats_result.get("success"):
+            info = stats_result.get("data", {}).get("info", {})
+            if info:
+                resources['cpu_percent'] = round(info.get("cpu_percent", 0.0), 1)
+                resources['ram_used'] = round(info.get("ram_usage_mb", 0))
+                resources['ram_limit'] = round(info.get("ram_limit_mb", 0))
+                resources['ram_percent'] = round(info.get("ram_percent", 0.0), 1)
+                resources['disk_used'] = round(info.get("disk_usage_mb", 0))
+                resources['disk_limit'] = round(info.get("disk_limit_mb", 0))
+                resources['disk_percent'] = round(info.get("disk_percent", 0.0), 1)
+
+    status_text = "🟢 Включен" if is_active else "🔴 Выключен"
+    ping_display = f"📡 Пинг: {ping_ms_val:.1f} мс" if ping_ms_val is not None else "📡 Пинг: N/A"
+    owner_username = f"@{owner_data['username']}" if owner_data.get('username') else 'N/A'
+    
+    text_lines = [
+        "<b>🎛️ Управление юзерботом</b>\n",
+        "<blockquote>"
+        "<b>Основная информация:</b>\n"
+        f"🤖 Юзербот: <code>{html.quote(ub_username)}</code>\n"
+        f"👤 Владелец: {html.quote(owner_data.get('full_name', ''))} ({owner_username}, <code>{user_id}</code>)\n"
+        f"💡 Статус: {status_text}\n"
+        f"⚙️ Тип: {ub_data.get('ub_type', 'N/A').capitalize()}"
+        "</blockquote>",
+        "<blockquote><b>Информация о сервере:</b>\n"
+        f"🖥 Сервер: {server_flag} {server_code}\n"
+        f"🌍 Локация: {server_location}\n"
+        f"{ping_display}"
+        "</blockquote>",
+        "<blockquote>"
+        "<b>Потребление ресурсов:</b>\n"
+        f"🧠 CPU: {create_progress_bar(str(resources.get('cpu_percent', 0)))} ({resources.get('cpu_percent', 0)}%)\n"
+        f"💾 RAM: {create_progress_bar(str(resources.get('ram_percent', 0)))} ({resources.get('ram_used', 0)} / {resources.get('ram_limit', 0)} МБ)\n"
+        f"💽 ROM: {create_progress_bar(str(resources.get('disk_percent', 0)))} ({resources.get('disk_used', 0)} / {resources.get('disk_limit', 0)} МБ)"
+        "</blockquote>\n"
+    ]
+    update_time_str = datetime.now(pytz.timezone("Europe/Moscow")).strftime('%H:%M:%S')
+    text_lines.append(f"<i>Последнее обновление: {update_time_str} MSK</i>")
+    text = "\n".join(text_lines)
+    
+    markup = kb.get_admin_ub_management_keyboard(ub_username, user_id, is_active)
+    
+    await call.message.edit_text(text, reply_markup=markup)
+
 @router.callback_query(F.data.startswith("show_user_bots:"), IsAdmin())
-async def cq_show_user_bots_list(call: types.CallbackQuery):
+async def cq_show_user_bots_list(call: types.CallbackQuery, bot: Bot):
     await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
     await call.answer()
+    
     user_id = int(call.data.split(":")[1])
     user_bots = await db.get_userbots_by_tg_id(user_id)
     
-    text = "🤖 **Юзерботы пользователя:**\n\nВыберите юзербота для управления."
-    markup = kb.get_user_bots_list_keyboard(user_bots, user_id)
+    if not user_bots:
+        text = "🤖 У этого пользователя нет юзерботов."
+        markup = kb.get_user_bots_list_keyboard([], user_id)
+        await call.message.edit_text(text, reply_markup=markup)
+        return
     
-    await call.message.edit_text(text, reply_markup=markup)
+    first_bot = user_bots[0]
+    ub_username = first_bot['ub_username']
+    
+    await _display_admin_ub_management_panel(call, bot, ub_username, user_id)
+
+@router.callback_query(F.data.startswith("select_user_bot:"), IsAdmin())
+async def cq_select_user_bot_for_admin(call: types.CallbackQuery, bot: Bot):
+    await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
+    await call.answer()
+    
+    _, ub_username, user_id_str = call.data.split(":")
+    user_id = int(user_id_str)
+    
+    await _display_admin_ub_management_panel(call, bot, ub_username, user_id)
 
 @router.callback_query(F.data.startswith("back_to_user_info:"), IsAdmin())
 async def cq_back_to_user_info(call: types.CallbackQuery, bot: Bot):
@@ -2960,62 +3068,45 @@ async def cq_back_to_user_info(call: types.CallbackQuery, bot: Bot):
     user_id = int(call.data.split(":")[1])
     await _display_user_info_panel(bot, user_id, call.message.chat.id, call.message.message_id)
 
-@router.callback_query(F.data.startswith("select_user_bot:"), IsAdmin())
-async def cq_select_user_bot_for_admin(call: types.CallbackQuery, bot: Bot):
+@router.callback_query(F.data.startswith("admin_manage_ub:"), IsAdmin())
+async def cq_admin_manage_ub(call: types.CallbackQuery, bot: Bot):
+    await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
+    
     try:
-        await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e).lower():
-            raise
-    
-    await call.answer()
-    _, ub_username, user_id_str = call.data.split(":")
-    user_id = int(user_id_str)
-    
-    ub_data = await db.get_userbot_data(ub_username)
-    owner_data = await db.get_user_data(user_id)
-    
-    if not ub_data or not owner_data:
-        await call.answer("❌ Не удалось найти данные. Возможно, юзербот был удален.", show_alert=True)
+        _, action, ub_username, user_id_str = call.data.split(":")
+        user_id = int(user_id_str)
+    except ValueError:
+        await call.answer("Ошибка в данных, обновите панель.", show_alert=True)
         return
-        
-            # is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
-        is_active = False
-    
-    owner_username = f"@{owner_data['username']}" if owner_data.get('username') else 'N/A'
 
-    text = (
-        f"<b>Управление:</b> <code>{html.quote(ub_username)}</code>\n"
-        f"<b>Владелец:</b> {html.quote(owner_data.get('full_name', ''))} ({owner_username}, <code>{user_id}</code>)\n"
-        f"<b>Тип:</b> {html.quote(ub_data.get('ub_type', 'N/A').capitalize())}\n"
-        f"<b>Сервер:</b> <code>{ub_data.get('server_ip', 'N/A')}</code>"
-    )
-    markup = kb.get_admin_ub_management_keyboard(ub_username, user_id, is_active)
-    
-    await call.message.edit_text(text, reply_markup=markup)
+    await call.answer(f"Выполняю действие: {action}...")
 
-# @router.callback_query(F.data.startswith("admin_manage_ub:"), IsAdmin())
-# async def cq_admin_manage_ub(call: types.CallbackQuery, bot: Bot):
-#     await call.message.edit_reply_markup(reply_markup=kb.get_admin_loading_keyboard())
-#     _, action, ub_username = call.data.split(":")
-#     await call.answer(f"Выполняю '{action}'...")
-#     
-#     ub_data = await db.get_userbot_data(ub_username)
-#     if not ub_data:
-#         await call.answer("❌ Юзербот не найден.", show_alert=True)
-#         return
-#         
-#             # await sm.manage_ub_service(ub_username, action, ub_data['server_ip'])
-#     await asyncio.sleep(1.5)
-#     
-#     user_id = ub_data['tg_user_id']
-#     is_active = await sm.is_service_active(f"hikka-{ub_username}.service", ub_data['server_ip'])
-#     markup = kb.get_admin_ub_management_keyboard(ub_username, user_id, is_active)
-#     
-#     try:
-#         await call.message.edit_reply_markup(reply_markup=markup)
-#     except TelegramBadRequest:
-#         pass
+    ub_data = await db.get_userbot_data(ub_username)
+    if not ub_data:
+        await call.answer("❌ Юзербот не найден.", show_alert=True)
+        await _display_user_info_panel(bot, user_id, call.message.chat.id, call.message.message_id)
+        return
+
+    server_ip = ub_data['server_ip']
+    result = None
+    
+    if action == "start":
+        result = await api_manager.start_container(ub_username, server_ip)
+    elif action == "stop":
+        result = await api_manager.stop_container(ub_username, server_ip)
+    elif action == "restart":
+        result = await api_manager.restart_container(ub_username, server_ip)
+
+    if not result or not result.get("success"):
+        error_msg = result.get('error', 'Неизвестная ошибка') if result else 'Нет ответа от API'
+        try:
+            await call.answer(f"❌ Ошибка: {error_msg[:150]}", show_alert=True)
+        except TelegramBadRequest:
+            pass
+
+    await asyncio.sleep(1.5)
+    
+    await _display_admin_ub_management_panel(call, bot, ub_username, user_id)
 
 @router.callback_query(F.data.startswith("admin_delete_ub:"), IsAdmin())
 async def cq_admin_delete_ub(call: types.CallbackQuery):
@@ -3301,28 +3392,70 @@ async def cmd_set_api_url(message: types.Message, command: CommandObject):
     else:
         await message.reply(f"❌ Ошибка при обновлении URL для сервера <code>{ip}</code>.")
 
-@router.message(Command("show_api_config"), IsSuperAdmin())
-async def cmd_show_api_config(message: types.Message, command: CommandObject):
-    """Показывает API конфигурацию серверов"""
-    servers = server_config.get_servers()
+async def _send_api_config_page(message: types.Message, page: int = 1, is_edit: bool = False):
+    servers = list(server_config.get_servers().items())
     
     if not servers:
-        await message.reply("❌ Нет настроенных серверов.")
+        text = "<blockquote>❌ Нет настроенных серверов.</blockquote>"
+        if is_edit:
+            await message.edit_text(text, reply_markup=None)
+        else:
+            await message.reply(text)
         return
+
+    total_pages = math.ceil(len(servers) / API_CONFIG_PAGE_SIZE)
+    page = max(1, min(page, total_pages))
     
-    text = "🔧 <b>API конфигурация серверов:</b>\n\n"
+    start_index = (page - 1) * API_CONFIG_PAGE_SIZE
+    end_index = start_index + API_CONFIG_PAGE_SIZE
+    servers_on_page = servers[start_index:end_index]
     
-    for ip, config in servers.items():
-        api_url = server_config.get_server_api_url(ip)
+    header = "🔧 <b>API Конфигурация серверов</b>"
+    
+    server_blocks = []
+    for ip, config in servers_on_page:
+        api_url = server_config.get_server_api_url(ip) or '<i>не настроен</i>'
         api_token = server_config.get_server_api_token(ip)
         
-        text += f"📍 <b>{ip}</b>\n"
-        text += f"   API URL: <code>{api_url or 'не настроен'}</code>\n"
-        text += f"   API Token: <code>{api_token or 'не настроен'}</code>\n\n"
-    
-    await message.reply(text)
+        token_display = f"<code>{api_token[:8]}...</code>" if api_token and api_token != '<i>не настроен</i>' else '<i>не настроен</i>'
 
-@router.message(Command("update"), IsAdmin())
+        server_block = (
+            f"<b>{config.get('flag', '🏳️')} {config.get('name', ip)}</b> (<code>{ip}</code>)\n"
+            f"  <b>URL:</b> <code>{api_url}</code>\n"
+            f"  <b>Token:</b> {token_display}"
+        )
+        server_blocks.append(server_block)
+    
+    content = "\n\n".join(server_blocks)
+    pagination_info = f"\n\n<i>📄 Страница {page} из {total_pages}</i>" if total_pages > 1 else ""
+    
+    text = f"<blockquote>{header}\n\n{content}{pagination_info}</blockquote>"
+    
+    markup = kb.get_api_config_paginator_keyboard(page, total_pages) if total_pages > 1 else None
+    
+    try:
+        if is_edit:
+            await message.edit_text(text, reply_markup=markup)
+        else:
+            await message.reply(text, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка при отправке страницы API конфига: {e}")
+
+@router.message(Command("show_api_config"), IsSuperAdmin())
+async def cmd_show_api_config(message: types.Message):
+    await _send_api_config_page(message, page=1, is_edit=False)
+
+@router.callback_query(F.data.startswith("api_config_page:"), IsSuperAdmin())
+async def cq_api_config_page(call: types.CallbackQuery):
+    await call.answer()
+    try:
+        page = int(call.data.split(":")[1])
+        await _send_api_config_page(call.message, page=page, is_edit=True)
+    except (ValueError, IndexError):
+        await call.answer("Ошибка данных пагинации.", show_alert=True)
+
+@router.message(Command("update"), IsSuperAdmin())
 async def cmd_update_commit(message: types.Message, command: CommandObject, bot: Bot):
     if not command.args and not message.reply_to_message:
         await message.reply("<b>Ошибка:</b> Необходимо указать текст коммита или ответить командой на сообщение.")
@@ -3428,5 +3561,93 @@ def seconds_to_human_readable(seconds):
     if minutes:
         parts.append(f"{int(minutes)}m")
     return " ".join(parts) if parts else "~1m"
+   
+
+async def _send_servers_page(message: types.Message, page: int = 1, is_edit: bool = False):
+    servers = list(server_config.get_servers().items())
+    
+    if not servers:
+        text = "<blockquote>❌ Нет настроенных серверов.</blockquote>"
+        if is_edit:
+            await message.edit_text(text, reply_markup=None)
+        else:
+            await message.reply(text)
+        return
+
+    total_pages = math.ceil(len(servers) / SERVERS_PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    
+    start_index = (page - 1) * SERVERS_PAGE_SIZE
+    end_index = start_index + SERVERS_PAGE_SIZE
+    servers_on_page = servers[start_index:end_index]
+    
+    header = "🖥️ <b>Список всех серверов</b>"
+    
+    server_blocks = []
+    for ip, config in servers_on_page:
+        installed_bots = len(await db.get_userbots_by_server_ip(ip))
+        status = config.get('status', 'false')
+        
+        status_map = {
+            "true": "🟢 Онлайн",
+            "false": "🔴 Оффлайн",
+            "test": "🧪 Тестовый",
+            "noub": "🔵 Закрыт для установки"
+        }
+        status_text = status_map.get(status, "⚪️ Неизвестно")
+
+        server_block = (
+            f"<b>{config.get('flag', '🏳️')} {config.get('name', ip)} ({config.get('code', 'N/A')})</b>\n"
+            f"  - <b>IP:</b> <code>{ip}</code>\n"
+            f"  - <b>Статус:</b> {status_text}\n"
+            f"  - <b>Слоты:</b> <code>{installed_bots} / {config.get('slots', 0)}</code>"
+        )
+        server_blocks.append(server_block)
+    
+    content = "\n\n".join(server_blocks)
+    pagination_info = f"\n\n<i>📄 Страница {page} из {total_pages}</i>" if total_pages > 1 else ""
+    
+    text = f"<blockquote>{header}\n\n{content}{pagination_info}</blockquote>"
+    
+    markup = kb.get_servers_paginator_keyboard(page, total_pages) if total_pages > 1 else None
+    
+    try:
+        if is_edit:
+            await message.edit_text(text, reply_markup=markup)
+        else:
+            await message.reply(text, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка при отправке списка серверов: {e}")
+
+@router.message(Command("servers"), IsAdmin())
+async def cmd_servers(message: types.Message):
+    await _send_servers_page(message, page=1, is_edit=False)
+
+@router.callback_query(F.data.startswith("servers_page:"), IsAdmin())
+async def cq_servers_page(call: types.CallbackQuery):
+    await call.answer()
+    try:
+        page = int(call.data.split(":")[1])
+        await _send_servers_page(call.message, page=page, is_edit=True)
+    except (ValueError, IndexError):
+        await call.answer("Ошибка данных пагинации.", show_alert=True)
+        
+        
+@router.message(Command("update_check"), IsSuperAdmin())
+async def cmd_update_check(message: types.Message, bot: Bot):
+    msg = await message.reply("⏳ <b>Принудительная проверка сессий...</b>\n\nИщу пользователей с >1 сессией и отправляю актуальный отчет в лог-канал.")
+    
+    try:
+        found_violations = await session_checker.check_and_log_session_violations(bot, force=True)
+        
+        if found_violations:
+            await msg.edit_text(f"✅ <b>Проверка завершена.</b>\n\nОбнаружено и залогировано нарушителей: {found_violations}." )
+        else:
+            await msg.edit_text("✅ <b>Проверка завершена.</b>\n\nНарушителей с более чем одной сессией не найдено.")
+
+    except Exception as e:
+        logging.error(f"Ошибка при выполнении /update_check: {e}", exc_info=True)
+        await msg.edit_text(f"❌ Произошла ошибка во время принудительной проверки: {e}")
 
 # --- END OF FILE admin_handlers.py ---

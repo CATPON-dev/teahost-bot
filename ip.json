@@ -109,7 +109,7 @@
         "proxy": false,
         "vpn": false,
         "status": "true",
-        "slots": 20,
+        "slots": 21,
         "api_url": "http://92.118.113.130:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
     },
@@ -260,7 +260,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "test",
+        "status": "true",
         "slots": 20,
         "api_url": "http://80.76.60.74:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
@@ -814,6 +814,44 @@
         "status": "true",
         "slots": 35,
         "api_url": "http://4.210.149.63:8000",
+        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+    },
+    "185.238.191.121": {
+        "ssh_user": "root",
+        "ssh_pass": "wOW9pwaSb2b06ZK",
+        "name": "serv41",
+        "country": "Germany",
+        "city": "Frankfurt am Main",
+        "regionName": "Hesse",
+        "flag": "🇩🇪",
+        "code": "DE-1",
+        "org": "Qwins LTD",
+        "timezone": "Europe/Berlin",
+        "hosting": false,
+        "proxy": false,
+        "vpn": false,
+        "status": "true",
+        "slots": 40,
+        "api_url": "http://185.238.191.121:8000",
+        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+    },
+    "141.98.6.154": {
+        "ssh_user": "root",
+        "ssh_pass": "Ew4zdUJ1OGi5AyC",
+        "name": "serv42",
+        "country": "The Netherlands",
+        "city": "Amsterdam",
+        "regionName": "North Holland",
+        "flag": "🇳🇱",
+        "code": "AM-1",
+        "org": "Qwins LTD",
+        "timezone": "Europe/Amsterdam",
+        "hosting": false,
+        "proxy": false,
+        "vpn": false,
+        "status": "true",
+        "slots": 15,
+        "api_url": "http://141.98.6.154:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
     }
 }

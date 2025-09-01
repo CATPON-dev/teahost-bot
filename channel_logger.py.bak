@@ -5,36 +5,31 @@ from aiogram.exceptions import TelegramAPIError
 from config_manager import config
 
 EVENT_TAGS = {
-    # Lifecycle
     "installation_success": "#ЮЗЕРБОТ_СОЗДАН",
-    "installation_via_api": "#API_УСТАНОВКА",  
+    "installation_via_api": "#API_УСТАНОВКА",
     "deletion_by_owner": "#ЮЗЕРБОТ_УДАЛЕН",
     "deletion_by_admin": "#УДАЛЕНО_АДМИНОМ",
     "new_user_registered": "#НОВЫЙ_ПОЛЬЗОВАТЕЛЬ",
-    
-    # User Actions
     "user_action_manage_ub": "#ДЕЙСТВИЕ_ПОЛЬЗОВАТЕЛЯ",
     "userbot_reinstalled": "#ЮЗЕРБОТ_ПЕРЕУСТАНОВЛЕН",
-    
-    # Admin Actions
     "user_banned": "#БАН",
     "user_unbanned": "#РАЗБАН",
     "userbot_transferred": "#ПЕРЕДАЧА_ЮЗЕРБОТА",
-    
-    # System & Health
     "installation_failed": "#ОШИБКА_УСТАНОВКИ",
     "server_unreachable": "#СЕРВЕР_НЕДОСТУПЕН",
     "server_recovered": "#СЕРВЕР_ВОССТАНОВЛЕН",
     "inactive_session_warning": "#ПРЕДУПРЕЖДЕНИЕ_СЕССИЯ",
-    
-    # Access Control
     "panel_shared_accepted": "#ДОСТУП_ВЫДАН",
     "panel_share_revoked": "#ДОСТУП_ОТОЗВАН",
-    
-    # Maintenance
     "maintenance_mode_on": "#ТЕХ_РАБОТЫ_ВКЛ",
     "maintenance_mode_off": "#ТЕХ_РАБОТЫ_ВЫКЛ",
-    "server_settings_changed": "#НАСТРОЙКИ_СЕРВЕРА"
+    "server_settings_changed": "#НАСТРОЙКИ_СЕРВЕРА",
+    "api_get_user_info": "#API_GET_INFO",
+    "api_get_logs": "#API_GET_LOGS",
+    "api_delete_userbot": "#API_DELETE_UB",
+    "api_manage_userbot": "#API_MANAGE_UB",
+    "api_exec_command": "#API_EXEC",
+    "api_regenerate_token": "#API_REGEN_TOKEN"
 }
 
 def _format_user_link(user_data: dict) -> str:
@@ -99,6 +94,50 @@ async def log_event(bot: Bot, event_type: str, data: dict):
             f"<b>Юзербот:</b> <code>{ub_name}</code> ({ub_type.capitalize()})\n"
             f"<b>Сервер:</b> {server_code}\n"
             f"<b>Источник:</b> API Запрос"
+        )
+    elif event_type == "api_get_user_info":
+        message_body = (
+            f"<b>Запрос от:</b> {admin_link}\n"
+            f"<b>Получена информация о пользователе:</b> {user_link}\n"
+            f"<b>Источник:</b> API Запрос (IP: <code>{details_text}</code>)"
+        )
+    elif event_type == "api_get_logs":
+        message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Запросил логи для:</b> <code>{ub_name}</code>\n"
+            f"<b>Сервер:</b> {server_code}\n"
+            f"<b>Детали:</b> {details_text}\n"
+            f"<b>Источник:</b> API Запрос (IP: <code>{error_text}</code>)"
+        )
+    elif event_type == "api_delete_userbot":
+        message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Удалил юзербота:</b> <code>{ub_name}</code>\n"
+            f"<b>Сервер:</b> {server_code}\n"
+            f"<b>Источник:</b> API Запрос (IP: <code>{details_text}</code>)"
+        )
+    elif event_type == "api_manage_userbot":
+        action_map = {"start": "🚀 Запустил", "stop": "🔴 Остановил", "restart": "🔄 Перезапустил"}
+        action_str = action_map.get(action_text, action_text)
+        message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Действие:</b> {action_str} юзербота <code>{ub_name}</code>\n"
+            f"<b>Сервер:</b> {server_code}\n"
+            f"<b>Источник:</b> API Запрос (IP: <code>{details_text}</code>)"
+        )
+    elif event_type == "api_exec_command":
+        message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Выполнил команду в:</b> <code>{ub_name}</code>\n"
+            f"<b>Сервер:</b> {server_code}\n"
+            f"<b>Команда:</b> <pre>{details_text}</pre>\n"
+            f"<b>Источник:</b> API Запрос (IP: <code>{error_text}</code>)"
+        )
+    elif event_type == "api_regenerate_token":
+        message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Действие:</b> Сгенерировал новый API токен\n"
+            f"<b>Источник:</b> API Запрос (IP: <code>{details_text}</code>)"
         )
     elif event_type == "deletion_by_owner":
         message_body = (
