@@ -700,4 +700,21 @@ def get_server_info_paginator_keyboard(page: int, total_pages: int):
         builder.button(text=btn['text'], callback_data=btn['callback_data'])
     builder.button(text='🔄 Обновить', callback_data='refresh_server_info')
     return builder.as_markup()
+    
+def get_api_config_paginator_keyboard(page: int, total_pages: int):
+    builder = InlineKeyboardBuilder()
+    
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append(InlineKeyboardButton(text="⏮️ 1", callback_data=f"api_config_page:1"))
+        nav_buttons.append(InlineKeyboardButton(text="◀️", callback_data=f"api_config_page:{page-1}"))
+    
+    nav_buttons.append(InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="noop"))
+    
+    if page < total_pages:
+        nav_buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"api_config_page:{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(text=f"{total_pages} ⏭️", callback_data=f"api_config_page:{total_pages}"))
+
+    builder.row(*nav_buttons)
+    return builder.as_markup()
 # --- END OF FILE keyboards.py ---

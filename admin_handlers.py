@@ -59,6 +59,8 @@ CACHE_TTL_SECONDS = 60
 CONTAINER_LIST_CACHE = {}
 CONTAINER_CACHE_TTL = 600 
 
+API_CONFIG_PAGE_SIZE = 10
+
 SERVERINFO_PAGE_SIZE = 5
 
 async def _generate_container_list_page(containers_on_page: list, total_containers: int, expanded_container_name: str | None = None) -> str:
@@ -3388,26 +3390,68 @@ async def cmd_set_api_url(message: types.Message, command: CommandObject):
     else:
         await message.reply(f"❌ Ошибка при обновлении URL для сервера <code>{ip}</code>.")
 
-@router.message(Command("show_api_config"), IsSuperAdmin())
-async def cmd_show_api_config(message: types.Message, command: CommandObject):
-    """Показывает API конфигурацию серверов"""
-    servers = server_config.get_servers()
+async def _send_api_config_page(message: types.Message, page: int = 1, is_edit: bool = False):
+    servers = list(server_config.get_servers().items())
     
     if not servers:
-        await message.reply("❌ Нет настроенных серверов.")
+        text = "<blockquote>❌ Нет настроенных серверов.</blockquote>"
+        if is_edit:
+            await message.edit_text(text, reply_markup=None)
+        else:
+            await message.reply(text)
         return
+
+    total_pages = math.ceil(len(servers) / API_CONFIG_PAGE_SIZE)
+    page = max(1, min(page, total_pages))
     
-    text = "🔧 <b>API конфигурация серверов:</b>\n\n"
+    start_index = (page - 1) * API_CONFIG_PAGE_SIZE
+    end_index = start_index + API_CONFIG_PAGE_SIZE
+    servers_on_page = servers[start_index:end_index]
     
-    for ip, config in servers.items():
-        api_url = server_config.get_server_api_url(ip)
+    header = "🔧 <b>API Конфигурация серверов</b>"
+    
+    server_blocks = []
+    for ip, config in servers_on_page:
+        api_url = server_config.get_server_api_url(ip) or '<i>не настроен</i>'
         api_token = server_config.get_server_api_token(ip)
         
-        text += f"📍 <b>{ip}</b>\n"
-        text += f"   API URL: <code>{api_url or 'не настроен'}</code>\n"
-        text += f"   API Token: <code>{api_token or 'не настроен'}</code>\n\n"
+        token_display = f"<code>{api_token[:8]}...</code>" if api_token and api_token != '<i>не настроен</i>' else '<i>не настроен</i>'
+
+        server_block = (
+            f"<b>{config.get('flag', '🏳️')} {config.get('name', ip)}</b> (<code>{ip}</code>)\n"
+            f"  <b>URL:</b> <code>{api_url}</code>\n"
+            f"  <b>Token:</b> {token_display}"
+        )
+        server_blocks.append(server_block)
     
-    await message.reply(text)
+    content = "\n\n".join(server_blocks)
+    pagination_info = f"\n\n<i>📄 Страница {page} из {total_pages}</i>" if total_pages > 1 else ""
+    
+    text = f"<blockquote>{header}\n\n{content}{pagination_info}</blockquote>"
+    
+    markup = kb.get_api_config_paginator_keyboard(page, total_pages) if total_pages > 1 else None
+    
+    try:
+        if is_edit:
+            await message.edit_text(text, reply_markup=markup)
+        else:
+            await message.reply(text, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка при отправке страницы API конфига: {e}")
+
+@router.message(Command("show_api_config"), IsSuperAdmin())
+async def cmd_show_api_config(message: types.Message):
+    await _send_api_config_page(message, page=1, is_edit=False)
+
+@router.callback_query(F.data.startswith("api_config_page:"), IsSuperAdmin())
+async def cq_api_config_page(call: types.CallbackQuery):
+    await call.answer()
+    try:
+        page = int(call.data.split(":")[1])
+        await _send_api_config_page(call.message, page=page, is_edit=True)
+    except (ValueError, IndexError):
+        await call.answer("Ошибка данных пагинации.", show_alert=True)
 
 @router.message(Command("update"), IsSuperAdmin())
 async def cmd_update_commit(message: types.Message, command: CommandObject, bot: Bot):
