@@ -1,187 +1,161 @@
-# --- START OF FILE session_checker.py ---
-
 import asyncio
 import logging
+import math
 from html import escape
-import time
-
 import server_config
 import system_manager as sm
 import database as db
-from api_manager import api_manager
 
-CHECK_SEMAPHORE = asyncio.Semaphore(8)
+CHECK_SEMAPHORE = asyncio.Semaphore(10)
 
-async def _check_sessions_on_server_docker(ip: str):
+def pluralize_session(count):
+    if count % 10 == 1 and count % 100 != 11:
+        return "сессия"
+    elif 2 <= count % 10 <= 4 and (count % 100 < 10 or count % 100 >= 20):
+        return "сессии"
+    else:
+        return "сессий"
+
+async def _check_sessions_on_server(ip: str):
     base_path = "/root/api/volumes"
-    
     command = f"""
-    for D in {base_path}/ub*/; do
-        if [ -d "${{D}}data" ]; then
-            UB_NAME=$(basename "$D")
-            
-            SESSION_FILES=$(find "${{D}}data/" -maxdepth 1 -type f \\( -name "heroku*" -o -name "hikka*" -o -name "legacy*" -o -name "account*" -o -name "*.session" \\) -printf "%f\\n")
-            
+    for D in {base_path}/ub*/data; do
+        if [ -d "$D" ]; then
+            SESSION_FILES=$(find "$D" -maxdepth 1 -type f -name "*.session" -printf "%f\\n")
             SESSION_COUNT=$(echo "$SESSION_FILES" | grep -c .)
+            UB_NAME=$(basename "$(dirname "$D")")
             CLEAN_FILES=$(echo "$SESSION_FILES" | tr '\\n' ',' | sed 's/,$//')
-            
             echo "${{UB_NAME}}:${{SESSION_COUNT}}:${{CLEAN_FILES}}"
         fi
     done
     """
     
     async with CHECK_SEMAPHORE:
-        res = await sm.run_command_async(command, ip, check_output=True, timeout=120)
+        res = await sm.run_command_async(command, ip, check_output=True, timeout=180)
     
-    found_users = {}
-    
+    suspicious = {}
+    normal = {}
+
     if res.get("success") and res.get("output"):
+        all_bots_on_server = {bot['ub_username'] for bot in await db.get_userbots_by_server_ip(ip)}
+        
+        found_on_server = set()
         for line in res["output"].strip().splitlines():
-            if ":" not in line:
-                continue
+            if ":" not in line: continue
             
             parts = line.split(":", 2)
-            if len(parts) != 3:
-                continue
+            if len(parts) != 3: continue
             
             name, count_str, files_str = parts
+            found_on_server.add(name)
             try:
                 count = int(count_str)
             except ValueError:
                 count = 0
             
             files = files_str.split(',') if files_str else []
-            found_users[name] = {'count': count, 'files': files}
+            user_data = {'count': count, 'files': files}
 
-    users_with_sessions = {}
-    users_with_no_sessions = {}
-    
-    bots_on_this_server = await db.get_userbots_by_server_ip(ip)
-    db_usernames = {bot['ub_username'] for bot in bots_on_this_server}
+            if count > 1:
+                suspicious[name] = user_data
+            else:
+                normal[name] = user_data
+        
+        for bot_name in all_bots_on_server:
+            if bot_name not in found_on_server:
+                normal[bot_name] = {'count': 0, 'files': []}
 
-    for ub_name in db_usernames:
-        if ub_name in found_users and found_users[ub_name]['count'] > 0:
-            users_with_sessions[ub_name] = found_users[ub_name]
-        else:
-            users_with_no_sessions[ub_name] = {'count': 0, 'files': []}
-            
-    users_not_in_db = {
-        name: data for name, data in found_users.items()
-        if name not in db_usernames and data['count'] > 0
-    }
+    return suspicious, normal
 
-    return users_with_sessions, users_with_no_sessions, users_not_in_db
-
-async def check_all_remote_sessions_docker():
+async def check_all_remote_sessions():
     servers = server_config.get_servers()
     remote_servers_ips = [ip for ip in servers if ip != sm.LOCAL_IP]
     
     if not remote_servers_ips:
         return {}
 
-    tasks = [_check_sessions_on_server_docker(ip) for ip in remote_servers_ips]
+    tasks = [_check_sessions_on_server(ip) for ip in remote_servers_ips]
     results = await asyncio.gather(*tasks)
     
-    server_session_map = dict(zip(remote_servers_ips, results))
+    server_session_map = {}
+    for ip, (suspicious, normal) in zip(remote_servers_ips, results):
+        server_session_map[ip] = { "suspicious": suspicious, "normal": normal }
     
     return server_session_map
 
-def get_userbot_type_emoji(ub_type: str) -> str:
-    type_mapping = {
-        "fox": "🦊", "heroku": "🪐", "hikka": "🌘", "legacy": "🌙"
-    }
-    return type_mapping.get(ub_type.lower() if ub_type else "", "❓")
-
-async def get_all_userbot_statuses_on_server(usernames: list, server_ip: str) -> dict:
-    statuses = {}
-    tasks = []
-    for username in usernames:
-        async def get_status_with_semaphore(uname):
-            async with CHECK_SEMAPHORE:
-                return await api_manager.get_container_status(uname, server_ip)
-        tasks.append(get_status_with_semaphore(username))
-    
-    results = await asyncio.gather(*tasks)
-    
-    for username, res in zip(usernames, results):
-        if res.get("success") and res.get("data", {}).get("status") == "running":
-            statuses[username] = "🟢"
-        else:
-            statuses[username] = "🔴"
-            
-    return statuses
-
 async def format_session_check_report(server_results: dict, view_mode: str, page: int = 0):
     servers_info = server_config.get_servers()
-    report_parts = []
-    ITEMS_PER_PAGE = 4
-    
-    all_servers_content = []
-
-    usernames_to_fetch = set()
-    for ip, (with_session, without_session, not_in_db) in server_results.items():
-        if view_mode == "has_session":
-            usernames_to_fetch.update(with_session.keys())
-            usernames_to_fetch.update(not_in_db.keys())
-        elif view_mode == "no_session":
-            usernames_to_fetch.update(without_session.keys())
-
-    ub_data_tasks = [db.get_userbot_data(username) for username in usernames_to_fetch]
+    all_usernames = {uname for ip_data in server_results.values() for view in ip_data.values() for uname in view.keys()}
+    ub_data_tasks = [db.get_userbot_data(username) for username in all_usernames]
     ub_data_results = await asyncio.gather(*ub_data_tasks)
-    ub_data_map = {uname: data for uname, data in zip(usernames_to_fetch, ub_data_results) if data}
+    ub_data_map = {uname: data for uname, data in zip(all_usernames, ub_data_results) if data}
 
-    status_tasks = {ip: get_all_userbot_statuses_on_server(list(usernames_to_fetch), ip) for ip in server_results}
-    status_results = await asyncio.gather(*status_tasks.values())
-    status_map = dict(zip(status_tasks.keys(), status_results))
-
-    if view_mode == "has_session":
-        report_parts.append("✅ <b>Пользователи, у которых найдены сессии:</b>")
-        data_source = {ip: (res[0], res[2]) for ip, res in server_results.items()}
-    else:
-        report_parts.append("👻 <b>Пользователи, у которых НЕ найдены сессии:</b>")
-        data_source = {ip: (res[1], {}) for ip, res in server_results.items()}
-
-    for ip, (user_sessions, not_in_db) in data_source.items():
-        blockquote_parts = []
-        server_details = servers_info.get(ip, {})
-        server_flag = server_details.get("flag", "🏳️")
-        server_code = server_details.get("code", "Unknown")
+    if view_mode == "suspicious":
+        header = "⚠️ <b>Пользователи с >1 сессией:</b>\n"
+        suspicious_by_server = {}
+        for ip, session_data in server_results.items():
+            if session_data.get("suspicious"):
+                suspicious_by_server[ip] = session_data["suspicious"]
         
-        current_statuses = status_map.get(ip, {})
+        if not suspicious_by_server:
+            return "<blockquote>✅ Проверка завершена. Подозрительных пользователей не найдено.</blockquote>", 1
 
-        all_users_on_server = list(user_sessions.items())
-        if view_mode == "has_session":
-             all_users_on_server.extend(not_in_db.items())
-        
-        for username, data in sorted(all_users_on_server):
-            ub_data = ub_data_map.get(username)
-            status = current_statuses.get(username, "🟡")
-            ub_type_emoji = get_userbot_type_emoji(ub_data.get('ub_type')) if ub_data else "⚠️"
-            
-            session_info = ""
-            if data['count'] > 0:
+        content_parts = []
+        for ip, users in sorted(suspicious_by_server.items(), key=lambda item: servers_info.get(item[0], {}).get('name', item[0])):
+            server_details = servers_info.get(ip, {})
+            server_flag = server_details.get("flag", "🏳️")
+            server_code = server_details.get("code", "N/A")
+            user_lines = []
+            for username, data in sorted(users.items()):
+                ub_data = ub_data_map.get(username)
+                owner_id = ub_data.get('tg_user_id') if ub_data else None
+                owner_info = ""
+                if owner_id:
+                    owner_data = await db.get_user_data(owner_id)
+                    owner_info = f"<i>({escape(owner_data.get('full_name', ''))}, <code>{owner_id}</code>)</i>" if owner_data else f"<i>(ID: <code>{owner_id}</code>)</i>"
+                
                 files_str = ", ".join([f"<code>{escape(f)}</code>" for f in data['files']])
-                session_info = f" ({data['count']} сессии: {files_str})"
+                user_lines.append(f"  - <b>{escape(username)}</b> {owner_info}\n    └ 📂 {data['count']} шт.: {files_str}")
+            
+            content_parts.append(f"<b>{server_flag} {server_code}</b>\n" + "\n".join(user_lines))
+        
+        full_text = "<blockquote>" + header + "\n" + "\n\n".join(content_parts) + "</blockquote>"
+        return full_text, 1
+        
+    else: # view_mode == "normal"
+        header = "✅ <b>Пользователи с 0 или 1 сессией:</b>\n"
+        ITEMS_PER_PAGE = 15
+        
+        all_normal_users = []
+        for ip, session_data in server_results.items():
+            server_details = servers_info.get(ip, {})
+            for username, data in session_data.get("normal", {}).items():
+                all_normal_users.append({
+                    'username': username, 'count': data['count'], 'server_code': server_details.get('code', 'N/A'),
+                    'server_flag': server_details.get('flag', '🏳️')
+                })
+        
+        if not all_normal_users:
+            return "<blockquote>ℹ️ В этой категории нет пользователей.</blockquote>", 1
+            
+        all_normal_users.sort(key=lambda x: (x['server_code'], x['username']))
+        
+        total_pages = math.ceil(len(all_normal_users) / ITEMS_PER_PAGE)
+        page = max(0, min(page, total_pages - 1))
+        start_idx = page * ITEMS_PER_PAGE
+        end_idx = start_idx + ITEMS_PER_PAGE
+        
+        paginated_users = all_normal_users[start_idx:end_idx]
 
-            blockquote_parts.append(f"  - {ub_type_emoji} <code>{escape(username)}</code> {status}{session_info}")
-
-        if blockquote_parts:
-            all_servers_content.append(f"\n{server_flag} <b>{server_code}</b> (<code>{ip}</code>)\n<blockquote>" + "\n".join(blockquote_parts) + "</blockquote>")
-
-    if not all_servers_content:
-        if view_mode == "has_session":
-            report_parts.append("\n<i>На серверах не найдено пользователей с файлами сессий.</i>")
-        else:
-            report_parts.append("\n<i>✅ У всех пользователей есть файлы сессий.</i>")
-        return "\n".join(report_parts), 1
-
-    total_pages = max(1, (len(all_servers_content) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
-    start_idx = page * ITEMS_PER_PAGE
-    end_idx = start_idx + ITEMS_PER_PAGE
-    
-    report_parts.extend(all_servers_content[start_idx:end_idx])
-    
-    if total_pages > 1:
-        report_parts.append(f"\n📄 Страница {page + 1} из {total_pages}")
-    
-    return "\n".join(report_parts), total_pages
+        user_lines = []
+        for user in paginated_users:
+            ub_data = ub_data_map.get(user['username'])
+            owner_id = ub_data.get('tg_user_id') if ub_data else 'N/A'
+            user_lines.append(f"{user['server_flag']} {user['server_code']} - <b>{escape(user['username'])}</b> (<code>{owner_id}</code>) - {user['count']} {pluralize_session(user['count'])}")
+            
+        content_text = "\n".join(user_lines)
+        pagination_info = f"\n📄 Страница {page + 1} из {total_pages}" if total_pages > 1 else ""
+        
+        full_text = "<blockquote>" + header + "\n" + content_text + pagination_info + "</blockquote>"
+            
+        return full_text, total_pages

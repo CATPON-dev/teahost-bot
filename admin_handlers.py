@@ -1395,116 +1395,6 @@ async def cmd_ahelp(message: types.Message):
     )
     await message.reply(text, disable_web_page_preview=True)
 
-@router.message(Command("check"), IsSuperAdmin())
-async def cmd_check_sessions(message: types.Message):
-    msg = await message.reply("⏳ Проверяю сессии на всех удалённых серверах...")
-    try:
-        server_results = await session_checker.check_all_remote_sessions()
-        
-        # Кешируем данные для быстрого доступа
-        cached_data = {
-            "data": server_results,
-            "timestamp": time.time(),
-            "reports": {
-                "has_session": {},
-                "no_session": {}
-            }
-        }
-        
-        # Генерируем отчеты для всех страниц и режимов
-        await msg.edit_text("⏳ Генерирую отчеты для всех режимов...")
-        
-        for view_mode in ["has_session", "no_session"]:
-            for page in range(10):  # Максимум 10 страниц
-                try:
-                    report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=page)
-                    if total_pages <= page:  # Если страница выходит за пределы
-                        break
-                    cached_data["reports"][view_mode][page] = {
-                        "report": report,
-                        "total_pages": total_pages
-                    }
-                except Exception as e:
-                    logging.error(f"Error generating report for {view_mode} page {page}: {e}")
-                    break
-        
-        SESSION_CHECK_CACHE[msg.chat.id] = cached_data
-        
-        # Отображаем первую страницу
-        first_page_data = cached_data["reports"]["has_session"][0]
-        markup = kb.get_session_check_keyboard("has_session", page=0, total_pages=first_page_data["total_pages"])
-        
-        # Отладочная информация
-        logging.info(f"Report length: {len(first_page_data['report'])}, Total pages: {first_page_data['total_pages']}")
-        
-        # Проверяем длину сообщения
-        if len(first_page_data["report"]) > 3000:
-            # Если сообщение слишком длинное, отправляем как файл
-            report_file = BufferedInputFile(first_page_data["report"].encode('utf-8'), filename="session_check_report.txt")
-            await msg.delete()
-            await message.answer_document(report_file, caption="📊 Отчет о проверке сессий (файл слишком большой для сообщения)")
-        else:
-            try:
-                await msg.edit_text(text=first_page_data["report"], reply_markup=markup)
-            except TelegramBadRequest as e:
-                if "can't parse entities" in str(e):
-                    logging.error(f"HTML parsing error in /check: {e}")
-                    # Пробуем отправить без HTML-разметки
-                    clean_report = first_page_data["report"].replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '').replace('<code>', '').replace('</code>', '').replace('<blockquote>', '').replace('</blockquote>', '')
-                    await msg.edit_text(text=clean_report, reply_markup=markup)
-                else:
-                    raise e
-    except Exception as e:
-        logging.error(f"Ошибка во время выполнения /check: {e}", exc_info=True)
-        await msg.edit_text(f"❌ Произошла ошибка во время проверки: {e}")
-
-@router.callback_query(F.data.startswith("check_view_toggle:"), IsSuperAdmin())
-async def check_view_toggle_handler(call: types.CallbackQuery):
-    await call.answer()
-    cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
-    if not cached_data or time.time() - cached_data["timestamp"] > CACHE_TTL:
-        await call.message.edit_text("Данные для этого отчета устарели. Пожалуйста, выполните команду /check снова.", reply_markup=None)
-        return
-    
-    new_view_mode = call.data.split(":")[1]
-    
-    # Проверяем, есть ли кешированный отчет
-    if "reports" in cached_data and new_view_mode in cached_data["reports"] and 0 in cached_data["reports"][new_view_mode]:
-        page_data = cached_data["reports"][new_view_mode][0]
-        report = page_data["report"]
-        total_pages = page_data["total_pages"]
-        markup = kb.get_session_check_keyboard(new_view_mode, page=0, total_pages=total_pages)
-        
-        # Проверяем длину сообщения
-        if len(report) > 3000:
-            # Если сообщение слишком длинное, отправляем как файл
-            report_file = BufferedInputFile(report.encode('utf-8'), filename="session_check_report.txt")
-            await call.message.delete()
-            await call.message.answer_document(report_file, caption="📊 Отчет о проверке сессий (файл слишком большой для сообщения)")
-        else:
-            try:
-                await call.message.edit_text(text=report, reply_markup=markup)
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    await call.answer("Данные актуальны, изменений нет")
-                else:
-                    logging.error(f"Ошибка обновления отчета /check: {e}")
-                    await call.answer("Произошла ошибка при обновлении", show_alert=True)
-    else:
-        # Если кеша нет, генерируем заново (fallback)
-        server_results = cached_data["data"]
-        report, total_pages = await session_checker.format_session_check_report(server_results, new_view_mode, page=0)
-        markup = kb.get_session_check_keyboard(new_view_mode, page=0, total_pages=total_pages)
-        
-        try:
-            await call.message.edit_text(text=report, reply_markup=markup)
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                await call.answer("Данные актуальны, изменений нет")
-            else:
-                logging.error(f"Ошибка обновления отчета /check: {e}")
-                await call.answer("Произошла ошибка при обновлении", show_alert=True)
-
 @router.callback_query(F.data == "no_action")
 async def no_action_handler(call: types.CallbackQuery):
     await call.answer()
@@ -1513,56 +1403,73 @@ async def no_action_handler(call: types.CallbackQuery):
 async def admin_noop_handler(call: types.CallbackQuery):
     await call.answer("Функция управления временно недоступна.")
 
+@router.message(Command("check"), IsSuperAdmin())
+async def cmd_check_sessions(message: types.Message):
+    msg = await message.reply("⏳ Ищу пользователей с несколькими сессиями на серверах...")
+    try:
+        server_results = await session_checker.check_all_remote_sessions()
+        
+        SESSION_CHECK_CACHE[message.chat.id] = {
+            "data": server_results,
+            "timestamp": time.time()
+        }
+        
+        # По умолчанию показываем подозрительных
+        view_mode = "suspicious"
+        report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=0)
+        markup = kb.get_session_check_keyboard(view_mode, page=0, total_pages=total_pages)
+        
+        await msg.edit_text(text=report, reply_markup=markup)
+
+    except Exception as e:
+        logging.error(f"Ошибка во время выполнения /check: {e}", exc_info=True)
+        await msg.edit_text(f"❌ Произошла ошибка во время проверки: {e}")
+
+@router.callback_query(F.data.startswith("check_view_toggle:"), IsSuperAdmin())
+async def check_view_toggle_handler(call: types.CallbackQuery):
+    await call.answer()
+    await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+
+    cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
+    if not cached_data or time.time() - cached_data["timestamp"] > CACHE_TTL:
+        await call.message.edit_text("Данные для этого отчета устарели. Пожалуйста, выполните /check снова.", reply_markup=None)
+        return
+    
+    new_view_mode = call.data.split(":")[1]
+    
+    server_results = cached_data["data"]
+    report, total_pages = await session_checker.format_session_check_report(server_results, new_view_mode, page=0)
+    markup = kb.get_session_check_keyboard(new_view_mode, page=0, total_pages=total_pages)
+    
+    try:
+        await call.message.edit_text(text=report, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка обновления отчета /check: {e}")
+
 @router.callback_query(F.data.startswith("check_page:"), IsSuperAdmin())
 async def check_page_handler(call: types.CallbackQuery):
     await call.answer()
     cached_data = SESSION_CHECK_CACHE.get(call.message.chat.id)
     if not cached_data or time.time() - cached_data["timestamp"] > CACHE_TTL:
-        await call.message.edit_text("Данные для этого отчета устарели. Пожалуйста, выполните команду /check снова.", reply_markup=None)
+        await call.message.edit_text("Данные для этого отчета устарели, выполните /check снова.", reply_markup=None)
         return
     
-    # Парсим данные из callback
-    parts = call.data.split(":")
-    view_mode = parts[1]
-    page = int(parts[2])
+    try:
+        _, view_mode, page_str = call.data.split(":")
+        page = int(page_str)
+    except (ValueError, IndexError):
+        return
+
+    server_results = cached_data["data"]
+    report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=page)
+    markup = kb.get_session_check_keyboard(view_mode, page=page, total_pages=total_pages)
     
-    logging.info(f"Переход на страницу {page} для режима {view_mode}")
-    
-    # Проверяем, есть ли кешированный отчет
-    if "reports" in cached_data and view_mode in cached_data["reports"] and page in cached_data["reports"][view_mode]:
-        page_data = cached_data["reports"][view_mode][page]
-        report = page_data["report"]
-        total_pages = page_data["total_pages"]
-        markup = kb.get_session_check_keyboard(view_mode, page=page, total_pages=total_pages)
-        
-        logging.info(f"Используем кешированный отчет длиной {len(report)}, всего страниц: {total_pages}")
-        
-        try:
-            await call.message.edit_text(text=report, reply_markup=markup)
-            logging.info(f"Сообщение успешно обновлено для страницы {page}")
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                await call.answer("Данные актуальны, изменений нет")
-            else:
-                logging.error(f"Ошибка обновления страницы отчета /check: {e}")
-                await call.answer("Произошла ошибка при обновлении", show_alert=True)
-    else:
-        # Если кеша нет, генерируем заново (fallback)
-        server_results = cached_data["data"]
-        report, total_pages = await session_checker.format_session_check_report(server_results, view_mode, page=page)
-        markup = kb.get_session_check_keyboard(view_mode, page=page, total_pages=total_pages)
-        
-        logging.info(f"Сгенерирован отчет длиной {len(report)}, всего страниц: {total_pages}")
-        
-        try:
-            await call.message.edit_text(text=report, reply_markup=markup)
-            logging.info(f"Сообщение успешно обновлено для страницы {page}")
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                await call.answer("Данные актуальны, изменений нет")
-            else:
-                logging.error(f"Ошибка обновления страницы отчета /check: {e}")
-                await call.answer("Произошла ошибка при обновлении", show_alert=True)
+    try:
+        await call.message.edit_text(text=report, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка обновления страницы отчета /check: {e}")
 
 @router.callback_query(F.data == "refresh_session_check", IsSuperAdmin())
 async def refresh_session_check_handler(call: types.CallbackQuery):
@@ -1571,41 +1478,30 @@ async def refresh_session_check_handler(call: types.CallbackQuery):
     if cached_data and now - cached_data["timestamp"] < 5:
         await call.answer("Обновлять можно не чаще, чем раз в 5 секунд!", show_alert=True)
         return
-    # Определяем текущий режим просмотра по кнопкам в сообщении
-    current_view_mode = "has_session"  # по умолчанию
+        
+    current_view_mode = "suspicious" 
     if call.message.reply_markup:
         for row in call.message.reply_markup.inline_keyboard:
             for button in row:
-                if button.callback_data == "check_view_toggle:no_session":
-                    current_view_mode = "has_session"
+                if button.callback_data == "check_view_toggle:normal":
+                    current_view_mode = "suspicious"
                     break
-                elif button.callback_data == "check_view_toggle:has_session":
-                    current_view_mode = "no_session"
+                elif button.callback_data == "check_view_toggle:suspicious":
+                    current_view_mode = "normal"
                     break
-    try:
-        await call.answer("Обновляю...")
-        server_results = await session_checker.check_all_remote_sessions()
-        SESSION_CHECK_CACHE[call.message.chat.id] = {
-            "data": server_results,
-            "timestamp": now
-        }
-        report, total_pages = await session_checker.format_session_check_report(server_results, current_view_mode, page=0)
-        markup = kb.get_session_check_keyboard(current_view_mode, page=0, total_pages=total_pages)
-        
-        # Проверяем длину сообщения
-        if len(report) > 3000:
-            # Если сообщение слишком длинное, отправляем как файл
-            report_file = BufferedInputFile(report.encode('utf-8'), filename="session_check_report.txt")
-            await call.message.delete()
-            await call.message.answer_document(report_file, caption="📊 Отчет о проверке сессий (файл слишком большой для сообщения)")
-        else:
-            await call.message.edit_text(text=report, reply_markup=markup)
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            await call.answer("Данные актуальны, изменений нет")
-        else:
-            logging.error(f"Ошибка обновления отчета /check: {e}")
-            await call.answer("Произошла ошибка при обновлении", show_alert=True)
+    
+    await call.answer("Обновляю...")
+    await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+    
+    server_results = await session_checker.check_all_remote_sessions()
+    SESSION_CHECK_CACHE[call.message.chat.id] = {
+        "data": server_results,
+        "timestamp": now
+    }
+    report, total_pages = await session_checker.format_session_check_report(server_results, current_view_mode, page=0)
+    markup = kb.get_session_check_keyboard(current_view_mode, page=0, total_pages=total_pages)
+    
+    await call.message.edit_text(text=report, reply_markup=markup)
 
 @router.message(Command("bc"), IsSuperAdmin())
 async def cmd_broadcast(message: types.Message, command: CommandObject, bot: Bot):

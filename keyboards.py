@@ -14,60 +14,38 @@ def get_stats_refresh_keyboard():
     builder.button(text="🔄 Обновить", callback_data="refresh_stats_panel")
     return builder.as_markup()
 
-def get_session_check_keyboard(view_mode: str, page: int = 0, total_pages: int = 1, expanded_servers: set = None):
+def get_session_check_keyboard(view_mode: str, page: int = 0, total_pages: int = 1):
     builder = InlineKeyboardBuilder()
     
-    if expanded_servers is None:
-        expanded_servers = set()
-    
-    # Первая строка: навигация по страницам
-    nav_buttons = []
-    
-    # Кнопка "В начало"
-    if page > 0:
-        nav_buttons.append(("⏮️", f"check_page:{view_mode}:0"))
-    else:
-        nav_buttons.append(("⏮️", "no_action"))
-    
-    # Кнопка "Назад"
-    if page > 0:
-        nav_buttons.append(("◀️", f"check_page:{view_mode}:{page-1}"))
-    else:
-        nav_buttons.append(("◀️", "no_action"))
-    
-    # Информация о странице
-    nav_buttons.append((f"{page+1}/{total_pages}", "no_action"))
-    
-    # Кнопка "Вперед"
-    if page < total_pages - 1:
-        nav_buttons.append(("▶️", f"check_page:{view_mode}:{page+1}"))
-    else:
-        nav_buttons.append(("▶️", "no_action"))
-    
-    # Кнопка "В конец"
-    if page < total_pages - 1:
-        nav_buttons.append(("⏭️", f"check_page:{view_mode}:{total_pages-1}"))
-    else:
-        nav_buttons.append(("⏭️", "no_action"))
-    
-    # Добавляем кнопки навигации на первую строку
-    for text, callback_data in nav_buttons:
-        builder.button(text=text, callback_data=callback_data)
-    
-    # Вторая строка: кнопка переключения режима
-    if view_mode == 'has_session':
-        builder.button(text="👻 Показать без сессий", callback_data="check_view_toggle:no_session")
-    else:
-        builder.button(text="✅ Показать с сессиями", callback_data="check_view_toggle:has_session")
-    
-    # Третья строка: кнопка обновления
-    builder.button(text="🔄 Обновить", callback_data="refresh_session_check")
-    
-    # Настройка расположения кнопок: 5 кнопок на первой строке, 1 на второй, 1 на третьей
-    builder.adjust(5, 1, 1)
-    
-    return builder.as_markup()
+    if total_pages > 1:
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(InlineKeyboardButton(text="⏮️", callback_data=f"check_page:{view_mode}:0"))
+            nav_buttons.append(InlineKeyboardButton(text="◀️", callback_data=f"check_page:{view_mode}:{page-1}"))
+        else:
+            nav_buttons.append(InlineKeyboardButton(text="⏮️", callback_data="no_action"))
+            nav_buttons.append(InlineKeyboardButton(text="◀️", callback_data="no_action"))
 
+        nav_buttons.append(InlineKeyboardButton(text=f"{page+1}/{total_pages}", callback_data="no_action"))
+        
+        if page < total_pages - 1:
+            nav_buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"check_page:{view_mode}:{page+1}"))
+            nav_buttons.append(InlineKeyboardButton(text="⏭️", callback_data=f"check_page:{view_mode}:{total_pages-1}"))
+        else:
+            nav_buttons.append(InlineKeyboardButton(text="▶️", callback_data="no_action"))
+            nav_buttons.append(InlineKeyboardButton(text="⏭️", callback_data="no_action"))
+        builder.row(*nav_buttons)
+
+    if view_mode == 'suspicious':
+        builder.button(text="✅ Показать нормальных", callback_data="check_view_toggle:normal")
+    else: # normal
+        builder.button(text="⚠️ Показать подозрительных", callback_data="check_view_toggle:suspicious")
+
+    builder.row(InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_session_check"))
+    
+    builder.adjust(1)
+    return builder.as_markup()
+    
 def get_cancel_review_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ Отмена", callback_data="cancel_review")
