@@ -59,6 +59,8 @@ CACHE_TTL_SECONDS = 60
 CONTAINER_LIST_CACHE = {}
 CONTAINER_CACHE_TTL = 600 
 
+SERVERS_PAGE_SIZE = 10
+
 API_CONFIG_PAGE_SIZE = 10
 
 SERVERINFO_PAGE_SIZE = 5
@@ -3559,5 +3561,76 @@ def seconds_to_human_readable(seconds):
     if minutes:
         parts.append(f"{int(minutes)}m")
     return " ".join(parts) if parts else "~1m"
+   
+
+async def _send_servers_page(message: types.Message, page: int = 1, is_edit: bool = False):
+    servers = list(server_config.get_servers().items())
+    
+    if not servers:
+        text = "<blockquote>❌ Нет настроенных серверов.</blockquote>"
+        if is_edit:
+            await message.edit_text(text, reply_markup=None)
+        else:
+            await message.reply(text)
+        return
+
+    total_pages = math.ceil(len(servers) / SERVERS_PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    
+    start_index = (page - 1) * SERVERS_PAGE_SIZE
+    end_index = start_index + SERVERS_PAGE_SIZE
+    servers_on_page = servers[start_index:end_index]
+    
+    header = "🖥️ <b>Список всех серверов</b>"
+    
+    server_blocks = []
+    for ip, config in servers_on_page:
+        installed_bots = len(await db.get_userbots_by_server_ip(ip))
+        status = config.get('status', 'false')
+        
+        status_map = {
+            "true": "🟢 Онлайн",
+            "false": "🔴 Оффлайн",
+            "test": "🧪 Тестовый",
+            "noub": "🔵 Закрыт для установки"
+        }
+        status_text = status_map.get(status, "⚪️ Неизвестно")
+
+        server_block = (
+            f"<b>{config.get('flag', '🏳️')} {config.get('name', ip)} ({config.get('code', 'N/A')})</b>\n"
+            f"  - <b>IP:</b> <code>{ip}</code>\n"
+            f"  - <b>Статус:</b> {status_text}\n"
+            f"  - <b>Слоты:</b> <code>{installed_bots} / {config.get('slots', 0)}</code>"
+        )
+        server_blocks.append(server_block)
+    
+    content = "\n\n".join(server_blocks)
+    pagination_info = f"\n\n<i>📄 Страница {page} из {total_pages}</i>" if total_pages > 1 else ""
+    
+    text = f"<blockquote>{header}\n\n{content}{pagination_info}</blockquote>"
+    
+    markup = kb.get_servers_paginator_keyboard(page, total_pages) if total_pages > 1 else None
+    
+    try:
+        if is_edit:
+            await message.edit_text(text, reply_markup=markup)
+        else:
+            await message.reply(text, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка при отправке списка серверов: {e}")
+
+@router.message(Command("servers"), IsAdmin())
+async def cmd_servers(message: types.Message):
+    await _send_servers_page(message, page=1, is_edit=False)
+
+@router.callback_query(F.data.startswith("servers_page:"), IsAdmin())
+async def cq_servers_page(call: types.CallbackQuery):
+    await call.answer()
+    try:
+        page = int(call.data.split(":")[1])
+        await _send_servers_page(call.message, page=page, is_edit=True)
+    except (ValueError, IndexError):
+        await call.answer("Ошибка данных пагинации.", show_alert=True)
 
 # --- END OF FILE admin_handlers.py ---
