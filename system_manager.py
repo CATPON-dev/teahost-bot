@@ -144,7 +144,6 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
 
             if check_output and process.returncode != 0:
                 err_msg = f"RC={process.returncode}\nSTDERR:\n{stderr_str}\nSTDOUT:\n{stdout_str}"
-                logger_lm.warning(f"Локальная команда завершилась с ошибкой. {err_msg}")
                 return {"success": False, "output": stdout_str, "error": err_msg, "exit_status": process.returncode}
 
             return {"success": True, "output": stdout_str, "error": stderr_str, "exit_status": process.returncode}
@@ -161,7 +160,13 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
             if not ssh_user:
                 return {"success": False, "error": f"SSH user not configured for remote server {server_ip}", "exit_status": -1}
 
-            async with asyncssh.connect(server_ip, username=ssh_user, password=ssh_pass_final, known_hosts=None, connect_timeout=10) as conn:
+            conn = None
+            try:
+                conn = await asyncio.wait_for(
+                    asyncssh.connect(server_ip, username=ssh_user, password=ssh_pass_final, known_hosts=None),
+                    timeout=30.0  
+                )
+                
                 if user:
                     safe_user = shlex.quote(user)
                     full_user_command = f"cd /home/{safe_user} && {command_str}"
@@ -170,25 +175,28 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
                     final_command = f"bash -c {shlex.quote('set -o pipefail; ' + command_str)}"
                 
                 result = await asyncio.wait_for(conn.run(final_command, check=False), timeout=timeout)
+                conn.close()
 
                 stdout_str = result.stdout.strip() if result.stdout else ""
                 stderr_str = result.stderr.strip() if result.stderr else ""
-
+                
                 if check_output and result.exit_status != 0:
                     err_msg = f"RC={result.exit_status}\nSTDERR:\n{stderr_str}\nSTDOUT:\n{stdout_str}"
-                    logger_lm.warning(f"Удалённая команда завершилась с ошибкой. {err_msg}")
                     return {"success": False, "output": stdout_str, "error": err_msg, "exit_status": result.exit_status}
 
                 return {"success": True, "output": stdout_str, "error": stderr_str, "exit_status": result.exit_status}
 
-    except asyncio.TimeoutError:
-        logger_lm.error(f"TIMEOUT on [{server_ip}]. Command: {command_str}")
-        return {"success": False, "error": "Таймаут команды.", "exit_status": -1}
-    except asyncssh.ProcessError as e:
-        logger_lm.warning(f"ProcessError on [{server_ip}]. Command: {shlex.quote(command_str)}. Error: {e.stderr}")
-        return {"success": False, "output": e.stdout, "error": e.stderr, "exit_status": e.exit_status}
+            except asyncio.TimeoutError:
+                if conn: conn.close()
+                logger_lm.error(f"HARD TIMEOUT on connection to [{server_ip}].")
+                return {"success": False, "error": "Принудительный таймаут SSH-подключения.", "exit_status": -1}
+            except (ConnectionResetError, asyncssh.misc.ConnectionLost, OSError, asyncssh.Error) as e:
+                if conn: conn.close()
+                logger_lm.error(f"SSH Connection Error on [{server_ip}]: {type(e).__name__}")
+                return {"success": False, "error": f"Ошибка соединения: {type(e).__name__}", "exit_status": -1}
+
     except Exception as e:
-        logger_lm.error(f"EXCEPTION on [{server_ip}]. Command: {shlex.quote(command_str)}", exc_info=True)
+        logger_lm.error(f"Unhandled EXCEPTION in run_command_async on [{server_ip}]", exc_info=True)
         return {"success": False, "error": str(e), "exit_status": -1}
 
 def generate_password(length=20):
