@@ -2783,53 +2783,104 @@ async def cmd_auto_backup_control(message: types.Message):
     )
     
     await message.reply(help_text)
-@router.message(Command("git")) 
+    
+@router.message(Command("git"), IsSuperAdmin())
 async def cmd_git_manager(message: types.Message, command: CommandObject):
-    FOX_OWNER_ID = 1863611627
-    authorized_ids = config.SUPER_ADMIN_IDS + [FOX_OWNER_ID]
-
-    if message.from_user.id not in authorized_ids:
-        return
-
-    args = command.args.split() if command.args else []
-
-    if not args or len(args) < 2:
+    if not command.args:
         help_text = (
-            "<b>ℹ️ Использование команды /git:</b>\n\n"
-            f"<code>/git change fox {escape('<новая_ссылка_на_github>')}</code>\n"
-            "<i>- Изменяет репозиторий для установки FoxUserbot.</i>\n\n"
-            "<code>/git view fox</code>\n"
-            "<i>- Показывает текущий репозиторий для установки.</i>"
+            "<b>⚙️ Управление Git-репозиторием</b>\n\n"
+            "<code>/git status</code>\n"
+            "<i>- Проверить текущий статус.</i>\n\n"
+            "<code>/git add &lt;файл1&gt; [файл2]...</code>\n"
+            "<i>- Добавить файлы в следующий коммит.</i>\n\n"
+            "<code>/git commit -m \"&lt;сообщение&gt;\"</code>\n"
+            "<i>- Зафиксировать изменения.</i>\n\n"
+            "<code>/git push</code>\n"
+            "<i>- Отправить изменения на сервер.</i>"
         )
         await message.reply(help_text)
         return
 
-    action = args[0].lower()
-    ub_type = args[1].lower()
-
-    if ub_type != "fox":
-        await message.reply("❌ В данный момент поддерживается изменение репозитория только для <b>fox</b>.")
+    try:
+        args = shlex.split(command.args)
+    except ValueError:
+        await message.reply("❌ <b>Ошибка:</b> Некорректное экранирование в команде.")
         return
+        
+    action = args[0].lower() if args else None
 
-    if action == "change":
-        if len(args) != 3:
-            await message.reply(f"Использование: <code>/git change fox {escape('<URL>')}</code>")
+    if action == "add":
+        if len(args) < 2:
+            await message.reply("<b>Ошибка:</b> Укажите один или несколько файлов.\nПример: <code>/git add app.py</code>")
             return
-        
-        new_url = args[2]
-        if not new_url.startswith("https://github.com/"):
-            await message.reply("❌ URL должен быть действительной ссылкой на репозиторий GitHub.")
-            return
-        
-        # sm.update_git_repository(ub_type, new_url)
-        await message.reply(f"✅ URL репозитория для <b>{ub_type}</b> успешно обновлен на:\n<code>{escape(new_url)}</code>")
 
-    elif action == "view":
-        # current_url = sm.get_current_repo_url(ub_type)
-        await message.reply(f"ℹ️ Текущий URL для <b>{ub_type}</b>:\n<code>{escape(current_url)}</code>")
+        files_to_add = args[1:]
         
+        valid_filename_pattern = re.compile(r"^[a-zA-Z0-9._/-]+$")
+        sanitized_files = []
+        for f in files_to_add:
+            if ".." in f or not valid_filename_pattern.match(f):
+                await message.reply(f"<b>Ошибка:</b> Недопустимое имя файла: <code>{html.quote(f)}</code>")
+                return
+            if not os.path.exists(f):
+                await message.reply(f"<b>Ошибка:</b> Файл не найден: <code>{html.quote(f)}</code>")
+                return
+            sanitized_files.append(shlex.quote(f))
+
+        git_command = f"git add {' '.join(sanitized_files)}"
+        
+        msg = await message.reply(f"⏳ Выполняю: <code>{html.quote(git_command)}</code>...")
+        res = await sm.run_command_async(git_command, sm.LOCAL_IP)
+
+        if res["success"]:
+            await msg.edit_text("✅ Файлы успешно добавлены в индекс.")
+        else:
+            error_output = res.get('error') or res.get('output', 'Неизвестная ошибка Git.')
+            await msg.edit_text(f"❌ <b>Ошибка при добавлении:</b>\n<pre>{html.quote(error_output)}</pre>")
+
+    elif action == "commit":
+        if len(args) < 3 or args[1] != '-m':
+            await message.reply('<b>Ошибка:</b> Неверный формат.\nИспользуйте: <code>/git commit -m "Ваш текст"</code>')
+            return
+
+        commit_message = args[2]
+        git_command = f"git commit -m {shlex.quote(commit_message)}"
+        
+        msg = await message.reply("⏳ Создаю коммит...")
+        res = await sm.run_command_async(git_command, sm.LOCAL_IP)
+
+        if res["success"]:
+            output = res.get('output', 'Коммит успешно создан.')
+            await msg.edit_text(f"✅ <b>Коммит создан:</b>\n<pre>{html.quote(output)}</pre>")
+        else:
+            error_output = res.get('error') or res.get('output', 'Неизвестная ошибка Git.')
+            await msg.edit_text(f"❌ <b>Ошибка при создании коммита:</b>\n<pre>{html.quote(error_output)}</pre>")
+
+    elif action == "push":
+        msg = await message.reply("⏳ Выполняю <code>git push origin main --force</code>...")
+        
+        git_command = "git push origin main --force"
+        res = await sm.run_command_async(git_command, sm.LOCAL_IP, timeout=180)
+
+        if res["success"]:
+            output = res.get('output') or res.get('error', 'Push выполнен, но Git не вернул вывод.')
+            await msg.edit_text(f"✅ <b>Push выполнен успешно.</b>\n\n<pre>{html.quote(output)}</pre>")
+        else:
+            error_output = res.get('error') or res.get('output', 'Неизвестная ошибка Git.')
+            await msg.edit_text(f"❌ <b>Ошибка во время push:</b>\n\n<pre>{html.quote(error_output)}</pre>")
+        
+    elif action == "status":
+        msg = await message.reply("⏳ Получаю статус Git...")
+        res = await sm.run_command_async("git status", sm.LOCAL_IP)
+        if res["success"]:
+            output = res.get('output', 'Git не вернул вывод.')
+            await msg.edit_text(f"<b>Статус репозитория:</b>\n<pre>{html.quote(output)}</pre>")
+        else:
+            error_output = res.get('error') or res.get('output', 'Неизвестная ошибка.')
+            await msg.edit_text(f"❌ <b>Ошибка получения статуса:</b>\n<pre>{html.quote(error_output)}</pre>")
+            
     else:
-        await message.reply("Неизвестное действие. Используйте 'change' или 'view'.")
+        await message.reply(f"Неизвестная команда '<code>{action}</code>'. Используйте <code>/git</code> для справки.")
         
        
 @router.callback_query(F.data == "reject_review", IsAdmin())

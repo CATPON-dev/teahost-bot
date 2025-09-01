@@ -1483,7 +1483,7 @@ async def cq_inline_manage_container(call: types.CallbackQuery, state: FSMContex
 
 @router.callback_query(F.data.startswith("noop"))
 async def noop_handler(call: types.CallbackQuery):
-    await safe_callback_answer(call, "Функция управления временно недоступна.", show_alert=True)
+    await call.answer()
 
 @router.callback_query(F.data.startswith("delete_ub_confirm_request:"))
 async def cq_delete_ub_confirm_request(call: types.CallbackQuery, state: FSMContext):
