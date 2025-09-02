@@ -53,19 +53,38 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
     is_admin = user_id in get_all_admins()
     
     all_servers = server_config.get_servers()
-    available_servers = [
+
+    all_userbots = await db.get_all_userbots_full_info()
+    installed_bots_map = defaultdict(int)
+    for ub in all_userbots:
+        installed_bots_map[ub['server_ip']] += 1
+
+    available_servers_filtered = [
         (ip, details) for ip, details in all_servers.items()
         if ip != sm.LOCAL_IP and (details.get("status") != "test" or is_admin)
     ]
+
+    def sort_key(server_info):
+        ip, details = server_info
+        slots = details.get('slots', 0)
+        installed = installed_bots_map.get(ip, 0)
+        
+        if slots <= 0:
+            is_full = False
+            free_slots = float('inf')
+        else:
+            is_full = installed >= slots
+            free_slots = slots - installed
+
+        return is_full, -free_slots
+
+    sorted_servers = sorted(available_servers_filtered, key=sort_key)
     
-    total_pages = math.ceil(len(available_servers) / SERVERS_PER_PAGE) if available_servers else 1
+    total_pages = math.ceil(len(sorted_servers) / SERVERS_PER_PAGE) if sorted_servers else 1
     page = max(1, min(page, total_pages))
     start_index = (page - 1) * SERVERS_PER_PAGE
     end_index = start_index + SERVERS_PER_PAGE
-    servers_on_page = available_servers[start_index:end_index]
-
-    ips_on_page = [ip for ip, _ in servers_on_page]
-    installed_bots_map = {ip: len(await db.get_userbots_by_server_ip(ip)) for ip in ips_on_page}
+    servers_on_page = sorted_servers[start_index:end_index]
     
     data = await state.get_data()
     server_stats = data.get("server_stats", {})
