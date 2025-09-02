@@ -164,6 +164,19 @@ async def init_db():
                     PRIMARY KEY (commit_id, user_id)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 """)
+                
+                # Таблица реферальных ссылок
+                await cursor.execute("""
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    ref_name VARCHAR(50) NOT NULL UNIQUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    total_activations INT DEFAULT 0,
+                    activated_users TEXT,
+                    created_by_admin_id INT,
+                    INDEX idx_ref_name (ref_name)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+                """)
 
                 await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS userbot_shared (
@@ -439,6 +452,8 @@ async def get_userbot_by_tg_id_and_username(tg_user_id: int, ub_username: str) -
 
 async def get_userbots_by_server_ip(server_ip: str) -> List[Dict[str, Any]]:
     try:
+        if not await ensure_connection():
+            return []
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots WHERE server_ip = %s", (server_ip,))
@@ -449,6 +464,8 @@ async def get_userbots_by_server_ip(server_ip: str) -> List[Dict[str, Any]]:
 
 async def get_all_userbots_full_info() -> List[Dict[str, Any]]:
     try:
+        if not await ensure_connection():
+            return []
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots")
@@ -469,6 +486,8 @@ async def delete_userbot_record(ub_username: str) -> bool:
 
 async def get_all_bot_users() -> List[int]:
     try:
+        if not await ensure_connection():
+            return []
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT tg_user_id FROM users")
@@ -863,4 +882,114 @@ async def add_or_update_banned_user(tg_user_id: int, username: Optional[str] = N
     except aiomysql.Error as e:
         logger.error(f"Ошибка при добавлении/обновлении забаненного пользователя {tg_user_id}: {e}")
         return False
+
+# === ФУНКЦИИ ДЛЯ РЕФЕРАЛЬНОЙ СИСТЕМЫ ===
+
+async def create_referral_link(ref_name: str, admin_id: int) -> bool:
+    """Создает новую реферальную ссылку"""
+    try:
+        if not await ensure_connection():
+            return False
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "INSERT INTO referrals (ref_name, created_by_admin_id) VALUES (%s, %s)",
+                    (ref_name, admin_id)
+                )
+                return True
+    except aiomysql.IntegrityError:
+        logger.warning(f"Реферальная ссылка '{ref_name}' уже существует")
+        return False
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка создания реферальной ссылки '{ref_name}': {e}", exc_info=True)
+        return False
+
+async def get_all_referrals() -> List[Dict[str, Any]]:
+    """Получает все реферальные ссылки"""
+    try:
+        if not await ensure_connection():
+            return []
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("SELECT * FROM referrals ORDER BY created_at DESC")
+                return await cursor.fetchall()
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка получения реферальных ссылок: {e}", exc_info=True)
+        return []
+
+async def get_referral_by_name(ref_name: str) -> Optional[Dict[str, Any]]:
+    """Получает реферальную ссылку по имени"""
+    try:
+        if not await ensure_connection():
+            return None
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("SELECT * FROM referrals WHERE ref_name = %s", (ref_name,))
+                return await cursor.fetchone()
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка получения реферальной ссылки '{ref_name}': {e}", exc_info=True)
+        return None
+
+async def add_referral_activation(ref_name: str, user_id: int) -> bool:
+    """Добавляет активацию по реферальной ссылке (только для новых пользователей)"""
+    try:
+        if not await ensure_connection():
+            return False
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                # Получаем текущие данные реферальной ссылки
+                await cursor.execute("SELECT activated_users FROM referrals WHERE ref_name = %s", (ref_name,))
+                result = await cursor.fetchone()
+                
+                if not result:
+                    return False
+                
+                current_users = result[0] or ""
+                users_list = current_users.split(",") if current_users else []
+                
+                # Проверяем, что пользователь еще не активировал эту ссылку
+                if str(user_id) in users_list:
+                    return False
+                
+                # Добавляем пользователя
+                users_list.append(str(user_id))
+                new_users = ",".join(users_list)
+                
+                # Обновляем данные
+                await cursor.execute(
+                    "UPDATE referrals SET total_activations = %s, activated_users = %s WHERE ref_name = %s",
+                    (len(users_list), new_users, ref_name)
+                )
+                return True
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка добавления активации реферальной ссылки '{ref_name}' для пользователя {user_id}: {e}", exc_info=True)
+        return False
+
+async def is_user_new(tg_user_id: int) -> bool:
+    """Проверяет, является ли пользователь новым (первый раз активирует бота)"""
+    try:
+        if not await ensure_connection():
+            return False
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT COUNT(*) FROM users WHERE tg_user_id = %s", (tg_user_id,))
+                result = await cursor.fetchone()
+                return result[0] == 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка проверки нового пользователя {tg_user_id}: {e}", exc_info=True)
+        return False
+
+async def delete_referral_link(ref_name: str) -> bool:
+    """Удаляет реферальную ссылку"""
+    try:
+        if not await ensure_connection():
+            return False
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("DELETE FROM referrals WHERE ref_name = %s", (ref_name,))
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка удаления реферальной ссылки '{ref_name}': {e}", exc_info=True)
+        return False
+
 # --- END OF FILE database.py ---

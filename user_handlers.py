@@ -11,7 +11,7 @@ import locale
 import secrets
 from collections import defaultdict
 from aiogram import Bot, Router, types, F, html
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command, StateFilter, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.exceptions import TelegramBadRequest, TelegramNotFound, TelegramForbiddenError
@@ -765,7 +765,7 @@ async def cmd_review_in_chat(message: types.Message):
     pass
 
 @router.message(Command("start"), F.chat.type == "private")
-async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
+async def cmd_start(message: types.Message, state: FSMContext, bot: Bot, command: CommandObject):
     print(f"DEBUG: Получена команда /start от пользователя {message.from_user.id}")
     try:
         user = message.from_user
@@ -773,11 +773,23 @@ async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
             ban_message = "❌ <b>Вы забанены.</b>\n\nДоступ к боту для вас ограничен."
             await message.answer(ban_message, message_thread_id=message.message_thread_id)
             return
+        
         is_new_user = not await db.get_user_data(user.id)
+        
+        # Обработка реферальной ссылки
+        ref_name = None
+        if command.args and command.args.startswith("ref_"):
+            ref_name = command.args[4:]  # Убираем "ref_" префикс
+            if is_new_user:
+                await db.add_referral_activation(ref_name, user.id)
+                logging.info(f"Новый пользователь {user.id} активировал бота по реферальной ссылке: {ref_name}")
+        
         await db.register_or_update_user(tg_user_id=user.id, username=user.username, full_name=user.full_name)
         if not await db.has_user_accepted_agreement(user.id) and not config.TEST_MODE:
             if is_new_user:
                 user_data_for_log = {"id": user.id, "full_name": user.full_name}
+                if ref_name:
+                    user_data_for_log["referral"] = ref_name
                 await log_event(bot, "new_user_registered", {"user_data": user_data_for_log})
             text = ("👋 <b>Добро пожаловать в SharkHost!</b>\n\n"
                     "Прежде чем мы начнем, ознакомьтесь с нашим пользовательским соглашением. "

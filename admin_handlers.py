@@ -3660,4 +3660,81 @@ async def cmd_update_check(message: types.Message, bot: Bot):
         logging.error(f"Ошибка при выполнении /update_check: {e}", exc_info=True)
         await msg.edit_text(f"❌ Произошла ошибка во время принудительной проверки: {e}")
 
+@router.message(Command("ref"), IsAdmin())
+async def cmd_ref(message: types.Message, command: CommandObject):
+    """Команда для управления реферальными ссылками"""
+    args = command.args.split() if command.args else []
+    
+    if not args:
+        # Показать все реферальные ссылки
+        referrals = await db.get_all_referrals()
+        if not referrals:
+            await message.reply("📊 <b>Реферальные ссылки</b>\n\nРеферальных ссылок пока нет.")
+            return
+        
+        text = "📊 <b>Реферальные ссылки</b>\n\n"
+        for ref in referrals:
+            created_date = ref['created_at'].strftime('%d.%m.%Y %H:%M') if ref['created_at'] else 'N/A'
+            text += f"🔗 <code>{ref['ref_name']}</code>\n"
+            text += f"   📅 Создана: {created_date}\n"
+            text += f"   👥 Активаций: <b>{ref['total_activations']}</b>\n\n"
+        
+        text += "<i>Использование:</i>\n"
+        text += "• <code>/ref [имя]</code> - создать ссылку\n"
+        text += "• <code>/ref del [имя]</code> - удалить ссылку"
+        
+        await message.reply(text)
+        return
+    
+    if args[0].lower() == "del" and len(args) > 1:
+        ref_name = args[1]
+        success = await db.delete_referral_link(ref_name)
+        
+        if success:
+            await message.reply(f"✅ Реферальная ссылка '<code>{ref_name}</code>' удалена.")
+            
+            admin_data = {"id": message.from_user.id, "full_name": message.from_user.full_name}
+            log_data = {
+                "admin_data": admin_data,
+                "details": f"удалена реферальная ссылка: {ref_name}"
+            }
+            await log_event(message.bot, "referral_deleted", log_data)
+        else:
+            await message.reply(f"❌ Реферальная ссылка '<code>{ref_name}</code>' не найдена.")
+        return
+    
+    ref_name = args[0]
+    
+    # Проверяем, что имя содержит только допустимые символы
+    if not ref_name.replace('_', '').replace('-', '').isalnum():
+        await message.reply("❌ Имя реферальной ссылки может содержать только буквы, цифры, дефисы и подчеркивания.")
+        return
+    
+    if len(ref_name) > 50:
+        await message.reply("❌ Имя реферальной ссылки не может быть длиннее 50 символов.")
+        return
+    
+    # Создаем новую реферальную ссылку
+    success = await db.create_referral_link(ref_name, message.from_user.id)
+    
+    if success:
+        bot_username = (await message.bot.get_me()).username
+        ref_link = f"https://t.me/{bot_username}?start=ref_{ref_name}"
+        
+        await message.reply(
+            f"✅ <b>Реферальная ссылка создана!</b>\n\n"
+            f"🔗 <b>Имя:</b> <code>{ref_name}</code>\n"
+            f"🌐 <b>Ссылка:</b> <code>{ref_link}</code>\n\n"
+        )
+        
+        # Логируем создание реферальной ссылки
+        admin_data = {"id": message.from_user.id, "full_name": message.from_user.full_name}
+        log_data = {
+            "admin_data": admin_data,
+            "details": f"создана реферальная ссылка: {ref_name}"
+        }
+        await log_event(message.bot, "referral_created", log_data)
+    else:
+        await message.reply(f"❌ Не удалось создать реферальную ссылку '<code>{ref_name}</code>'. Возможно, она уже существует.")
+
 # --- END OF FILE admin_handlers.py ---
