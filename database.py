@@ -182,6 +182,8 @@ async def init_db():
                     INDEX idx_ref_name (ref_name)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 """)
+                
+                await _modify_column_if_needed(cursor, 'referrals', 'created_by_admin_id', 'BIGINT')
 
                 await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS userbot_shared (
@@ -1018,3 +1020,17 @@ async def get_users_with_premium_access() -> List[Dict[str, Any]]:
                 return await cursor.fetchall()
     except aiomysql.Error:
         return []
+        
+async def _modify_column_if_needed(cursor, table_name, column_name, new_column_definition):
+    await cursor.execute(f"""
+        SELECT DATA_TYPE
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = '{table_name}'
+        AND COLUMN_NAME = '{column_name}'
+    """)
+    result = await cursor.fetchone()
+    
+    if result and result[0].lower() != 'bigint':
+        await cursor.execute(f"ALTER TABLE `{table_name}` MODIFY COLUMN `{column_name}` {new_column_definition}")
+        logger.info(f"ебал.")

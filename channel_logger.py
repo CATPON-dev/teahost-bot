@@ -13,7 +13,7 @@ EVENT_TAGS = {
     "user_action_manage_ub": "#ДЕЙСТВИЕ_ПОЛЬЗОВАТЕЛЯ",
     "userbot_reinstalled": "#ЮЗЕРБОТ_ПЕРЕУСТАНОВЛЕН",
     "user_banned": "#БАН",
-    "user_unbanned": "#РАЗБАН",
+    "user_unanned": "#РАЗБАН",
     "userbot_transferred": "#ПЕРЕДАЧА_ЮЗЕРБОТА",
     "installation_failed": "#ОШИБКА_УСТАНОВКИ",
     "server_unreachable": "#СЕРВЕР_НЕДОСТУПЕН",
@@ -29,7 +29,9 @@ EVENT_TAGS = {
     "api_delete_userbot": "#API_DELETE_UB",
     "api_manage_userbot": "#API_MANAGE_UB",
     "api_exec_command": "#API_EXEC",
-    "api_regenerate_token": "#API_REGEN_TOKEN"
+    "api_regenerate_token": "#API_REGEN_TOKEN",
+    "referral_created": "#РЕФ_ССЫЛКА_СОЗДАНА",
+    "referral_deleted": "#РЕФ_ССЫЛКА_УДАЛЕНА"
 }
 
 def _format_user_link(user_data: dict) -> str:
@@ -188,7 +190,7 @@ async def log_event(bot: Bot, event_type: str, data: dict):
             f"<b>Выдал доступ к</b> <code>{ub_name}</code>\n"
             f"<b>Пользователю:</b> {user_link}"
         )
-    
+
     elif event_type == "panel_share_revoked":
         message_body = (
             f"<b>Владелец:</b> {sharer_link}\n"
@@ -196,6 +198,18 @@ async def log_event(bot: Bot, event_type: str, data: dict):
             f"<b>к юзерботу:</b> <code>{ub_name}</code>"
         )
     
+    elif event_type == "referral_created":
+        message_body = (
+            f"<b>Администратор:</b> {admin_link}\n"
+            f"<b>Действие:</b> {details_text}"
+        )
+
+    elif event_type == "referral_deleted":
+        message_body = (
+            f"<b>Администратор:</b> {admin_link}\n"
+            f"<b>Действие:</b> {details_text}"
+        )
+
     else:
         if event_type == "installation_failed":
             message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Ошибка:</b> <pre>{error_text}</pre>")
