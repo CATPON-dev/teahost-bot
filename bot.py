@@ -449,15 +449,17 @@ async def check_servers_on_startup(bot: Bot):
     else:
         logging.info("All remote servers checked. Status: OK.")
 
+import outage_manager
+
 async def monitor_servers_health(bot: Bot):
-    """Мониторинг здоровья серверов - с обработкой ошибок для планировщика"""
     try:
         global DOWN_SERVERS_NOTIFIED
         if config.TEST_MODE:
-            logging.info("Test mode enabled, skipping server health check")
             return
+        
         logging.info("Running scheduled server health check...")
         servers = {ip: d for ip, d in server_config.get_servers().items() if ip != sm.LOCAL_IP}
+        
         for ip, details in servers.items():
             async with SSH_SEMAPHORE:
                 try:
@@ -465,21 +467,32 @@ async def monitor_servers_health(bot: Bot):
                 except Exception as e:
                     logging.error(f"Failed to check health for {ip}: {e}")
                     conn_res = {"success": False, "error": str(e)}
+
             if not conn_res.get("success"):
                 if ip not in DOWN_SERVERS_NOTIFIED:
+                    current_status = details.get('status', 'true')
+                    outage_manager.save_previous_status(ip, current_status)
                     server_config.update_server_status(ip, 'test')
                     DOWN_SERVERS_NOTIFIED.add(ip)
+                    
                     log_data = {"server_info": {"ip": ip, "code": details.get("code", "N/A")}}
                     await log_event(bot, "server_unreachable", log_data)
                 continue
+
             if ip in DOWN_SERVERS_NOTIFIED:
                 DOWN_SERVERS_NOTIFIED.remove(ip)
-                server_config.update_server_status(ip, 'true')
-                log_data = {"server_info": {"ip": ip, "code": details.get("code", "N/A")}}
+                restored_status = outage_manager.restore_previous_status(ip)
+                server_config.update_server_status(ip, restored_status)
+                
+                log_data = {
+                    "server_info": {"ip": ip, "code": details.get("code", "N/A")},
+                    "details": f"Статус восстановлен на '{restored_status}'"
+                }
                 await log_event(bot, "server_recovered", log_data)
+
     except Exception as e:
         logging.error(f"Critical error in monitor_servers_health scheduler task: {e}", exc_info=True)
-
+        
 async def daily_backup_task(bot: Bot):
     if config.TEST_MODE:
         logging.info("Test mode enabled, skipping daily backup task")

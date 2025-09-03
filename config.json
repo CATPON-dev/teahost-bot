@@ -8,10 +8,10 @@
   "stats_chat_id": -1002758779158,
   "stats_topic_id": 11316,
   "database": {
-    "host": "4.211.111.137",
+    "host": "138.124.114.163",
     "port": 3306,
     "user": "sharkhost",
-    "password": "Amina123_80",
+    "password": "sharkhost",
     "db_name": "sharkhost"
   }
 }

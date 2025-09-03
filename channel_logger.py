@@ -176,7 +176,8 @@ async def log_event(bot: Bot, event_type: str, data: dict):
         message_body = f"<b>Сервер:</b> {server_code} (<code>{server_ip}</code>)\n<b>Статус:</b> Недоступен. Отключен для пользователей."
 
     elif event_type == "server_recovered":
-        message_body = f"<b>Сервер:</b> {server_code} (<code>{server_ip}</code>)\n<b>Статус:</b> Снова в сети. Включен для пользователей."
+        details = data.get("details", "")
+        message_body = f"<b>Сервер:</b> {server_code} (<code>{server_ip}</code>)\n<b>Статус:</b> Снова в сети. {details}"
 
     elif event_type == "inactive_session_warning":
         message_body = f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Статус:</b> Отправлено предупреждение об отсутствии сессии."

@@ -49,33 +49,29 @@ SERVERS_PER_PAGE = 10
 
 async def _show_server_selection_page(call: types.CallbackQuery, state: FSMContext, page: int = 1):
     from bot import BANNER_FILE_IDS
-    user_id = call.from_user.id
-    is_admin = user_id in get_all_admins()
     
+    user_id = call.from_user.id
     all_servers = server_config.get_servers()
-
     all_userbots = await db.get_all_userbots_full_info()
     installed_bots_map = defaultdict(int)
     for ub in all_userbots:
         installed_bots_map[ub['server_ip']] += 1
 
-    available_servers_filtered = [
-        (ip, details) for ip, details in all_servers.items()
-        if ip != sm.LOCAL_IP and (details.get("status") != "test" or is_admin)
-    ]
+    server_ips = [ip for ip in all_servers if ip != sm.LOCAL_IP]
+    tasks = [server_config.is_install_allowed(ip, user_id) for ip in server_ips]
+    results = await asyncio.gather(*tasks)
+    
+    available_servers_filtered = []
+    for i, ip in enumerate(server_ips):
+        if results[i]:
+            available_servers_filtered.append((ip, all_servers[ip]))
 
     def sort_key(server_info):
         ip, details = server_info
         slots = details.get('slots', 0)
         installed = installed_bots_map.get(ip, 0)
-        
-        if slots <= 0:
-            is_full = False
-            free_slots = float('inf')
-        else:
-            is_full = installed >= slots
-            free_slots = slots - installed
-
+        is_full = slots > 0 and installed >= slots
+        free_slots = slots - installed if slots > 0 else float('inf')
         return is_full, -free_slots
 
     sorted_servers = sorted(available_servers_filtered, key=sort_key)

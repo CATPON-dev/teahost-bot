@@ -66,7 +66,6 @@ def get_subscribe_keyboard(channel_id: str):
 
 def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server_stats: dict, servers_on_page: list, page: int, total_pages: int):
     builder = InlineKeyboardBuilder()
-    is_admin = user_id in get_all_admins()
     
     for ip, details in servers_on_page:
         status = details.get("status", "false")
@@ -85,6 +84,9 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
         elif status == "noub":
             emoji_status = "🟢"
             callback_data = "server_noub"
+        elif status == "premium":
+            emoji_status = "🟢"
+            callback_data = f"select_server:{ip}"
         elif slots > 0 and installed >= slots:
             emoji_status = "🈵"
             callback_data = "server_full"
@@ -92,7 +94,8 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
             emoji_status = "🟢"
             callback_data = f"select_server:{ip}"
 
-        button_text = f"{emoji_status} | [{installed}/{slots}] | {flag} | {code} | 📈 {cpu_load}%"
+        premium_emoji = "💎 " if status == "premium" else ""
+        button_text = f"{emoji_status} | [{installed}/{slots}] | {premium_emoji}{flag} | {code} | 📈 {cpu_load}%"
         builder.button(text=button_text, callback_data=callback_data)
 
     builder.adjust(1)

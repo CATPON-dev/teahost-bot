@@ -88,16 +88,28 @@ def update_server_slots(ip: str, slots: int) -> bool:
     servers[ip]['slots'] = slots
     return _save_servers(servers)
 
-def is_install_allowed(ip: str, user_id: int) -> bool:
+async def is_install_allowed(ip: str, user_id: int) -> bool:
     from admin_manager import get_all_admins
+    import database as db
+
     servers = get_servers()
     server_info = servers.get(ip)
-    if not server_info: return False
+    if not server_info:
+        return False
 
     status = server_info.get('status')
-    if status == 'true': return True
+    
+    if status == 'premium':
+        is_admin = user_id in get_all_admins()
+        has_access = await db.check_premium_access(user_id)
+        return is_admin or has_access
+        
+    if status == 'true':
+        return True
+        
     if status == 'test' and user_id in get_all_admins():
         return True
+        
     return False
 
 def get_server_status_by_ip(ip: str) -> str:

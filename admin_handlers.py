@@ -1067,11 +1067,11 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
     
     elif sub_action == "status":
         if len(args) != 3:
-            await message.reply("Использование: <code>/serv [код] status [true|false|noub|test]</code>")
+            await message.reply("Использование: <code>/serv [код] status [true|false|noub|test|premium]</code>")
             return
         status_value = args[2].lower()
-        if status_value not in ["true", "noub", "test"]:
-            await message.reply("Неверный статус. Доступные: true, false, noub, test.")
+        if status_value not in ["true", "false", "noub", "test", "premium"]:
+            await message.reply("Неверный статус. Доступные: true, false, noub, test, premium.")
             return
         if server_config.update_server_status(target_ip, status_value):
             await message.reply(f"✅ Статус сервера <code>{server_code}</code> изменен на <b>{status_value}</b>.")
@@ -1079,8 +1079,6 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
             await log_event(bot, "server_settings_changed", log_data)
         else:
             await message.reply("❌ Не удалось обновить статус сервера.")
-    else:
-        await message.reply(f"Неизвестное действие '<code>{sub_action}</code>'. Используйте <code>/serv help</code>.")
         
 def create_progress_bar(percentage, length=10):
     try:
@@ -3596,6 +3594,9 @@ async def _send_servers_page(message: types.Message, page: int = 1, is_edit: boo
     
     server_blocks = []
     for ip, config in servers_on_page:
+        if config.get('status') == 'premium' and message.from_user.id not in get_all_admins():
+            continue
+
         installed_bots = len(await db.get_userbots_by_server_ip(ip))
         status = config.get('status', 'false')
         
@@ -3603,12 +3604,15 @@ async def _send_servers_page(message: types.Message, page: int = 1, is_edit: boo
             "true": "🟢 Онлайн",
             "false": "🔴 Оффлайн",
             "test": "🧪 Тестовый",
-            "noub": "🔵 Закрыт для установки"
+            "noub": "🔵 Закрыт для установки",
+            "premium": "💎 Премиум"
         }
         status_text = status_map.get(status, "⚪️ Неизвестно")
+        
+        premium_emoji = "💎 " if status == 'premium' else ""
 
         server_block = (
-            f"<b>{config.get('flag', '🏳️')} {config.get('name', ip)} ({config.get('code', 'N/A')})</b>\n"
+            f"<b>{premium_emoji}{config.get('flag', '🏳️')} {config.get('name', ip)} ({config.get('code', 'N/A')})</b>\n"
             f"  - <b>IP:</b> <code>{ip}</code>\n"
             f"  - <b>Статус:</b> {status_text}\n"
             f"  - <b>Слоты:</b> <code>{installed_bots} / {config.get('slots', 0)}</code>"
@@ -3738,4 +3742,70 @@ async def cmd_ref(message: types.Message, command: CommandObject):
     else:
         await message.reply(f"❌ Не удалось создать реферальную ссылку '<code>{ref_name}</code>'. Возможно, она уже существует.")
 
+@router.message(Command("premium"), IsSuperAdmin())
+async def cmd_premium_access(message: types.Message, command: CommandObject, bot: Bot):
+    args = command.args.split() if command.args else []
+
+    if not args:
+        await message.reply(
+            "<b>Управление премиум-доступом:</b>\n\n"
+            "<code>/premium give &lt;ID|@|reply&gt;</code>\n<i>- Выдать доступ к премиум-серверам.</i>\n\n"
+            "<code>/premium ungive &lt;ID|@|reply&gt;</code>\n<i>- Забрать доступ (удалит юб на премиум серверах).</i>\n\n"
+            "<code>/premium list</code>\n<i>- Список пользователей с доступом.</i>"
+        )
+        return
+
+    action = args[0].lower()
+
+    if action == "list":
+        users_with_access = await db.get_users_with_premium_access()
+        if not users_with_access:
+            await message.reply("Нет пользователей с премиум-доступом.")
+            return
+        
+        text_parts = ["<b>Пользователи с премиум-доступом:</b>\n"]
+        for user_data in users_with_access:
+            user_id = user_data['tg_user_id']
+            full_name = html.quote(user_data.get('full_name', f"ID: {user_id}"))
+            text_parts.append(f"• {full_name} (<code>{user_id}</code>)")
+        
+        await message.reply("\n".join(text_parts))
+        return
+
+    if action in ["give", "ungive"]:
+        if len(args) < 2 and not message.reply_to_message:
+            await message.reply(f"<b>Ошибка:</b> Укажите пользователя.\nПример: <code>/premium {action} 123456</code>")
+            return
+
+        target_user_data, error_message = await _get_target_user_data(message, CommandObject(command="premium", args=" ".join(args[1:])), bot)
+        if error_message:
+            await message.reply(error_message)
+            return
+
+        target_id = target_user_data['tg_user_id']
+        status = True if action == "give" else False
+
+        if await db.set_premium_access(target_id, status):
+            if action == "give":
+                await message.reply(f"✅ Пользователю <code>{target_id}</code> выдан премиум-доступ.")
+            else:
+                await message.reply(f"✅ У пользователя <code>{target_id}</code> отозван премиум-доступ. Начинаю поиск и удаление его юзерботов на премиум-серверах...")
+                
+                userbots = await db.get_userbots_by_tg_id(target_id)
+                servers = server_config.get_servers()
+                deleted_count = 0
+                for ub in userbots:
+                    server_info = servers.get(ub['server_ip'])
+                    if server_info and server_info.get('status') == 'premium':
+                        await api_manager.delete_container(ub['ub_username'], ub['server_ip'])
+                        await db.delete_userbot_record(ub['ub_username'])
+                        deleted_count += 1
+                        await bot.send_message(target_id, f"‼️ Ваш юзербот <code>{ub['ub_username']}</code> был удален, так как у вас был отозван доступ к премиум-серверам.", parse_mode="HTML")
+
+                if deleted_count > 0:
+                    await message.answer(f"✅ Удалено {deleted_count} юзерботов пользователя с премиум-серверов.")
+        else:
+            await message.reply("❌ Не удалось обновить статус пользователя в базе данных.")
+    else:
+        await message.reply("Неизвестное действие. Используйте <code>give, ungive, list</code>.")
 # --- END OF FILE admin_handlers.py ---

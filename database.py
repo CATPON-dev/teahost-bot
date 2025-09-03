@@ -977,3 +977,44 @@ async def delete_referral_link(ref_name: str) -> bool:
     except aiomysql.Error as e:
         logger.error(f"Ошибка удаления реферальной ссылки '{ref_name}': {e}", exc_info=True)
         return False
+
+async def set_premium_access(user_id: int, status: bool) -> bool:
+    if not await ensure_connection():
+        return False
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "UPDATE users SET has_premium_access = %s WHERE tg_user_id = %s",
+                    (status, user_id)
+                )
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка установки премиум-доступа для {user_id}: {e}")
+        return False
+
+async def check_premium_access(user_id: int) -> bool:
+    if not await ensure_connection():
+        return False
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT has_premium_access FROM users WHERE tg_user_id = %s",
+                    (user_id,)
+                )
+                result = await cursor.fetchone()
+                return result[0] if result else False
+    except aiomysql.Error:
+        return False
+
+async def get_users_with_premium_access() -> List[Dict[str, Any]]:
+    if not await ensure_connection():
+        return []
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("SELECT * FROM users WHERE has_premium_access = TRUE")
+                return await cursor.fetchall()
+    except aiomysql.Error:
+        return []
