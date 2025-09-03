@@ -8,10 +8,10 @@
   "stats_chat_id": -1002758779158,
   "stats_topic_id": 11316,
   "database": {
-    "host": "catpon7g.beget.tech",
+    "host": "4.211.111.137",
     "port": 3306,
-    "user": "catpon7g_nh",
-    "password": "UzC!mLTxDhI9",
-    "db_name": "catpon7g_nh"
+    "user": "sharkhost",
+    "password": "Amina123_80",
+    "db_name": "sharkhost"
   }
 }

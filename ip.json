@@ -70,7 +70,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 20,
         "api_url": "http://89.23.117.165:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
@@ -127,7 +127,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 20,
         "api_url": "http://2.59.43.81:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
@@ -260,7 +260,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 20,
         "api_url": "http://80.76.60.74:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
