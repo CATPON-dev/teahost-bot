@@ -1362,14 +1362,14 @@ async def cmd_remote_control(message: types.Message, command: CommandObject):
         response += f"\n\n<b>❌ Ошибка для:</b>\n" + "\n".join([f"  - <code>{html.quote(ub)}</code>" for ub in error_list])
     await message.reply(response or "Ничего не было сделано.")
 
-@router.message(Command("help"), IsAdmin())
-async def cmd_help(message: types.Message):
+@router.message(Command("ahelp"), IsAdmin())
+async def cmd_ahelp(message: types.Message):
     text = (
         "<blockquote>"
         "<b>Админ-панель: Справка по командам</b>\n\n"
         
         "<b>👤 Управление ботом и пользователями</b>\n"
-        "<code>/help</code> (<i>Админ</i>)\n"
+        "<code>/ahelp</code> (<i>Админ</i>)\n"
         "<i>- Показать это сообщение.</i>\n\n"
         "<code>/ban &lt;ID|@&gt;</code> (<i>Супер Админ</i>)\n"
         "<i>- Заблокировать пользователя.</i>\n\n"
@@ -1385,6 +1385,8 @@ async def cmd_help(message: types.Message):
         "<i>- Перезапустить бота.</i>\n\n"
         "<code>/stop</code> (<i>Супер Админ</i>)\n"
         "<i>- Остановить процесс бота.</i>\n\n"
+        "<code>/premium [give|ungive|list] ...</code> (<i>Супер Админ</i>)\n"
+        "<i>- Управление доступом к премиум-серверам.</i>\n\n"
 
         "<b>🖥️ Управление серверами и хостами</b>\n"
         "<code>/servers</code> (<i>Админ</i>)\n"
@@ -1438,7 +1440,9 @@ async def cmd_help(message: types.Message):
         "<code>/backup_bot</code> (<i>Супер Админ</i>)\n"
         "<i>- Создать полную резервную копию бота.</i>\n\n"
         "<code>/auto_backup</code> (<i>Супер Админ</i>)\n"
-        "<i>- Показать справку по авто-бэкапам.</i>"
+        "<i>- Показать справку по авто-бэкапам.</i>\n\n"
+        "<code>/ref [имя]</code> (<i>Админ</i>)\n"
+        "<i>- Управление реферальными ссылками.</i>"
         "</blockquote>"
     )
     await message.reply(text, disable_web_page_preview=True)
