@@ -1,8 +1,46 @@
 import logging
 from aiogram import Bot, html
 from aiogram.exceptions import TelegramAPIError
-
 from config_manager import config
+
+KEYWORD_TO_TOPIC_MAP = {
+    "юзербот создан": 5, "api установка": 5,
+    "юзербот удален": 7,
+    "новый пользователь": 7,
+    "недоступен": 9,
+    "восстановлен": 11,
+    "настройки сервера": 13,
+    "ошибка установки": 15,
+    "удален администратором": 17,
+    "обнаружено >1 сессии": 19,
+    "реферальная ссылка": 21,
+    "api запрос": 23, "api_": 23,
+    "забанил": 25, "разбанил": 25, "попытка несанкционированного доступа": 25,
+    "тех. работ": 28,
+    "юзербот переустановлен": 30
+}
+
+TOPIC_MAP = {
+    "installation_success": 5,
+    "installation_via_api": 5,
+    "deletion_by_owner": 7,
+    "new_user_registered": 7,
+    "server_unreachable": 9,
+    "server_recovered": 11,
+    "server_settings_changed": 13,
+    "installation_failed": 15,
+    "deletion_by_admin": 17,
+    "session_violation": 19,
+    "referral_created": 21,
+    "referral_deleted": 21,
+    "api_event": 23,
+    "user_banned": 25,
+    "user_unbanned": 25,
+    "unauthorized_access_attempt": 25,
+    "maintenance_mode_on": 28,
+    "maintenance_mode_off": 28,
+    "userbot_reinstalled": 30,
+}
 
 EVENT_TAGS = {
     "installation_success": "#ЮЗЕРБОТ_СОЗДАН",
@@ -13,7 +51,7 @@ EVENT_TAGS = {
     "user_action_manage_ub": "#ДЕЙСТВИЕ_ПОЛЬЗОВАТЕЛЯ",
     "userbot_reinstalled": "#ЮЗЕРБОТ_ПЕРЕУСТАНОВЛЕН",
     "user_banned": "#БАН",
-    "user_unanned": "#РАЗБАН",
+    "user_unbanned": "#РАЗБАН",
     "userbot_transferred": "#ПЕРЕДАЧА_ЮЗЕРБОТА",
     "installation_failed": "#ОШИБКА_УСТАНОВКИ",
     "server_unreachable": "#СЕРВЕР_НЕДОСТУПЕН",
@@ -24,45 +62,51 @@ EVENT_TAGS = {
     "maintenance_mode_on": "#ТЕХ_РАБОТЫ_ВКЛ",
     "maintenance_mode_off": "#ТЕХ_РАБОТЫ_ВЫКЛ",
     "server_settings_changed": "#НАСТРОЙКИ_СЕРВЕРА",
-    "api_get_user_info": "#API_GET_INFO",
-    "api_get_logs": "#API_GET_LOGS",
-    "api_delete_userbot": "#API_DELETE_UB",
-    "api_manage_userbot": "#API_MANAGE_UB",
-    "api_exec_command": "#API_EXEC",
-    "api_regenerate_token": "#API_REGEN_TOKEN",
+    "api_event": "#API_ЛОГИ",
     "referral_created": "#РЕФ_ССЫЛКА_СОЗДАНА",
-    "referral_deleted": "#РЕФ_ССЫЛКА_УДАЛЕНА"
+    "referral_deleted": "#РЕФ_ССЫЛКА_УДАЛЕНА",
+    "session_violation": "#НАРУШЕНИЕ_ПРАВИЛ",
+    "unauthorized_access_attempt": "#НЕСАНКЦ_ДОСТУП",
 }
 
 def _format_user_link(user_data: dict) -> str:
     if not user_data or not user_data.get("id"):
         return "N/A"
-    
     user_id = user_data["id"]
     full_name = html.quote(user_data.get("full_name", str(user_id)))
-    
     return f'<a href="tg://user?id={user_id}">{full_name}</a> (<code>{user_id}</code>)'
 
-async def log_to_channel(bot: Bot, text: str):
-    if not config.LOG_CHANNEL_ID:
-        logging.warning("LOG_CHANNEL_ID не установлен в конфиге. Логирование в канал отключено.")
+async def log_to_channel(bot: Bot, text: str, topic_id: int = None):
+    if not config.LOG_CHAT_ID:
+        logging.warning("LOG_CHAT_ID не установлен. Логирование отключено.")
         return
 
+    if topic_id is None:
+        lower_text = text.lower()
+        for keyword, tid in KEYWORD_TO_TOPIC_MAP.items():
+            if keyword in lower_text:
+                topic_id = tid
+                break
+    
     try:
         await bot.send_message(
-            chat_id=config.LOG_CHANNEL_ID,
+            chat_id=config.LOG_CHAT_ID,
             text=text,
             disable_notification=True,
-            parse_mode="HTML"
+            parse_mode="HTML",
+            message_thread_id=topic_id
         )
     except TelegramAPIError as e:
-        logging.error(f"Не удалось отправить лог в канал {config.LOG_CHANNEL_ID}: {e}")
+        logging.error(f"Не удалось отправить лог в чат {config.LOG_CHAT_ID} (топик: {topic_id}): {e}")
 
 async def log_event(bot: Bot, event_type: str, data: dict):
-    if not config.LOG_CHANNEL_ID:
+    if not config.LOG_CHAT_ID:
         return
 
-    tag = EVENT_TAGS.get(event_type, f"#{event_type.upper()}")
+    is_api_event = event_type.startswith("api_")
+    
+    tag_key = "api_event" if is_api_event else event_type
+    tag = EVENT_TAGS.get(tag_key, f"#{event_type.upper()}")
 
     admin_link = _format_user_link(data.get('admin_data'))
     user_link = _format_user_link(data.get('user_data'))
@@ -81,91 +125,37 @@ async def log_event(bot: Bot, event_type: str, data: dict):
     error_text = html.quote(data.get('error', ''))
     details_text = html.quote(data.get('details', ''))
     action_text = html.quote(data.get('action', ''))
-
+    
     message_body = ""
+    topic_id = TOPIC_MAP.get(event_type)
 
-    if event_type == "installation_success":
+    if is_api_event:
+        topic_id = 23
+        message_body = (
+            f"<b>Событие:</b> <code>{html.quote(event_type)}</code>\n"
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Юзербот:</b> <code>{ub_name}</code>\n"
+            f"<b>Сервер:</b> {server_code}\n"
+            f"<b>Детали:</b> <pre>{details_text or error_text}</pre>"
+        )
+    elif event_type == "installation_success" or event_type == "installation_via_api":
         message_body = (
             f"<b>Пользователь:</b> {user_link}\n"
             f"<b>Юзербот:</b> <code>{ub_name}</code> ({ub_type.capitalize()})\n"
             f"<b>Сервер:</b> {server_code}"
         )
-    elif event_type == "installation_via_api":
-        message_body = (
-            f"<b>Пользователь:</b> {user_link}\n"
-            f"<b>Юзербот:</b> <code>{ub_name}</code> ({ub_type.capitalize()})\n"
-            f"<b>Сервер:</b> {server_code}\n"
-            f"<b>Источник:</b> API Запрос"
-        )
-    elif event_type == "api_get_user_info":
-        message_body = (
-            f"<b>Запрос от:</b> {admin_link}\n"
-            f"<b>Получена информация о пользователе:</b> {user_link}\n"
-            f"<b>Источник:</b> API Запрос (IP: <code>{details_text}</code>)"
-        )
-    elif event_type == "api_get_logs":
-        message_body = (
-            f"<b>Пользователь:</b> {user_link}\n"
-            f"<b>Запросил логи для:</b> <code>{ub_name}</code>\n"
-            f"<b>Сервер:</b> {server_code}\n"
-            f"<b>Детали:</b> {details_text}\n"
-            f"<b>Источник:</b> API Запрос (IP: <code>{error_text}</code>)"
-        )
-    elif event_type == "api_delete_userbot":
-        message_body = (
-            f"<b>Пользователь:</b> {user_link}\n"
-            f"<b>Удалил юзербота:</b> <code>{ub_name}</code>\n"
-            f"<b>Сервер:</b> {server_code}\n"
-            f"<b>Источник:</b> API Запрос (IP: <code>{details_text}</code>)"
-        )
-    elif event_type == "api_manage_userbot":
-        action_map = {"start": "🚀 Запустил", "stop": "🔴 Остановил", "restart": "🔄 Перезапустил"}
-        action_str = action_map.get(action_text, action_text)
-        message_body = (
-            f"<b>Пользователь:</b> {user_link}\n"
-            f"<b>Действие:</b> {action_str} юзербота <code>{ub_name}</code>\n"
-            f"<b>Сервер:</b> {server_code}\n"
-            f"<b>Источник:</b> API Запрос (IP: <code>{details_text}</code>)"
-        )
-    elif event_type == "api_exec_command":
-        message_body = (
-            f"<b>Пользователь:</b> {user_link}\n"
-            f"<b>Выполнил команду в:</b> <code>{ub_name}</code>\n"
-            f"<b>Сервер:</b> {server_code}\n"
-            f"<b>Команда:</b> <pre>{details_text}</pre>\n"
-            f"<b>Источник:</b> API Запрос (IP: <code>{error_text}</code>)"
-        )
-    elif event_type == "api_regenerate_token":
-        message_body = (
-            f"<b>Пользователь:</b> {user_link}\n"
-            f"<b>Действие:</b> Сгенерировал новый API токен\n"
-            f"<b>Источник:</b> API Запрос (IP: <code>{details_text}</code>)"
-        )
     elif event_type == "deletion_by_owner":
-        message_body = (
-            f"<b>Пользователь:</b> {user_link}\n"
-            f"<b>Юзербот:</b> <code>{ub_name}</code>"
-        )
+        message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>")
     elif event_type == "new_user_registered":
         message_body = f"<b>Пользователь:</b> {user_link}"
-        
-    elif event_type == "user_action_manage_ub":
-        action_map = {"start": "🚀 Запустил", "stop": "🔴 Остановил", "restart": "🔄 Перезапустил"}
-        action_str = action_map.get(action_text, action_text)
-        message_body = f"<b>Пользователь:</b> {user_link}\n<b>Действие:</b> {action_str} юзербота <code>{ub_name}</code>"
-
-    elif event_type == "user_banned":
-        details = data.get("details", "")
-        message_body = (
-            f"<b>Администратор:</b> {admin_link}\n"
-            f"<b>Забанил пользователя:</b> {user_link}"
-        )
-        if details:
-            message_body += f"\n<b>Детали:</b> {html.quote(details)}"
-    
-    elif event_type == "user_unbanned":
-        message_body = f"<b>Администратор:</b> {admin_link}\n<b>Разбанил пользователя:</b> {user_link}"
-    
+    elif event_type == "server_unreachable":
+        message_body = f"<b>Сервер:</b> {server_code} (<code>{server_ip}</code>)\n<b>Статус:</b> Недоступен. Отключен для пользователей."
+    elif event_type == "server_recovered":
+        message_body = f"<b>Сервер:</b> {server_code} (<code>{server_ip}</code>)\n<b>Статус:</b> Снова в сети. {details_text}"
+    elif event_type == "server_settings_changed":
+        message_body = (f"<b>Сервер:</b> {server_code}\n<b>Администратор:</b> {admin_link}\n<b>Детали:</b> {details_text}")
+    elif event_type == "installation_failed":
+        message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Ошибка:</b> <pre>{error_text}</pre>")
     elif event_type == "deletion_by_admin":
         message_body = (
             f"<b>Администратор:</b> {admin_link}\n"
@@ -173,59 +163,25 @@ async def log_event(bot: Bot, event_type: str, data: dict):
             f"<b>Юзербот:</b> <code>{ub_name}</code>\n"
             f"<b>Причина:</b> {reason}"
         )
-    
-    elif event_type == "server_unreachable":
-        message_body = f"<b>Сервер:</b> {server_code} (<code>{server_ip}</code>)\n<b>Статус:</b> Недоступен. Отключен для пользователей."
-
-    elif event_type == "server_recovered":
-        details = data.get("details", "")
-        message_body = f"<b>Сервер:</b> {server_code} (<code>{server_ip}</code>)\n<b>Статус:</b> Снова в сети. {details}"
-
-    elif event_type == "inactive_session_warning":
-        message_body = f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Статус:</b> Отправлено предупреждение об отсутствии сессии."
-        
-    elif event_type == "panel_shared_accepted":
-        message_body = (
-            f"<b>Владелец:</b> {sharer_link}\n"
-            f"<b>Выдал доступ к</b> <code>{ub_name}</code>\n"
-            f"<b>Пользователю:</b> {user_link}"
-        )
-
-    elif event_type == "panel_share_revoked":
-        message_body = (
-            f"<b>Владелец:</b> {sharer_link}\n"
-            f"<b>Отозвал доступ у</b> {user_link}\n"
-            f"<b>к юзерботу:</b> <code>{ub_name}</code>"
-        )
-    
-    elif event_type == "referral_created":
-        message_body = (
-            f"<b>Администратор:</b> {admin_link}\n"
-            f"<b>Действие:</b> {details_text}"
-        )
-
-    elif event_type == "referral_deleted":
-        message_body = (
-            f"<b>Администратор:</b> {admin_link}\n"
-            f"<b>Действие:</b> {details_text}"
-        )
-
+    elif event_type == "session_violation":
+        message_body = data.get("formatted_text", "Ошибка форматирования лога нарушения.")
+    elif event_type in ["referral_created", "referral_deleted"]:
+        message_body = (f"<b>Администратор:</b> {admin_link}\n<b>Действие:</b> {details_text}")
+    elif event_type == "user_banned":
+        message_body = (f"<b>Администратор:</b> {admin_link}\n<b>Забанил пользователя:</b> {user_link}\n<b>Детали:</b> {details_text}")
+    elif event_type == "user_unbanned":
+        message_body = f"<b>Администратор:</b> {admin_link}\n<b>Разбанил пользователя:</b> {user_link}"
+    elif event_type == "unauthorized_access_attempt":
+        message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Действие:</b> Попытка несанкционированного доступа\n<b>Детали:</b> {details_text}")
+    elif event_type in ["maintenance_mode_on", "maintenance_mode_off"]:
+        status = "Включен" if event_type == "maintenance_mode_on" else "Выключен"
+        message_body = f"<b>Администратор:</b> {admin_link}\n<b>Статус:</b> {status} режим тех. работ"
+    elif event_type == "userbot_reinstalled":
+        message_body = f"<b>Пользователь:</b> {user_link}\n<b>Переустановил юзербота:</b> <code>{ub_name}</code>"
     else:
-        if event_type == "installation_failed":
-            message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Ошибка:</b> <pre>{error_text}</pre>")
-        elif event_type == "maintenance_mode_on":
-            message_body = f"<b>Администратор:</b> {admin_link}\n<b>Статус:</b> Включен режим технических работ"
-        elif event_type == "maintenance_mode_off":
-            message_body = f"<b>Администратор:</b> {admin_link}\n<b>Статус:</b> Выключен режим технических работ"
-        elif event_type == "server_settings_changed":
-            message_body = (f"<b>Сервер:</b> {server_code}\n<b>Администратор:</b> {admin_link}\n<b>Детали:</b> {details_text}")
-        elif event_type == "userbot_reinstalled":
-            message_body = f"<b>Пользователь:</b> {user_link}\n<b>Переустановил юзербота:</b> <code>{ub_name}</code>"
-        elif event_type == "userbot_transferred":
-            message_body = (f"<b>Старый владелец:</b> {user_link}\n<b>Новый владелец:</b> {new_owner_link}\n<b>Юзербот:</b> <code>{ub_name}</code>")
-        else:
-            message_body = f"ℹ️ <b>Неизвестное событие: {html.quote(event_type)}</b>\n\n<pre>{html.quote(str(data))}</pre>"
+        message_body = f"ℹ️ <b>Событие: {html.quote(event_type)}</b>\n\n<pre>{html.quote(str(data))}</pre>"
+        topic_id = None
 
     if message_body:
         full_text = f"{tag}\n\n{message_body}"
-        await log_to_channel(bot, full_text)
+        await log_to_channel(bot, full_text, topic_id=topic_id)

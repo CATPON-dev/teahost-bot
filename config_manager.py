@@ -30,6 +30,7 @@ class Config:
             self.STATS_TOPIC_ID = None
         else:
             self.STATUS_CHANNEL_ID = -1002536796447
+            self.LOG_CHAT_ID = self._config.get("log_chat_id")
             self.SUPPORT_CHAT_ID = "@SharkHost_support" 
             self.SUPPORT_TOPIC_ID = 22 
             self.LOG_CHANNEL_ID = self._config.get("log_channel_id")
