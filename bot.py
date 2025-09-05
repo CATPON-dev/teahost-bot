@@ -215,7 +215,6 @@ def pluralize_userbot(n):
         return "юзерботов"
 
 async def update_stats_message(bot: Bot, force_resend: bool = False):
-    """Обновление статистики - с обработкой ошибок для планировщика"""
     try:
         global STATS_MESSAGE_ID
         if not config.STATS_CHAT_ID or not config.STATS_TOPIC_ID:
@@ -231,6 +230,7 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
             STATS_MESSAGE_ID = None
             _save_stats_id(None)
         try:
+            total_users = len(await db.get_all_bot_users())
             all_ubs_info = await db.get_all_userbots_full_info()
             total_ubs = len(all_ubs_info)
             bots_by_type = defaultdict(int)
@@ -242,7 +242,14 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
                 "Legacy": "🌙", "Unknown": "❓"
             }
             text_parts = ["📊 <b>SharkHost статистика</b>"]
-            text_parts.append(f"<blockquote>Всего юзерботов: <code>{total_ubs}</code></blockquote>")
+            
+            text_parts.append(
+                f"<blockquote>"
+                f"Всего пользователей: <code>{total_users}</code>\n"
+                f"Всего юзерботов: <code>{total_ubs}</code>"
+                f"</blockquote>"
+            )
+            
             text_parts.append("<b>⚙️ Распределение по типам:</b>")
             type_stats = []
             all_known_types = ["Fox", "Heroku", "Hikka", "Legacy"]
