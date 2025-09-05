@@ -4,14 +4,14 @@ import math
 import logging
 import json
 import os
-import uuid
-import sys
-import asyncio
-import subprocess
-import time
-import asyncssh
-from datetime import datetime, date, timedelta
-from html import escape
+# import uuid
+# import sys
+# import asyncio
+# import subprocess
+# import time
+# import asyncssh
+# from datetime import datetime, date, timedelta
+# from html import escape
 import uuid
 from io import BytesIO
 import io
@@ -20,6 +20,7 @@ import re
 import secrets
 import shutil
 import pytz
+import asyncio
 
 from aiogram import Router, types, Bot, F, html
 from aiogram.filters import Command, CommandObject, StateFilter
@@ -3814,17 +3815,61 @@ async def cmd_premium_access(message: types.Message, command: CommandObject, bot
             await message.reply("❌ Не удалось обновить статус пользователя в базе данных.")
     else:
         await message.reply("Неизвестное действие. Используйте <code>give, ungive, list</code>.")
-      
 
 @router.message(Command("admin"), IsSuperAdmin())
 async def cmd_admin(message: types.Message, command: CommandObject, bot: Bot):
     args = command.args.split() if command.args else []
 
+    if not args:
+        await message.reply(
+            "Формат:\n"
+            "/admin &lt;add|del&gt; &lt;admin|super&gt; &lt;ID|@|reply&gt;\n"
+            "/admin list &lt;admin|super&gt;"
+        )
+        return
+
+    action = args[0].lower()
+
+    if action == "list":
+        if len(args) != 2:
+            await message.reply("Формат: /admin list &lt;admin|super&gt;")
+            return
+
+        level = args[1].lower()
+        ids_to_show = []
+        header_text = ""
+
+        if level == "admin":
+            ids_to_show = get_admin_ids()
+            header_text = "<b>Администраторы:</b>\n"
+        elif level == "super":
+            ids_to_show = config.SUPER_ADMIN_IDS
+            header_text = "<b>Супер-администраторы:</b>\n"
+        else:
+            await message.reply("Ошибка: неверный уровень. Используйте: admin, super.")
+            return
+
+        if not ids_to_show:
+            await message.reply("Список пуст.")
+            return
+        
+        tasks = [bot.get_chat(user_id) for user_id in set(ids_to_show)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        text_parts = []
+        for user_id, result in zip(set(ids_to_show), results):
+            if isinstance(result, Exception):
+                text_parts.append(f"• <code>{user_id}</code> (Не удалось получить инфо)")
+            else:
+                text_parts.append(f"• {html.quote(result.full_name)} (<code>{user_id}</code>)")
+        
+        await message.reply(header_text + "\n".join(text_parts))
+        return
+
     if len(args) < 2 or (len(args) < 3 and not message.reply_to_message):
         await message.reply("Формат: /admin &lt;add|del&gt; &lt;admin|super&gt; &lt;ID|@|reply&gt;")
         return
 
-    action = args[0].lower()
     level = args[1].lower()
     
     if action not in ["add", "del"] or level not in ["admin", "super"]:
