@@ -3,28 +3,11 @@ from aiogram import Bot, html
 from aiogram.exceptions import TelegramAPIError
 from config_manager import config
 
-KEYWORD_TO_TOPIC_MAP = {
-    "юзербот создан": 5, "api установка": 5,
-    "юзербот удален": 7,
-    "новый пользователь": 7,
-    "недоступен": 9,
-    "восстановлен": 11,
-    "настройки сервера": 13,
-    "ошибка установки": 15,
-    "удален администратором": 17,
-    "обнаружено >1 сессии": 19,
-    "реферальная ссылка": 21,
-    "api запрос": 23, "api_": 23,
-    "забанил": 25, "разбанил": 25, "попытка несанкционированного доступа": 25,
-    "тех. работ": 28,
-    "юзербот переустановлен": 30
-}
-
 TOPIC_MAP = {
     "installation_success": 5,
     "installation_via_api": 5,
     "deletion_by_owner": 7,
-    "new_user_registered": 7,
+    "new_user_registered": 3,
     "server_unreachable": 9,
     "server_recovered": 11,
     "server_settings_changed": 13,
@@ -40,6 +23,11 @@ TOPIC_MAP = {
     "maintenance_mode_on": 28,
     "maintenance_mode_off": 28,
     "userbot_reinstalled": 30,
+}
+
+KEYWORD_TO_TOPIC_MAP = {
+    "обнаружены недоступные серверы": 9,
+    "обнаружено >1 сессии": 19,
 }
 
 EVENT_TAGS = {
@@ -130,7 +118,7 @@ async def log_event(bot: Bot, event_type: str, data: dict):
     topic_id = TOPIC_MAP.get(event_type)
 
     if is_api_event:
-        topic_id = 23
+        topic_id = TOPIC_MAP.get("api_event")
         message_body = (
             f"<b>Событие:</b> <code>{html.quote(event_type)}</code>\n"
             f"<b>Пользователь:</b> {user_link}\n"
@@ -138,12 +126,8 @@ async def log_event(bot: Bot, event_type: str, data: dict):
             f"<b>Сервер:</b> {server_code}\n"
             f"<b>Детали:</b> <pre>{details_text or error_text}</pre>"
         )
-    elif event_type == "installation_success" or event_type == "installation_via_api":
-        message_body = (
-            f"<b>Пользователь:</b> {user_link}\n"
-            f"<b>Юзербот:</b> <code>{ub_name}</code> ({ub_type.capitalize()})\n"
-            f"<b>Сервер:</b> {server_code}"
-        )
+    elif event_type in ["installation_success", "installation_via_api"]:
+        message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code> ({ub_type.capitalize()})\n<b>Сервер:</b> {server_code}")
     elif event_type == "deletion_by_owner":
         message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>")
     elif event_type == "new_user_registered":
@@ -157,12 +141,7 @@ async def log_event(bot: Bot, event_type: str, data: dict):
     elif event_type == "installation_failed":
         message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Ошибка:</b> <pre>{error_text}</pre>")
     elif event_type == "deletion_by_admin":
-        message_body = (
-            f"<b>Администратор:</b> {admin_link}\n"
-            f"<b>Владелец:</b> {user_link}\n"
-            f"<b>Юзербот:</b> <code>{ub_name}</code>\n"
-            f"<b>Причина:</b> {reason}"
-        )
+        message_body = (f"<b>Администратор:</b> {admin_link}\n<b>Владелец:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Причина:</b> {reason}")
     elif event_type == "session_violation":
         message_body = data.get("formatted_text", "Ошибка форматирования лога нарушения.")
     elif event_type in ["referral_created", "referral_deleted"]:

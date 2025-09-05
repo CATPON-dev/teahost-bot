@@ -55,6 +55,45 @@ class Config:
         if value is None:
             raise ValueError(f"Отсутствует ключ '{key}' в {CONFIG_FILE}")
         return value
+        
+def _read_raw_config():
+    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def _write_raw_config(data):
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+def reload_config():
+    global config
+    config = Config()
+
+def add_super_admin(user_id: int) -> bool:
+    if user_id in config.SUPER_ADMIN_IDS:
+        return False
+    raw_config = _read_raw_config()
+    if "admin_user_id" not in raw_config or not isinstance(raw_config["admin_user_id"], list):
+        raw_config["admin_user_id"] = []
+    raw_config["admin_user_id"].append(user_id)
+    _write_raw_config(raw_config)
+    reload_config()
+    return True
+
+def remove_super_admin(user_id: int) -> bool:
+    if user_id not in config.SUPER_ADMIN_IDS:
+        return False
+    raw_config = _read_raw_config()
+    if "admin_user_id" in raw_config and isinstance(raw_config["admin_user_id"], list):
+        try:
+            raw_config["admin_user_id"].remove(user_id)
+            _write_raw_config(raw_config)
+            reload_config()
+            return True
+        except ValueError:
+            return False
+    return False
+
+reload_config()
 
 config = Config()
 # --- END OF FILE config_manager.py ---

@@ -29,6 +29,8 @@ from aiogram.types import InlineKeyboardButton, BufferedInputFile, FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import Message, CallbackQuery
 from collections import defaultdict
+from config_manager import add_super_admin, remove_super_admin, config
+from admin_manager import add_admin, remove_admin, get_admin_ids, get_all_admins
 
 import database as db
 import system_manager as sm
@@ -3812,4 +3814,61 @@ async def cmd_premium_access(message: types.Message, command: CommandObject, bot
             await message.reply("❌ Не удалось обновить статус пользователя в базе данных.")
     else:
         await message.reply("Неизвестное действие. Используйте <code>give, ungive, list</code>.")
+      
+
+@router.message(Command("admin"), IsSuperAdmin())
+async def cmd_admin(message: types.Message, command: CommandObject, bot: Bot):
+    args = command.args.split() if command.args else []
+
+    if len(args) < 2 or (len(args) < 3 and not message.reply_to_message):
+        await message.reply("Формат: /admin &lt;add|del&gt; &lt;admin|super&gt; &lt;ID|@|reply&gt;")
+        return
+
+    action = args[0].lower()
+    level = args[1].lower()
+    
+    if action not in ["add", "del"] or level not in ["admin", "super"]:
+        await message.reply("Ошибка: неверное действие или уровень.")
+        return
+    
+    target_args_str = " ".join(args[2:]) if len(args) > 2 else ""
+    target_cmd_obj = CommandObject(command="admin", args=target_args_str)
+    target_user_data, error = await _get_target_user_data(message, target_cmd_obj, bot)
+
+    if error:
+        await message.reply("Ошибка: укажите пользователя.")
+        return
+
+    target_id = target_user_data['tg_user_id']
+
+    if target_id == message.from_user.id:
+        await message.reply("Вы не можете изменять свои права.")
+        return
+
+    if action == "add":
+        if level == "admin":
+            if target_id in config.SUPER_ADMIN_IDS:
+                await message.reply("❗️ Уже является супер-админом.")
+                return
+            if add_admin(target_id):
+                await message.reply("✅ Права админа выданы.")
+            else:
+                await message.reply("❗️ Уже является админом.")
+        elif level == "super":
+            if add_super_admin(target_id):
+                await message.reply("✅ Права супер-админа выданы.")
+            else:
+                await message.reply("❗️ Уже является супер-админом.")
+    
+    elif action == "del":
+        if level == "admin":
+            if remove_admin(target_id):
+                await message.reply("✅ Права админа отозваны.")
+            else:
+                await message.reply("❗️ Не является админом.")
+        elif level == "super":
+            if remove_super_admin(target_id):
+                await message.reply("✅ Права супер-админа отозваны.")
+            else:
+                await message.reply("❗️ Не является супер-админом.")
 # --- END OF FILE admin_handlers.py ---
