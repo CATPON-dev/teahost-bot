@@ -737,4 +737,11 @@ def get_servers_paginator_keyboard(page: int, total_pages: int):
 
     builder.row(*nav_buttons)
     return builder.as_markup()
+    
+def get_confirm_delete_user_keyboard(user_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Да, удалить", callback_data=f"deluser_db_confirm:{user_id}")
+    builder.button(text="❌ Отмена", callback_data="deluser_db_cancel")
+    builder.adjust(2)
+    return builder.as_markup()
 # --- END OF FILE keyboards.py ---

@@ -1034,3 +1034,15 @@ async def _modify_column_if_needed(cursor, table_name, column_name, new_column_d
     if result and result[0].lower() != 'bigint':
         await cursor.execute(f"ALTER TABLE `{table_name}` MODIFY COLUMN `{column_name}` {new_column_definition}")
         logger.info(f"ебал.")
+        
+async def delete_user_from_db(user_id: int) -> bool:
+    if not await ensure_connection():
+        return False
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("DELETE FROM users WHERE tg_user_id = %s", (user_id,))
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка удаления пользователя {user_id} из БД: {e}")
+        return False

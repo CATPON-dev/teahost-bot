@@ -3871,4 +3871,47 @@ async def cmd_admin(message: types.Message, command: CommandObject, bot: Bot):
                 await message.reply("✅ Права супер-админа отозваны.")
             else:
                 await message.reply("❗️ Не является супер-админом.")
+                
+@router.message(Command("deluser_db"), IsSuperAdmin())
+async def cmd_deluser_db(message: types.Message, command: CommandObject, bot: Bot):
+    target_user_data, error = await _get_target_user_data(message, command, bot)
+
+    if error:
+        await message.reply("Ошибка: Пользователь не найден или не указан.")
+        return
+
+    target_id = target_user_data['tg_user_id']
+
+    if target_id == message.from_user.id:
+        await message.reply("Нельзя удалить самого себя.")
+        return
+
+    text = (
+        "Вы уверены, что хотите ПОЛНОСТЬЮ удалить пользователя из базы данных?\n\n"
+        "<b>Это действие необратимо и удалит всех его юзерботов.</b>"
+    )
+    markup = kb.get_confirm_delete_user_keyboard(target_id)
+    await message.reply(text, reply_markup=markup)
+
+@router.callback_query(F.data.startswith("deluser_db_confirm:"), IsSuperAdmin())
+async def cq_deluser_db_confirm(call: types.CallbackQuery):
+    await call.answer()
+    target_id = int(call.data.split(":")[1])
+    
+    await call.message.edit_text("🗑️ Удаление из базы данных...")
+    
+    user_exists = await db.get_user_data(target_id)
+    if not user_exists:
+        await call.message.edit_text("❗️ Пользователь уже удален.")
+        return
+
+    if await db.delete_user_from_db(target_id):
+        await call.message.edit_text("✅ Пользователь и все его данные успешно удалены.")
+    else:
+        await call.message.edit_text("❌ Не удалось удалить пользователя.")
+
+@router.callback_query(F.data == "deluser_db_cancel", IsSuperAdmin())
+async def cq_deluser_db_cancel(call: types.CallbackQuery):
+    await call.answer()
+    await call.message.edit_text("🚫 Удаление отменено.")
 # --- END OF FILE admin_handlers.py ---
