@@ -4,6 +4,7 @@ import math
 import logging
 import json
 import os
+import json
 import uuid
 import sys
 import asyncio
@@ -33,6 +34,7 @@ from aiogram.types import Message, CallbackQuery
 from collections import defaultdict
 from config_manager import add_super_admin, remove_super_admin, config
 from admin_manager import add_admin, remove_admin, get_admin_ids, get_all_admins
+from constants import CLEANUP_PROPOSAL_MESSAGE_ID_FILE
 
 import database as db
 import system_manager as sm
@@ -4006,7 +4008,8 @@ async def cq_cleanup_missing_sessions_confirm(call: types.CallbackQuery, bot: Bo
         await asyncio.sleep(0.5)
 
     await call.message.edit_text(f"✅ Очистка завершена. Удалено {deleted_count} юзерботов.")
-
+    _clear_cleanup_message_id_file()
+    
 @router.callback_query(F.data.startswith("cleanup_cancel:"), IsSuperAdmin())
 async def cq_cleanup_missing_sessions_cancel(call: types.CallbackQuery):
     cleanup_id = call.data.split(":")[1]
@@ -4014,4 +4017,11 @@ async def cq_cleanup_missing_sessions_cancel(call: types.CallbackQuery):
     await call.answer("Отменено!")
     await call.message.delete()
     await call.message.answer("Очистка отменена!")
-# --- END OF FILE admin_handlers.py ---
+    _clear_cleanup_message_id_file()
+    
+def _clear_cleanup_message_id_file():
+    if os.path.exists(CLEANUP_PROPOSAL_MESSAGE_ID_FILE):
+        try:
+            os.remove(CLEANUP_PROPOSAL_MESSAGE_ID_FILE)
+        except OSError as e:
+            logging.error(f"Не удалось удалить файл ID сообщения об очистке: {e}")

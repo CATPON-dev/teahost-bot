@@ -5,11 +5,14 @@ from html import escape
 from aiogram import Bot
 import server_config
 import uuid
+import os
 import system_manager as sm
 import database as db
 from channel_logger import log_event
 import keyboards as kb
 from config_manager import config
+import json
+from constants import CLEANUP_PROPOSAL_MESSAGE_ID_FILE
 
 CHECK_SEMAPHORE = asyncio.Semaphore(10)
 PENDING_WARNINGS = []
@@ -17,6 +20,21 @@ WARNINGS_LOCK = asyncio.Lock()
 WARNED_ON_MISSING_SESSION = set()
 CLEANUP_CANDIDATES_CACHE = {}
 
+def _read_cleanup_message_id():
+    if not os.path.exists(CLEANUP_PROPOSAL_MESSAGE_ID_FILE):
+        return None
+    try:
+        with open(CLEANUP_PROPOSAL_MESSAGE_ID_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get("message_id")
+    except (json.JSONDecodeError, FileNotFoundError):
+        return None
+
+def _write_cleanup_message_id(message_id: int):
+    os.makedirs(os.path.dirname(CLEANUP_PROPOSAL_MESSAGE_ID_FILE), exist_ok=True)
+    with open(CLEANUP_PROPOSAL_MESSAGE_ID_FILE, 'w') as f:
+        json.dump({"message_id": message_id}, f)
+        
 def pluralize_session(count):
     if count % 10 == 1 and count % 100 != 11:
         return "сессия"
@@ -288,6 +306,13 @@ async def run_missing_session_check_and_propose_cleanup(bot: Bot):
         logging.info("Проверка завершена, юзерботов без сессии не найдено.")
         return
 
+    old_message_id = _read_cleanup_message_id()
+    if old_message_id:
+        try:
+            await bot.delete_message(chat_id=config.LOG_CHAT_ID, message_id=old_message_id)
+        except Exception as e:
+            logging.warning(f"Не удалось удалить старое сообщение об очистке: {e}")
+
     total_ubs = len(await db.get_all_userbots_full_info())
     candidates_count = len(candidates)
     remaining_count = total_ubs - candidates_count
@@ -305,9 +330,11 @@ async def run_missing_session_check_and_propose_cleanup(bot: Bot):
     
     markup = kb.get_cleanup_confirmation_keyboard(cleanup_id)
     
-    await bot.send_message(
+    sent_message = await bot.send_message(
         chat_id=config.LOG_CHAT_ID,
         text=text,
         reply_markup=markup,
         message_thread_id=140
     )
+    
+    _write_cleanup_message_id(sent_message.message_id)
