@@ -2476,4 +2476,23 @@ async def cq_toggle_api_token_visibility(call: types.CallbackQuery, state: FSMCo
     markup = kb.get_api_token_keyboard(is_shown=new_is_shown)
     await call.message.edit_caption(caption=text, reply_markup=markup)
     await state.set_state(new_state)
+    
+@router.message(Command("info"))
+async def cmd_info(message: types.Message):
+    git_info = await sm.get_git_info()
+    
+    status = git_info.get("status", "N/A")
+    commit_hash = git_info.get("last_commit_hash", "N/A")
+    commit_msg = html.quote(git_info.get("last_commit_msg", "N/A"))
+    branch = html.quote(git_info.get("branch", "N/A"))
+    
+    text = (
+        f"<b>🦈 SharkHost</b>\n\n"
+        f"{status}\n\n"
+        f"📁 <b>Last commit:</b> <code>#{commit_hash}</code> - <i>{commit_msg}</i>\n"
+        f"🌳 <b>Branch:</b> <code>{branch}</code>\n"
+        f"🧑‍💻 <b>Devs:</b> @aloya_uwu & @nloveuser"
+    )
+    
+    await message.reply(text)
 # --- END OF FILE user_handlers.py ---

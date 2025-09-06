@@ -832,3 +832,41 @@ async def get_userbot_logs(ub_username: str, server_ip: str, log_type: str = "jo
     except Exception as e:
         logger_lm.error(f"Exception in get_userbot_logs for {ub_username} ({log_type}) on {server_ip}: {e}")
         return f"❌ Исключение при получении логов: {str(e)}"
+        
+async def get_git_info() -> dict:
+    info = {
+        "status": "N/A",
+        "last_commit_hash": "N/A",
+        "last_commit_msg": "N/A",
+        "branch": "N/A"
+    }
+
+    try:
+        branch_res = await run_command_async("git rev-parse --abbrev-ref HEAD", LOCAL_IP)
+        if branch_res.get("success"):
+            info["branch"] = branch_res.get("output", "N/A")
+
+        commit_res = await run_command_async("git log -1 --pretty='%h|%s'", LOCAL_IP)
+        if commit_res.get("success") and commit_res.get("output"):
+            parts = commit_res.get("output").split('|', 1)
+            if len(parts) == 2:
+                info["last_commit_hash"] = parts[0].strip()
+                info["last_commit_msg"] = parts[1].strip()
+
+        await run_command_async("git remote update", LOCAL_IP, timeout=60)
+        status_res = await run_command_async("git status -uno", LOCAL_IP)
+        if status_res.get("success"):
+            output = status_res.get("output", "")
+            if "Your branch is up to date" in output:
+                info["status"] = "👌 Up-to-date"
+            elif "Your branch is behind" in output:
+                info["status"] = "😔 Update required"
+            else:
+                info["status"] = "🤔 Unknown"
+                
+    except Exception as e:
+        logging.error(f"Ошибка при получении информации из Git: {e}")
+        for key in info:
+            info[key] = "Error"
+            
+    return info
