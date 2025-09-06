@@ -92,3 +92,7 @@ Thumbs.db
 *_manager.py.bak
 *.bak.старый
 *.bak.не.изменено
+ids_message/stats_message_id.json
+ids_message/status_message_ids.json
+ip.json.bak
+   
