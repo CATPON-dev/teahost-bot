@@ -744,4 +744,11 @@ def get_confirm_delete_user_keyboard(user_id: int):
     builder.button(text="❌ Отмена", callback_data="deluser_db_cancel")
     builder.adjust(2)
     return builder.as_markup()
+    
+def get_cleanup_confirmation_keyboard(cleanup_id: str):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Очистить", callback_data=f"cleanup_confirm:{cleanup_id}")
+    builder.button(text="❌ Отменить", callback_data=f"cleanup_cancel:{cleanup_id}")
+    builder.adjust(2)
+    return builder.as_markup()
 # --- END OF FILE keyboards.py ---

@@ -21,6 +21,7 @@ import secrets
 import shutil
 import pytz
 import asyncio
+import session_checker
 
 from aiogram import Router, types, Bot, F, html
 from aiogram.filters import Command, CommandObject, StateFilter
@@ -3963,4 +3964,54 @@ async def cq_deluser_db_confirm(call: types.CallbackQuery):
 async def cq_deluser_db_cancel(call: types.CallbackQuery):
     await call.answer()
     await call.message.edit_text("🚫 Удаление отменено.")
+
+@router.message(Command("update_ns"), IsSuperAdmin())
+async def cmd_update_ns(message: types.Message, bot: Bot):
+    await message.reply("⏳ Запускаю принудительную проверку...")
+    await session_checker.run_missing_session_check_and_propose_cleanup(bot)
+
+@router.callback_query(F.data.startswith("cleanup_confirm:"), IsSuperAdmin())
+async def cq_cleanup_missing_sessions_confirm(call: types.CallbackQuery, bot: Bot):
+    cleanup_id = call.data.split(":")[1]
+    candidates = session_checker.CLEANUP_CANDIDATES_CACHE.pop(cleanup_id, None)
+
+    if not candidates:
+        await call.answer("Данные для этой операции устарели.", show_alert=True)
+        await call.message.delete()
+        return
+
+    await call.answer("Начинаю очистку...")
+    await call.message.edit_text(f"⏳ Начинаю очистку... Будет удалено {len(candidates)} юзерботов.")
+
+    bot_info = await bot.get_me()
+    admin_bot_data = {"id": bot_info.id, "full_name": bot_info.full_name}
+    
+    deleted_count = 0
+    for userbot in candidates:
+        ub_username = userbot['ub_username']
+        server_ip = userbot['server_ip']
+        owner_id = userbot['tg_user_id']
+        
+        await api_manager.delete_container(ub_username, server_ip)
+        await db.delete_userbot_record(ub_username)
+        deleted_count += 1
+        
+        log_data = {
+            "admin_data": admin_bot_data,
+            "user_data": {"id": owner_id},
+            "ub_info": {"name": ub_username},
+            "reason": "Автоматическая очистка (отсутствует файл сессии)"
+        }
+        await log_event(bot, "deletion_by_admin", log_data)
+        await asyncio.sleep(0.5)
+
+    await call.message.edit_text(f"✅ Очистка завершена. Удалено {deleted_count} юзерботов.")
+
+@router.callback_query(F.data.startswith("cleanup_cancel:"), IsSuperAdmin())
+async def cq_cleanup_missing_sessions_cancel(call: types.CallbackQuery):
+    cleanup_id = call.data.split(":")[1]
+    session_checker.CLEANUP_CANDIDATES_CACHE.pop(cleanup_id, None)
+    await call.answer("Отменено!")
+    await call.message.delete()
+    await call.message.answer("Очистка отменена!")
 # --- END OF FILE admin_handlers.py ---

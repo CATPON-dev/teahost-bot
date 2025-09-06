@@ -4,10 +4,18 @@ import math
 from html import escape
 from aiogram import Bot
 import server_config
+import uuid
 import system_manager as sm
 import database as db
+from channel_logger import log_event
+import keyboards as kb
+from config_manager import config
 
 CHECK_SEMAPHORE = asyncio.Semaphore(10)
+PENDING_WARNINGS = []
+WARNINGS_LOCK = asyncio.Lock()
+WARNED_ON_MISSING_SESSION = set()
+CLEANUP_CANDIDATES_CACHE = {}
 
 def pluralize_session(count):
     if count % 10 == 1 and count % 100 != 11:
@@ -123,7 +131,7 @@ async def format_session_check_report(server_results: dict, view_mode: str, page
         full_text = "<blockquote>" + header + "\n" + "\n\n".join(content_parts) + "</blockquote>"
         return full_text, 1
         
-    else: # view_mode == "normal"
+    else:
         header = "✅ <b>Пользователи с 0 или 1 сессией:</b>\n"
         ITEMS_PER_PAGE = 15
         
@@ -164,8 +172,6 @@ async def format_session_check_report(server_results: dict, view_mode: str, page
 SESSION_VIOLATION_CACHE = set()
 
 async def check_and_log_session_violations(bot: Bot, force: bool = False) -> int:
-    from channel_logger import log_to_channel
-
     if not force:
         logging.info("Running scheduled check for session violations...")
     
@@ -203,32 +209,105 @@ async def check_and_log_session_violations(bot: Bot, force: bool = False) -> int
         owner_id = ub_data.get('tg_user_id')
         owner_data = await db.get_user_data(owner_id) if owner_id else None
 
-        user_info = f"<code>{username}</code>"
+        user_info_for_log = {"id": owner_id}
+        if owner_data:
+            user_info_for_log["full_name"] = owner_data.get('full_name', '')
+            
+        server_details = servers_info.get(details['ip'], {})
+        
+        files_str = "\n".join([f"    - <code>{escape(f)}</code>" for f in details['files']])
+        
+        user_info_display = f"<code>{username}</code>"
         if owner_data:
             full_name = escape(owner_data.get('full_name', ''))
             user_link = f"<a href='tg://user?id={owner_id}'>{full_name}</a>"
-            user_info = f"{user_link} (<code>{owner_id}</code>)"
-        
-        server_details = servers_info.get(details['ip'], {})
-        server_flag = server_details.get("flag", "🏳️")
-        server_code = server_details.get("code", "N/A")
-        
-        files_str = "\n".join([f"    - <code>{escape(f)}</code>" for f in details['files']])
+            user_info_display = f"{user_link} (<code>{owner_id}</code>)"
 
-        log_tag = "#Принудительная_проверка_сессий" if force else "#Нарушение_правил"
-        
-        log_text = (
-            f"<b>{log_tag} (Обнаружено >1 сессии)</b>\n\n"
-            f"👤 <b>Пользователь:</b> {user_info}\n"
-            f"🤖 <b>Юзербот:</b> <code>{escape(username)}</code>\n"
-            f"🖥️ <b>Сервер:</b> {server_flag} {server_code}\n\n"
+        formatted_text = (
+            f"<b>Пользователь:</b> {user_info_display}\n"
+            f"<b>Юзербот:</b> <code>{escape(username)}</code>\n"
+            f"<b>Сервер:</b> {server_details.get('flag', '🏳️')} {server_details.get('code', 'N/A')}\n\n"
             f"🔎 <b>Обнаружено сессий:</b> {details['count']} шт.\n"
             f"📂 <b>Файлы сессий:</b>\n{files_str}"
         )
 
-        await log_to_channel(bot, log_text)
+        log_data = {
+            "user_data": user_info_for_log,
+            "ub_info": {"name": username},
+            "server_info": {"ip": details['ip'], "code": server_details.get('code', 'N/A')},
+            "formatted_text": formatted_text
+        }
+        
+        await log_event(bot, "session_violation", log_data)
+
         if not force:
             SESSION_VIOLATION_CACHE.add(username)
         await asyncio.sleep(1)
 
     return violations_found_count
+
+async def collect_missing_session_userbots() -> list:
+    all_servers = server_config.get_servers()
+    tasks = []
+    for ip in all_servers:
+        if ip == sm.LOCAL_IP: continue
+        tasks.append(_check_server_for_missing_sessions(ip))
+    
+    results = await asyncio.gather(*tasks)
+    
+    all_candidates = []
+    for server_candidates in results:
+        all_candidates.extend(server_candidates)
+        
+    return all_candidates
+
+async def _check_server_for_missing_sessions(ip: str) -> list:
+    userbots_on_server = await db.get_userbots_by_server_ip(ip)
+    if not userbots_on_server:
+        return []
+
+    server_candidates = []
+    for ub in userbots_on_server:
+        data_path = f"/root/api/volumes/{ub['ub_username']}/data"
+        find_cmd = f"find {data_path} -maxdepth 1 -name '*.session' -print -quit"
+        find_res = await sm.run_command_async(find_cmd, ip, check_output=False)
+
+        if find_res["success"] and not find_res["output"]:
+            server_candidates.append({
+                "ub_username": ub['ub_username'],
+                "tg_user_id": ub['tg_user_id'],
+                "server_ip": ip
+            })
+    return server_candidates
+
+async def run_missing_session_check_and_propose_cleanup(bot: Bot):
+    logging.info("Запуск проверки отсутствующих сессий...")
+    
+    candidates = await collect_missing_session_userbots()
+    if not candidates:
+        logging.info("Проверка завершена, юзерботов без сессии не найдено.")
+        return
+
+    total_ubs = len(await db.get_all_userbots_full_info())
+    candidates_count = len(candidates)
+    remaining_count = total_ubs - candidates_count
+    
+    cleanup_id = uuid.uuid4().hex
+    CLEANUP_CANDIDATES_CACHE[cleanup_id] = candidates
+
+    text = (
+        "<b>#ПРЕДУПРЕЖДЕНИЕ_СЕССИЯ</b>\n\n"
+        f"Обнаружено <b>{candidates_count}</b> юзерботов без файла сессии.\n\n"
+        f"<b>Всего юзерботов:</b> {total_ubs}\n"
+        f"<b>Останется после очистки:</b> {remaining_count}\n\n"
+        "Удалить неактивные контейнеры для освобождения ресурсов?"
+    )
+    
+    markup = kb.get_cleanup_confirmation_keyboard(cleanup_id)
+    
+    await bot.send_message(
+        chat_id=config.LOG_CHAT_ID,
+        text=text,
+        reply_markup=markup,
+        message_thread_id=140
+    )

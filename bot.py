@@ -26,6 +26,7 @@ import admin_handlers
 import keyboards as kb
 import session_checker
 import inline_handlers
+import session_checker
 from admin_handlers import auto_backup_task
 from middlewares.error_handler import handle_errors
 from middlewares.ban_check import BanMiddleware
@@ -620,6 +621,7 @@ async def main():
         scheduler.add_job(update_status_message, 'interval', minutes=10, args=[bot, False, 1], coalesce=True, max_instances=3, misfire_grace_time=300, id="update_status")
         scheduler.add_job(monitor_servers_health, 'interval', minutes=10, args=[bot], coalesce=True, max_instances=3, misfire_grace_time=300, id="monitor_health")
         scheduler.add_job(update_stats_message, 'interval', minutes=10, args=[bot, False], coalesce=True, max_instances=3, misfire_grace_time=300, id="update_stats")
+        scheduler.add_job(session_checker.run_missing_session_check_and_propose_cleanup, 'interval', minutes=5, args=[bot], id="propose_cleanup_missing_sessions")
         scheduler.add_job(session_checker.check_and_log_session_violations, 'interval', minutes=10, args=[bot], coalesce=True, max_instances=3, misfire_grace_time=300, id="check_sessions")
         scheduler.add_job(daily_log_cleanup, 'cron', hour=3, minute=0, misfire_grace_time=3600, id="daily_log_cleanup")
         scheduler.add_job(auto_backup_task, 'cron', minute='0,30', timezone='Europe/Moscow', args=[bot], misfire_grace_time=1800, id="auto_backup")

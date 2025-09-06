@@ -22,6 +22,8 @@ TOPIC_MAP = {
     "unauthorized_access_attempt": 25,
     "maintenance_mode_on": 28,
     "maintenance_mode_off": 28,
+    "inactive_session_warning": 140,
+    "batched_session_warning": 140,
     "userbot_reinstalled": 30,
 }
 
@@ -55,6 +57,7 @@ EVENT_TAGS = {
     "referral_deleted": "#РЕФ_ССЫЛКА_УДАЛЕНА",
     "session_violation": "#НАРУШЕНИЕ_ПРАВИЛ",
     "unauthorized_access_attempt": "#НЕСАНКЦ_ДОСТУП",
+    "inactive_session_warning": "#ПРЕДУПРЕЖДЕНИЕ_СЕССИЯ",
 }
 
 def _format_user_link(user_data: dict) -> str:
@@ -157,6 +160,18 @@ async def log_event(bot: Bot, event_type: str, data: dict):
         message_body = f"<b>Администратор:</b> {admin_link}\n<b>Статус:</b> {status} режим тех. работ"
     elif event_type == "userbot_reinstalled":
         message_body = f"<b>Пользователь:</b> {user_link}\n<b>Переустановил юзербота:</b> <code>{ub_name}</code>"
+    elif event_type == "inactive_session_warning":
+        file_listing = html.quote(data.get('error', '')) 
+        message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Юзербот:</b> <code>{ub_name}</code>\n"
+            f"<b>Детали:</b> {details_text}\n"
+            f"<b>Статус:</b> ❗️ Отсутствует файл сессии (*.session)\n\n"
+            f"<b>Содержимое каталога данных:</b>\n<pre>{file_listing}</pre>"
+        )
+    elif event_type == "batched_session_warning":
+        tag = "#ПРЕДУПРЕЖДЕНИЕ_СЕССИЯ"
+        message_body = data.get("formatted_text", "")
     else:
         message_body = f"ℹ️ <b>Событие: {html.quote(event_type)}</b>\n\n<pre>{html.quote(str(data))}</pre>"
         topic_id = None
