@@ -1325,48 +1325,74 @@ async def cmd_server_toggle(message: types.Message, command: CommandObject, bot:
             f"Использование: <code>/server [on|off]</code>"
         )
 
-@router.message(Command("remote"))
-async def cmd_remote_control(message: types.Message, command: CommandObject):
-    if not command.args or len(command.args.split()) != 2:
-        await message.reply(f"Использование: <code>/remote [ID|имя_юзербота] [on|off|restart]</code>")
-        return
-    target, action_str = command.args.split()
-    action = action_str.lower()
-    action_map = {"on": "start", "off": "stop", "restart": "restart"}
-    if action not in action_map:
-        await message.reply("Неверное действие. Используйте 'on', 'off' или 'restart'.")
-        return
-    system_action = action_map[action]
-    
-    ub_data_list = []
-    if target.isdigit():
-        user_id = int(target)
-        userbots_data = await db.get_userbots_by_tg_id(user_id)
-        if not userbots_data:
-            await message.reply(f"Не найдено юзерботов для пользователя с ID <code>{user_id}</code>.")
-            return
-        ub_data_list = userbots_data
-    else:
-        ub_data = await db.get_userbot_data(ub_username=target)
-        if not ub_data:
-            await message.reply(f"Юзербот <code>{html.quote(target)}</code> не найден.")
-            return
-        ub_data_list.append(ub_data)
+@router.message(Command("action"), IsSuperAdmin())
+async def cmd_mass_action(message: types.Message, command: CommandObject):
+    args = command.args.split() if command.args else []
 
-    await message.reply(f"⏳ Выполняю действие '<b>{action}</b>' для {len(ub_data_list)} юзербота(ов)...")
+    if len(args) != 2:
+        await message.reply(
+            "<b>Формат:</b> <code>/action &lt;цель&gt; &lt;действие&gt;</code>\n\n"
+            "<b>Цели:</b>\n"
+            "• <code>all</code> - все юзерботы\n"
+            "• <code>premium</code> - только на премиум-серверах\n"
+            "• <code>M5, P1...</code> - код конкретного сервера\n\n"
+            "<b>Действия:</b> <code>start</code>, <code>stop</code>, <code>restart</code>"
+        )
+        return
+
+    target_key = args[0].lower()
+    action = args[1].lower()
+
+    if action not in ["start", "stop", "restart"]:
+        await message.reply("❌ Неверное действие. Доступно: <code>start</code>, <code>stop</code>, <code>restart</code>.")
+        return
+
+    userbots_to_process = []
+    servers = server_config.get_servers()
+    all_userbots = await db.get_all_userbots_full_info()
+
+    if target_key == "all":
+        userbots_to_process = all_userbots
+        target_description = "всех юзерботов"
+    elif target_key == "premium":
+        premium_ips = {ip for ip, details in servers.items() if details.get("status") == "premium"}
+        userbots_to_process = [ub for ub in all_userbots if ub.get("server_ip") in premium_ips]
+        target_description = "юзерботов на премиум-серверах"
+    else:
+        target_ip = next((ip for ip, details in servers.items() if details.get("code", "").lower() == target_key), None)
+        if not target_ip:
+            await message.reply(f"❌ Сервер с кодом <code>{html.quote(target_key)}</code> не найден.")
+            return
+        userbots_to_process = [ub for ub in all_userbots if ub.get("server_ip") == target_ip]
+        target_description = f"юзерботов на сервере {target_key.upper()}"
+
+    if not userbots_to_process:
+        await message.reply(f"Не найдено юзерботов для цели '<b>{target_key}</b>'.")
+        return
+
+    msg = await message.reply(f"⏳ Выполняю '<b>{action}</b>' для {len(userbots_to_process)} {target_description}...")
     
-            # tasks = [sm.manage_ub_service(ub['ub_username'], system_action, ub['server_ip']) for ub in ub_data_list]
+    tasks = []
+    for ub in userbots_to_process:
+        if action == "start":
+            tasks.append(api_manager.start_container(ub['ub_username'], ub['server_ip']))
+        elif action == "stop":
+            tasks.append(api_manager.stop_container(ub['ub_username'], ub['server_ip']))
+        elif action == "restart":
+            tasks.append(api_manager.restart_container(ub['ub_username'], ub['server_ip']))
+
     results = await asyncio.gather(*tasks)
 
-    success_list = [ub_data_list[i]['ub_username'] for i, res in enumerate(results) if res["success"]]
-    error_list = [ub_data_list[i]['ub_username'] for i, res in enumerate(results) if not res["success"]]
+    success_count = sum(1 for res in results if res and res.get("success"))
+    failed_count = len(results) - success_count
 
-    response = ""
-    if success_list:
-        response += f"<b>✅ Успешно для:</b>\n" + "\n".join([f"  - <code>{html.quote(ub)}</code>" for ub in success_list])
-    if error_list:
-        response += f"\n\n<b>❌ Ошибка для:</b>\n" + "\n".join([f"  - <code>{html.quote(ub)}</code>" for ub in error_list])
-    await message.reply(response or "Ничего не было сделано.")
+    await msg.edit_text(
+        f"✅ <b>Массовое действие завершено.</b>\n\n"
+        f"<b>Цель:</b> {target_description}\n"
+        f"<b>Действие:</b> <code>{action}</code>\n\n"
+        f"<b>Успешно:</b> {success_count}\n"
+        f"<b>С ошибкой:</b> {failed_count}"
+    )
 
 @router.message(Command("ahelp"), IsAdmin())
 async def cmd_ahelp(message: types.Message):
@@ -1423,8 +1449,8 @@ async def cmd_ahelp(message: types.Message):
         "<i>- Команда во всех контейнерах на сервере.</i>\n\n"
         "<code>/ub &lt;имя&gt;</code> (<i>Админ</i>)\n"
         "<i>- Инфо и управление конкретным юзерботом.</i>\n\n"
-        "<code>/remote &lt;ID|имя&gt; &lt;on|off|restart&gt;</code> (<i>Админ</i>)\n"
-        "<i>- Быстрое управление юзерботом.</i>\n\n"
+        "<code>/action &lt;цель&gt; &lt;действие&gt;</code> (<i>Супер Админ</i>)\n"
+        "<i>- Массовое управление юзерботами.</i>\n\n"
         "<code>/delub &lt;имя&gt;</code> (<i>Супер Админ</i>)\n"
         "<i>- Удалить юзербот с выбором причины.</i>\n\n"
 
@@ -4025,3 +4051,4 @@ def _clear_cleanup_message_id_file():
             os.remove(CLEANUP_PROPOSAL_MESSAGE_ID_FILE)
         except OSError as e:
             logging.error(f"Не удалось удалить файл ID сообщения об очистке: {e}")
+           
