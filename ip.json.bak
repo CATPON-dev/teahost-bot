@@ -184,7 +184,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "test",
+        "status": "true",
         "slots": 20,
         "api_url": "http://92.255.110.208:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
