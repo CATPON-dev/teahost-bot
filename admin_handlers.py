@@ -2541,7 +2541,10 @@ async def monitor_and_restore_server(ip: str, bot: Bot, admin_id: int):
 
 @router.message(Command("ban"), IsSuperAdmin())
 async def cmd_ban(message: types.Message, command: CommandObject, bot: Bot):
-    if not command.args and not message.reply_to_message:
+    if message.message_thread_id and not command.args:
+        await message.reply("<b>Использование:</b> <code>/ban [ID или @username]</code>\n<i>В треде необходимо указать пользователя аргументом.</i>")
+        return
+    elif not message.message_thread_id and not command.args and not message.reply_to_message:
         await message.reply("<b>Использование:</b> <code>/ban [ID или @username]</code>\n<i>Либо ответьте на сообщение пользователя.</i>")
         return
 
@@ -2549,14 +2552,12 @@ async def cmd_ban(message: types.Message, command: CommandObject, bot: Bot):
     identifier_for_log = None
     is_in_db = False
     target_user_data = None
-
-    if message.reply_to_message:
-        user = message.reply_to_message.from_user
-        target_id = user.id
-        identifier_for_log = f"@{user.username}" if user.username else str(user.id)
-        target_user_data = { "id": user.id, "username": user.username, "full_name": user.full_name }
-        is_in_db = bool(await db.get_user_data(target_id))
-    else:
+    
+    if message.message_thread_id:
+        if not command.args:
+            await message.reply("❌ В треде необходимо указать пользователя аргументом.")
+            return
+            
         identifier = command.args.strip()
         identifier_for_log = identifier
         
@@ -2574,6 +2575,31 @@ async def cmd_ban(message: types.Message, command: CommandObject, bot: Bot):
             else:
                 await message.reply(f"❌ Пользователь <code>{html.quote(identifier)}</code> не найден в БД, для бана укажите его ID.")
                 return
+    else:
+        if message.reply_to_message:
+            user = message.reply_to_message.from_user
+            target_id = user.id
+            identifier_for_log = f"@{user.username}" if user.username else str(user.id)
+            target_user_data = { "id": user.id, "username": user.username, "full_name": user.full_name }
+            is_in_db = bool(await db.get_user_data(target_id))
+        else:
+            identifier = command.args.strip()
+            identifier_for_log = identifier
+            
+            user_in_db = await db.get_user_by_username_or_id(identifier)
+            if user_in_db:
+                target_id = user_in_db['tg_user_id']
+                target_user_data = { "id": target_id, "username": user_in_db.get('username'), "full_name": user_in_db.get('full_name') }
+                is_in_db = True
+            else:
+                clean_id = identifier.lstrip('@')
+                if clean_id.isdigit():
+                    target_id = int(clean_id)
+                    target_user_data = {"id": target_id, "full_name": f"ID: {target_id}"}
+                    is_in_db = False
+                else:
+                    await message.reply(f"❌ Пользователь <code>{html.quote(identifier)}</code> не найден в БД, для бана укажите его ID.")
+                    return
 
     if not target_id:
         await message.reply("❌ Не удалось определить ID пользователя.")
@@ -2594,7 +2620,10 @@ async def cmd_ban(message: types.Message, command: CommandObject, bot: Bot):
 @router.message(Command("unban"), IsSuperAdmin())
 async def cmd_unban(message: types.Message, command: CommandObject, bot: Bot):
     if not command.args:
-        await message.reply("Использование: <code>/unban [ID или @username]</code>")
+        if message.message_thread_id:
+            await message.reply("Использование: <code>/unban [ID или @username]</code>\n<i>В треде необходимо указать пользователя аргументом.</i>")
+        else:
+            await message.reply("Использование: <code>/unban [ID или @username]</code>")
         return
 
     target_user_data = await db.get_user_by_username_or_id(command.args)
@@ -2609,7 +2638,7 @@ async def cmd_unban(message: types.Message, command: CommandObject, bot: Bot):
         
     await ban_manager.execute_unban(target_user_id, message.from_user, bot)
     await message.reply(f"✅ Пользователь <code>{target_user_id}</code> разбанен.")
-
+    
 async def create_backup(backup_path: str, source_dir: str) -> bool:
     try:
         shutil.make_archive(backup_path, 'zip', source_dir)
