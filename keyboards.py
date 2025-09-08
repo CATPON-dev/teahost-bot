@@ -122,6 +122,8 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
 def get_main_panel_keyboard(has_bots: bool, user_id: int = None, chat_id: int = None, is_chat: bool = False):
     builder = InlineKeyboardBuilder()
     
+    builder.button(text="🔑 API", callback_data="api_panel_show")
+    
     if is_chat:
         if has_bots:
             builder.button(text="⚙️ Панель управления", callback_data="go_to_control_panel")
@@ -135,7 +137,6 @@ def get_main_panel_keyboard(has_bots: bool, user_id: int = None, chat_id: int = 
     else:
         builder.button(text="🚀 Установить юзербот", callback_data="create_userbot_start")
     
-        builder.button(text="🔑 API", callback_data="api_panel_show")
     
     builder.button(text="🛠️ Статус серверов", url="https://t.me/shark_status")
     builder.button(text="💬 Поддержка", url="t.me/SharkHost_support")
