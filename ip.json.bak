@@ -811,7 +811,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 35,
         "api_url": "http://4.210.149.63:8000",
         "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"

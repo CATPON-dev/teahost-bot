@@ -7,6 +7,7 @@ TOPIC_MAP = {
     "installation_success": 5,
     "installation_via_api": 5,
     "deletion_by_owner": 7,
+    "api_event": 23,
     "new_user_registered": 3,
     "server_unreachable": 9,
     "server_recovered": 11,
@@ -16,7 +17,6 @@ TOPIC_MAP = {
     "session_violation": 19,
     "referral_created": 21,
     "referral_deleted": 21,
-    "api_event": 23,
     "user_banned": 25,
     "user_unbanned": 25,
     "unauthorized_access_attempt": 25,
@@ -53,6 +53,7 @@ EVENT_TAGS = {
     "maintenance_mode_off": "#ТЕХ_РАБОТЫ_ВЫКЛ",
     "server_settings_changed": "#НАСТРОЙКИ_СЕРВЕРА",
     "api_event": "#API_ЛОГИ",
+    "api_delete_userbot": "#API_ЗАПРОС",
     "referral_created": "#РЕФ_ССЫЛКА_СОЗДАНА",
     "referral_deleted": "#РЕФ_ССЫЛКА_УДАЛЕНА",
     "session_violation": "#НАРУШЕНИЕ_ПРАВИЛ",
@@ -94,10 +95,9 @@ async def log_event(bot: Bot, event_type: str, data: dict):
     if not config.LOG_CHAT_ID:
         return
 
-    is_api_event = event_type.startswith("api_")
-    
-    tag_key = "api_event" if is_api_event else event_type
     tag = EVENT_TAGS.get(tag_key, f"#{event_type.upper()}")
+    tag_key = "api_event" if is_api_event else event_type
+    is_api_event = event_type.startswith("api_")
 
     admin_link = _format_user_link(data.get('admin_data'))
     user_link = _format_user_link(data.get('user_data'))
@@ -119,7 +119,7 @@ async def log_event(bot: Bot, event_type: str, data: dict):
     
     message_body = ""
     topic_id = TOPIC_MAP.get(event_type)
-
+    
     if is_api_event:
         topic_id = TOPIC_MAP.get("api_event")
         message_body = (
