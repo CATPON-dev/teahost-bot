@@ -2407,7 +2407,7 @@ async def _generate_and_save_token(user: types.User) -> str:
     await db.set_api_token(user.id, new_token)
     return new_token
 
-@router.callback_query(F.data == "regenerate_api_token", IsAdmin(), StateFilter(APITokenManagement.TokenHidden, APITokenManagement.TokenShown))
+@router.callback_query(F.data == "regenerate_api_token", StateFilter(APITokenManagement.TokenHidden, APITokenManagement.TokenShown))
 async def cq_regenerate_api_token(call: types.CallbackQuery, state: FSMContext):
     user = call.from_user
     username = user.username or f"user{user.id}"
@@ -2436,7 +2436,7 @@ async def _get_or_create_token(user: types.User) -> str:
         token = await _generate_and_save_token(user)
     return token
     
-@router.callback_query(F.data == "api_panel_show", IsAdmin())
+@router.callback_query(F.data == "api_panel_show")  
 async def cq_show_api_panel(call: types.CallbackQuery, state: FSMContext):
     await safe_callback_answer(call, "", show_alert=True)
     token = await _get_or_create_token(call.from_user)
@@ -2453,7 +2453,7 @@ async def cq_show_api_panel(call: types.CallbackQuery, state: FSMContext):
     await call.message.edit_caption(caption=text, reply_markup=markup)
     await state.set_state(APITokenManagement.TokenHidden)
 
-@router.callback_query(F.data == "toggle_api_token_visibility", IsAdmin(), StateFilter(APITokenManagement.TokenHidden, APITokenManagement.TokenShown))
+@router.callback_query(F.data == "toggle_api_token_visibility", StateFilter(APITokenManagement.TokenHidden, APITokenManagement.TokenShown))
 async def cq_toggle_api_token_visibility(call: types.CallbackQuery, state: FSMContext):
     await safe_callback_answer(call, "", show_alert=True)
     current_state = await state.get_state()
