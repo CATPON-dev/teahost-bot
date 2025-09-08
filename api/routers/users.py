@@ -44,11 +44,4 @@ async def get_user_info(request: Request, identifier: str = Path(...), current_u
         "userbot": userbot_info_obj
     }
 
-    log_data = {
-        "admin_data": {"id": current_user['tg_user_id'], "full_name": current_user.get('full_name')},
-        "user_data": {"id": target_user_data['tg_user_id'], "full_name": target_user_data.get('full_name')},
-        "details": request.client.host
-    }
-    asyncio.create_task(log_api_action("api_get_user_info", log_data))
-
     return APIResponse(data=response_data)

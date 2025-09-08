@@ -16,11 +16,6 @@ async def regenerate_token(request: Request, current_user: dict = Depends(verify
     new_token = f"{username}:{user_id}:{secrets.token_urlsafe(32)}"
     if await db.regenerate_user_token(user_id, new_token):
         
-        log_data = {
-            "user_data": {"id": user_id, "full_name": current_user.get('full_name')},
-            "details": request.client.host
-        }
-        asyncio.create_task(log_api_action("api_regenerate_token", log_data))
         
         return APIResponse(data={"new_token": new_token})
     else:

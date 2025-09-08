@@ -29,13 +29,6 @@ async def get_my_userbot_logs(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=logs_result.get("error", "Failed to fetch logs."))
 
     server_details = server_config.get_servers().get(userbot_data['server_ip'], {})
-    log_data = {
-        "user_data": {"id": tg_user_id, "full_name": current_user.get('full_name')},
-        "ub_info": {"name": ub_username},
-        "server_info": {"ip": userbot_data['server_ip'], "code": server_details.get("code")},
-        "details": f"Запрошено {lines} строк", "error": request.client.host
-    }
-    asyncio.create_task(log_api_action("api_get_logs", log_data))
 
     logs_text = logs_result.get("data", {}).get("logs", "")
     log_lines = logs_text.strip().split('\n')
@@ -124,13 +117,6 @@ async def manage_userbot(
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=result.get("error", "Action failed on the host server."))
 
-    asyncio.create_task(log_api_action("api_manage_userbot", {
-        "user_data": {"id": tg_user_id, "full_name": current_user.get('full_name')},
-        "ub_info": {"name": ub_username},
-        "server_info": {"ip": server_ip, "code": server_config.get_servers().get(server_ip, {}).get("code")},
-        "action": action, "details": request.client.host
-    }))
-
     await asyncio.sleep(1.5)
     status_res = await api_manager.get_container_status(ub_username, server_ip)
     new_status = status_res.get("data", {}).get("status", "unknown") if status_res.get("success") else "error"
@@ -155,12 +141,5 @@ async def exec_command(
     
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=result.get("error", "Execution failed on the host server."))
-
-    asyncio.create_task(log_api_action("api_exec_command", {
-        "user_data": {"id": tg_user_id, "full_name": current_user.get('full_name')},
-        "ub_info": {"name": ub_username},
-        "server_info": {"ip": server_ip, "code": server_config.get_servers().get(server_ip, {}).get("code")},
-        "details": command, "error": request.client.host
-    }))
 
     return APIResponse(data=result.get("data", {}).get("exec"))
