@@ -37,6 +37,7 @@ from channel_logger import log_event
 import math
 from utils.copy import CopyTextButton
 from filters import IsBotEnabled, IsSubscribed, IsAdmin
+import time
 # from system_manager import get_service_process_uptime
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,9 @@ router.callback_query.filter(IsBotEnabled())
 
 LOG_LINES_PER_PAGE = 25
 SERVERS_PER_PAGE = 10
+
+PING_COOLDOWN_SECONDS = 5
+PING_TIMESTAMPS = {}
 
 async def _show_server_selection_page(call: types.CallbackQuery, state: FSMContext, page: int = 1):
     from bot import BANNER_FILE_IDS
@@ -1751,12 +1755,21 @@ async def cq_decline_share_panel_in_chat(call: types.CallbackQuery):
 
 @router.message(Command("ping"))
 async def cmd_ping(message: types.Message):
+    user_id = message.from_user.id
+    current_time = time.time()
+
+    if user_id in PING_TIMESTAMPS:
+        if current_time - PING_TIMESTAMPS[user_id] < PING_COOLDOWN_SECONDS:
+            return
+
+    PING_TIMESTAMPS[user_id] = current_time
+    
     start_time = time.perf_counter()
     msg = await message.reply("...")
     end_time = time.perf_counter()
     delay = (end_time - start_time) * 1000
     await msg.edit_text(f"🏓 <b>Понг!</b>\nЗадержка: <code>{delay:.2f} мс</code>")
-   
+    
 @router.message(Command("review"), F.chat.type == "private")
 async def cmd_review(message: types.Message, state: FSMContext):
     text = (
