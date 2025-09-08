@@ -95,10 +95,10 @@ async def log_event(bot: Bot, event_type: str, data: dict):
     if not config.LOG_CHAT_ID:
         return
 
-    tag = EVENT_TAGS.get(tag_key, f"#{event_type.upper()}")
-    tag_key = "api_event" if is_api_event else event_type
     is_api_event = event_type.startswith("api_")
-
+    tag_key = "api_event" if is_api_event else event_type
+    tag = EVENT_TAGS.get(tag_key, f"#{event_type.upper()}")
+    
     admin_link = _format_user_link(data.get('admin_data'))
     user_link = _format_user_link(data.get('user_data'))
     new_owner_link = _format_user_link(data.get('new_owner_data'))
