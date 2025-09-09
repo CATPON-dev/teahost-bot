@@ -64,6 +64,7 @@ venv.bak/
 .spyproject
 .ropeproject
 /site
+**/ids_message/*.json
 .mypy_cache/
 .dmypy.json
 dmypy.json
