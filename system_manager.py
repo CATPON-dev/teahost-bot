@@ -156,16 +156,26 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
 
             ssh_user = server_details.get("ssh_user")
             ssh_pass_final = ssh_pass or server_details.get("ssh_pass")
+            ssh_key_path = server_details.get("ssh_key_path")
 
             if not ssh_user:
                 return {"success": False, "error": f"SSH user not configured for remote server {server_ip}", "exit_status": -1}
 
             conn = None
             try:
-                conn = await asyncio.wait_for(
-                    asyncssh.connect(server_ip, username=ssh_user, password=ssh_pass_final, known_hosts=None),
-                    timeout=30.0  
-                )
+                # Приоритет: SSH ключ > пароль
+                if ssh_key_path and os.path.exists(ssh_key_path):
+                    conn = await asyncio.wait_for(
+                        asyncssh.connect(server_ip, username=ssh_user, client_keys=[ssh_key_path], known_hosts=None),
+                        timeout=30.0  
+                    )
+                elif ssh_pass_final:
+                    conn = await asyncio.wait_for(
+                        asyncssh.connect(server_ip, username=ssh_user, password=ssh_pass_final, known_hosts=None),
+                        timeout=30.0  
+                    )
+                else:
+                    return {"success": False, "error": f"No SSH credentials (key or password) configured for server {server_ip}", "exit_status": -1}
                 
                 if user:
                     safe_user = shlex.quote(user)

@@ -96,4 +96,5 @@ Thumbs.db
 ids_message/stats_message_id.json
 ids_message/status_message_ids.json
 ip.json.bak
-   
+   ip.json
+keys/sharkhost
