@@ -372,7 +372,21 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
     is_running = False
     if is_server_active:
         container_status = await api_manager.get_container_status(ub_username, server_ip)
-        is_running = container_status.get("success", False) and container_status.get("data", {}).get("status") == "running"
+        if not container_status.get("success"):
+            is_running = False
+            error_msg = container_status.get("error", "Неизвестная ошибка")
+            if "404" in error_msg or "not found" in error_msg.lower():
+                user_data_for_log = {"id": user.id, "full_name": user.full_name}
+                server_details_for_log = server_config.get_servers().get(server_ip, {})
+                log_data = {
+                    "user_data": user_data_for_log,
+                    "ub_info": {"name": ub_username},
+                    "server_info": {"ip": server_ip, "code": server_details_for_log.get("code", "N/A")},
+                    "error": error_msg
+                }
+                asyncio.create_task(log_event(bot, "api_container_error", log_data))
+        else:
+            is_running = container_status.get("data", {}).get("status") == "running"
     
     server_details = server_config.get_servers().get(server_ip, {})
     server_display = f"{server_details.get('flag', '🏳️')} {server_details.get('code', 'N/A')}"
@@ -413,7 +427,7 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
     ping_display = f"📡 Пинг: {ping_ms_val:.1f} мс" if ping_ms_val is not None else "📡 Пинг: N/A"
 
     server_info_block = (
-        "<blockquote><b>Информация о сервере:</b>\n"
+        "<blockquote expandable><b>Информация о сервере:</b>\n"
         f"🖥 Сервер: {server_display}\n"
         f"🌍 Локация: {server_location}\n"
         f"{ping_display}"
@@ -422,7 +436,7 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
 
     text_lines = [
         "<b>🎛 Панель управления</b>\n",
-        "<blockquote>"
+        "<blockquote expandable>"
         "<b>Основная информация:</b>\n"
         f"🤖 Юзербот: {html.quote(ub_username)}\n"
         f"💡 Статус: {status_text}\n"
@@ -430,7 +444,7 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
         f"📅 Создан: {creation_date_str}"
         "</blockquote>",
         server_info_block,
-        "<blockquote>"
+        "<blockquote expandable>"
         "<b>Потребление ресурсов:</b>\n"
         f"🧠 CPU: {_create_progress_bar(str(resources.get('cpu_percent', 0)))} ({resources.get('cpu_percent', 0)}%)\n"
         f"💾 RAM: {_create_progress_bar(str(resources.get('ram_percent', 0)))} ({resources.get('ram_used', 0)} / {resources.get('ram_limit', 0)} МБ)\n"

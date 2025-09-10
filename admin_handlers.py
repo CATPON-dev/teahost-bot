@@ -73,8 +73,6 @@ API_CONFIG_PAGE_SIZE = 10
 SERVERINFO_PAGE_SIZE = 5
 
 async def _generate_container_list_page(containers_on_page: list, total_containers: int, expanded_container_name: str | None = None) -> str:
-    """Формирует текст для одной страницы списка контейнеров с красивым форматированием."""
-    
     text_parts = [f"🖥️ <b>Список всех контейнеров</b> (Всего: {total_containers})\n"]
     
     for container in containers_on_page:
@@ -85,7 +83,7 @@ async def _generate_container_list_page(containers_on_page: list, total_containe
         ub_type = container.get('ub_type', 'N/A')
         
         container_block = (
-            f"<blockquote>"
+            f"<blockquote expandable>"
             f"👤 <b>Владелец:</b> {owner_info}\n"
             f"🤖 <b>Юзербот:</b> <code>{html.quote(container['name'])}</code> ({html.quote(ub_type).capitalize()})\n"
             f"📍 <b>Сервер:</b> {container['server_flag']} {container['server_code']}"
@@ -632,6 +630,7 @@ async def cmd_terminal(message: types.Message, command: CommandObject):
 
     target_ip = None
     cmd_str = ""
+    server_display_name = ""
 
     potential_code = args[0]
     ip_from_code = find_ip_by_code(potential_code)
@@ -639,11 +638,28 @@ async def cmd_terminal(message: types.Message, command: CommandObject):
     if len(args) == 2 and ip_from_code:
         target_ip = ip_from_code
         cmd_str = args[1]
+        server_display_name = potential_code.upper()
     else:
         target_ip = sm.LOCAL_IP
         cmd_str = command.args
+        server_display_name = "Локально"
 
-    msg = await message.reply(f"⏳ Выполняю команду на <code>{target_ip}</code>...")
+    if message.chat.type != 'private':
+        sensitive_files = ["ip.json", "ip.json.bak", "config.json", "admins.json", "deleted_servers.json"]
+        try:
+            command_parts = shlex.split(cmd_str)
+            for part in command_parts:
+                for sensitive_file in sensitive_files:
+                    if sensitive_file in part:
+                        await message.reply("<b>Иди нахуй, хуй спалишь</b>")
+                        return
+        except ValueError:
+            for sensitive_file in sensitive_files:
+                if sensitive_file in cmd_str:
+                    await message.reply("<b>Иди нахуй, хуй спалишь</b>")
+                    return
+
+    msg = await message.reply(f"⏳ Выполняю команду на <code>{server_display_name}</code>...")
     res = await sm.run_command_async(cmd_str, target_ip, timeout=600)
 
     output = res.get('output', '')
@@ -657,9 +673,9 @@ async def cmd_terminal(message: types.Message, command: CommandObject):
     
     content_parts = []
     if output:
-        content_parts.append(f"📼 Stdout:\n<blockquote>{html.quote(output)}</blockquote>")
+        content_parts.append(f"📼 Stdout:\n<blockquote expandable>{html.quote(output)}</blockquote>")
     if error:
-        content_parts.append(f"📼 Stderr:\n<blockquote>{html.quote(error)}</blockquote>")
+        content_parts.append(f"📼 Stderr:\n<blockquote expandable>{html.quote(error)}</blockquote>")
     
     if content_parts:
         full_text = f"{header}\n\n" + "\n\n".join(content_parts)
@@ -678,7 +694,7 @@ async def cmd_terminal(message: types.Message, command: CommandObject):
         
         raw_content_to_paginate = "\n".join(raw_output_content)
 
-        available_space = 4096 - len(header) - len("<blockquote></blockquote>") - 20
+        available_space = 4096 - len(header) - len("<blockquote expandable></blockquote>") - 20
         
         chunks = [raw_content_to_paginate[i:i + available_space] for i in range(0, len(raw_content_to_paginate), available_space)]
         
@@ -687,7 +703,7 @@ async def cmd_terminal(message: types.Message, command: CommandObject):
         
         TERMINAL_OUTPUT_CACHE[output_id] = (header, chunks)
         
-        text_to_send = f"{header}\n\n<blockquote>{html.quote(chunks[0])}</blockquote>"
+        text_to_send = f"{header}\n\n<blockquote expandable>{html.quote(chunks[0])}</blockquote>"
         markup = get_terminal_paginator(output_id, 0, len(chunks))
         
         await message.answer(
@@ -3048,12 +3064,26 @@ async def _display_admin_ub_management_panel(call: types.CallbackQuery, bot: Bot
         return
         
     server_ip = ub_data.get('server_ip')
-    container_status = await api_manager.get_container_status(ub_username, server_ip)
-    is_active = container_status.get("success", False) and container_status.get("data", {}).get("status") == "running"
-    
     servers = server_config.get_servers()
     server_details = servers.get(server_ip, {})
     server_code = server_details.get("code", "N/A")
+
+    is_active = False
+    container_status = await api_manager.get_container_status(ub_username, server_ip)
+    if not container_status.get("success"):
+        error_msg = container_status.get("error", "Неизвестная ошибка")
+        if "404" in error_msg or "not found" in error_msg.lower():
+            user_info_for_log = {"id": user_id, "full_name": owner_data.get("full_name", str(user_id))}
+            log_data = {
+                "user_data": user_info_for_log,
+                "ub_info": {"name": ub_username},
+                "server_info": {"ip": server_ip, "code": server_code},
+                "error": error_msg
+            }
+            asyncio.create_task(log_event(bot, "api_container_error", log_data))
+    else:
+        is_active = container_status.get("data", {}).get("status") == "running"
+
     server_flag = server_details.get("flag", "🏳️")
     server_location = f"{server_details.get('country', 'N/A')}, {server_details.get('city', 'N/A')}"
     
@@ -3083,19 +3113,19 @@ async def _display_admin_ub_management_panel(call: types.CallbackQuery, bot: Bot
     
     text_lines = [
         "<b>🎛️ Управление юзерботом</b>\n",
-        "<blockquote>"
+        "<blockquote expandable>"
         "<b>Основная информация:</b>\n"
         f"🤖 Юзербот: <code>{html.quote(ub_username)}</code>\n"
         f"👤 Владелец: {html.quote(owner_data.get('full_name', ''))} ({owner_username}, <code>{user_id}</code>)\n"
         f"💡 Статус: {status_text}\n"
         f"⚙️ Тип: {ub_data.get('ub_type', 'N/A').capitalize()}"
         "</blockquote>",
-        "<blockquote><b>Информация о сервере:</b>\n"
+        "<blockquote expandable><b>Информация о сервере:</b>\n"
         f"🖥 Сервер: {server_flag} {server_code}\n"
         f"🌍 Локация: {server_location}\n"
         f"{ping_display}"
         "</blockquote>",
-        "<blockquote>"
+        "<blockquote expandable>"
         "<b>Потребление ресурсов:</b>\n"
         f"🧠 CPU: {create_progress_bar(str(resources.get('cpu_percent', 0)))} ({resources.get('cpu_percent', 0)}%)\n"
         f"💾 RAM: {create_progress_bar(str(resources.get('ram_percent', 0)))} ({resources.get('ram_used', 0)} / {resources.get('ram_limit', 0)} МБ)\n"
@@ -3645,7 +3675,7 @@ async def _send_servers_page(message: types.Message, page: int = 1, is_edit: boo
     servers = list(server_config.get_servers().items())
     
     if not servers:
-        text = "<blockquote>❌ Нет настроенных серверов.</blockquote>"
+        text = "<blockquote expandable>❌ Нет настроенных серверов.</blockquote>"
         if is_edit:
             await message.edit_text(text, reply_markup=None)
         else:
@@ -3691,7 +3721,7 @@ async def _send_servers_page(message: types.Message, page: int = 1, is_edit: boo
     content = "\n\n".join(server_blocks)
     pagination_info = f"\n\n<i>📄 Страница {page} из {total_pages}</i>" if total_pages > 1 else ""
     
-    text = f"<blockquote>{header}\n\n{content}{pagination_info}</blockquote>"
+    text = f"<blockquote expandable>{header}\n\n{content}{pagination_info}</blockquote>"
     
     markup = kb.get_servers_paginator_keyboard(page, total_pages) if total_pages > 1 else None
     
