@@ -1246,7 +1246,6 @@ async def cq_show_container_stats(call: types.CallbackQuery, state: FSMContext, 
 
 @router.callback_query(F.data.startswith("manage_ub:"))
 async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
-    """Обработчик для управления контейнером (старт/стоп/рестарт/переустановка, VPN, авторизация)"""
     try:
         parts = call.data.split(":")
         action = parts[1]
@@ -1415,9 +1414,33 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                 logging.error(f"Ошибка при обновлении панели: {e}")
                 await safe_callback_answer(call, f"✅ {action_text.capitalize()} выполнена успешно", show_alert=True)
         else:
-            error_msg = result.get("error", "Неизвестная ошибка")
+            error_msg = result.get("error", "неизвестная ошибка").lower()
+            server_details = server_config.get_servers().get(server_ip, {})
+            server_code = server_details.get("code", "N/A")
+            
+            log_data = {
+                "user_data": {"id": call.from_user.id, "full_name": call.from_user.full_name},
+                "ub_info": {"name": ub_username},
+                "server_info": {"ip": server_ip, "code": server_code},
+                "error": f"Действие '{action}': {result.get('error', 'N/A')}"
+            }
+            asyncio.create_task(log_event(call.bot, "api_container_error", log_data))
+
+            if "invalid token" in error_msg or "403" in error_msg:
+                text = f"На сервере {server_code} установлен неверный API токен. Обратитесь к администратору @aloya_uwu или @nloveuser."
+                await call.message.edit_caption(caption=text, reply_markup=kb.get_back_to_main_panel_keyboard())
+                return
+            elif "connection refused" in error_msg or "cannot connect" in error_msg:
+                text = "Сервер не отвечает, обратитесь к администратору @aloya_uwu, @nloveuser или @EXPERT_CATPON."
+                await call.message.edit_caption(caption=text, reply_markup=kb.get_back_to_main_panel_keyboard())
+                return
+            elif "internal server error" in error_msg or "not found" in error_msg or "resource temporarily unavailable" in error_msg:
+                text = "Брат, у тебя пиздец случился, обратись к @aloya_uwu или @nloveuser."
+                await call.message.edit_caption(caption=text, reply_markup=kb.get_back_to_main_panel_keyboard())
+                return
+            
             try:
-                await safe_callback_answer(call, f"❌ Ошибка {action_text}: {error_msg}", show_alert=True)
+                await safe_callback_answer(call, f"❌ Ошибка {action_text}: {result.get('error')}", show_alert=True)
             except Exception:
                 pass
             try:
