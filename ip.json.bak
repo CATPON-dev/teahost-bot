@@ -9,6 +9,7 @@
         "slots": 22,
         "ssh_user": null,
         "ssh_pass": null,
+        "ssh_key_path": "/root/nh/keys/sharkhost",
         "regionName": "N/A",
         "org": "N/A",
         "timezone": "N/A",
@@ -16,11 +17,11 @@
         "proxy": false,
         "vpn": false,
         "api_url": "http://109.120.157.210:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w"
     },
     "94.198.218.164": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv4",
         "country": "Russia",
         "city": "St Petersburg",
@@ -35,11 +36,12 @@
         "status": "test",
         "slots": 20,
         "api_url": "http://94.198.218.164:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "81.200.149.193": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv5",
         "country": "Russia",
         "city": "St Petersburg",
@@ -54,11 +56,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://81.200.149.193:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "89.23.117.165": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv6",
         "country": "Russia",
         "city": "St Petersburg",
@@ -73,11 +76,12 @@
         "status": "test",
         "slots": 20,
         "api_url": "http://89.23.117.165:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "81.200.148.133": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv7",
         "country": "Russia",
         "city": "St Petersburg",
@@ -92,11 +96,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://81.200.148.133:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "92.118.113.130": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv8",
         "country": "Russia",
         "city": "St Petersburg",
@@ -111,11 +116,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://92.118.113.130:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "2.59.43.81": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv9",
         "country": "Russia",
         "city": "St Petersburg",
@@ -130,11 +136,12 @@
         "status": "test",
         "slots": 20,
         "api_url": "http://2.59.43.81:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "188.225.77.2": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv10",
         "country": "Russia",
         "city": "St Petersburg",
@@ -149,11 +156,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://188.225.77.2:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "81.200.146.202": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv11",
         "country": "Russia",
         "city": "St Petersburg",
@@ -168,11 +176,12 @@
         "status": "test",
         "slots": 20,
         "api_url": "http://81.200.146.202:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "92.255.110.208": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv12",
         "country": "Russia",
         "city": "St Petersburg",
@@ -187,11 +196,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://92.255.110.208:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "80.90.187.179": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv13",
         "country": "Russia",
         "city": "St Petersburg",
@@ -206,11 +216,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://80.90.187.179:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "89.223.70.39": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv1",
         "country": "Russia",
         "city": "St Petersburg",
@@ -225,11 +236,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://89.223.70.39:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "80.90.189.115": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv3",
         "country": "Russia",
         "city": "St Petersburg",
@@ -244,11 +256,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://80.90.189.115:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "80.76.60.74": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv14",
         "country": "Russia",
         "city": "St Petersburg",
@@ -263,11 +276,12 @@
         "status": "test",
         "slots": 20,
         "api_url": "http://80.76.60.74:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "91.210.168.155": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv15",
         "country": "Russia",
         "city": "St Petersburg",
@@ -282,11 +296,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://91.210.168.155:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "91.210.168.103": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv16",
         "country": "Russia",
         "city": "St Petersburg",
@@ -301,11 +316,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://91.210.168.103:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "91.210.168.147": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv17",
         "country": "Russia",
         "city": "St Petersburg",
@@ -320,11 +336,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://91.210.168.147:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "77.232.128.81": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv18",
         "country": "Russia",
         "city": "St Petersburg",
@@ -339,11 +356,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://77.232.128.81:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "91.210.169.162": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv19",
         "country": "Russia",
         "city": "St Petersburg",
@@ -358,11 +376,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://91.210.169.162:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "77.232.128.63": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv20",
         "country": "Russia",
         "city": "St Petersburg",
@@ -377,11 +396,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://77.232.128.63:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "147.45.189.71": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv21",
         "country": "Russia",
         "city": "St Petersburg",
@@ -396,11 +416,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://147.45.189.71:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "81.200.145.122": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv22",
         "country": "Russia",
         "city": "St Petersburg",
@@ -415,11 +436,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://81.200.145.122:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "188.225.73.205": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv29",
         "country": "Russia",
         "city": "St Petersburg",
@@ -434,11 +456,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://188.225.73.205:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "82.97.242.22": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv23",
         "country": "Russia",
         "city": "St Petersburg",
@@ -453,11 +476,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://82.97.242.22:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "82.97.242.19": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv28",
         "country": "Russia",
         "city": "St Petersburg",
@@ -472,11 +496,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://82.97.242.19:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "213.171.4.90": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv24",
         "country": "Russia",
         "city": "St Petersburg",
@@ -491,11 +516,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://213.171.4.90:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "82.97.242.34": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv24",
         "country": "Russia",
         "city": "St Petersburg",
@@ -510,11 +536,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://82.97.242.34:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "213.171.4.47": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv27",
         "country": "Russia",
         "city": "St Petersburg",
@@ -529,11 +556,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://213.171.4.47:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "82.97.252.229": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv25",
         "country": "Russia",
         "city": "St Petersburg",
@@ -548,11 +576,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://82.97.252.229:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "92.255.78.9": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv25",
         "country": "Russia",
         "city": "St Petersburg",
@@ -567,11 +596,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://92.255.78.9:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "82.97.252.19": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv26",
         "country": "Russia",
         "city": "St Petersburg",
@@ -586,11 +616,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://82.97.252.19:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "80.90.191.67": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv30",
         "country": "Russia",
         "city": "St Petersburg",
@@ -605,11 +636,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://80.90.191.67:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "94.241.143.32": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv31",
         "country": "Russia",
         "city": "St Petersburg",
@@ -624,11 +656,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://94.241.143.32:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "94.241.143.45": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv32",
         "country": "Russia",
         "city": "St Petersburg",
@@ -643,11 +676,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://94.241.143.45:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "94.241.143.65": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv33",
         "country": "Russia",
         "city": "St Petersburg",
@@ -662,11 +696,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://94.241.143.65:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "94.241.143.117": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv34",
         "country": "Russia",
         "city": "St Petersburg",
@@ -681,11 +716,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://94.241.143.117:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "194.187.122.132": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv35",
         "country": "Russia",
         "city": "St Petersburg",
@@ -700,11 +736,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://194.187.122.132:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "194.187.122.245": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv36",
         "country": "Russia",
         "city": "St Petersburg",
@@ -719,11 +756,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://194.187.122.245:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "94.241.143.187": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv37",
         "country": "Russia",
         "city": "St Petersburg",
@@ -738,11 +776,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://94.241.143.187:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "188.225.43.203": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv38",
         "country": "Russia",
         "city": "St Petersburg",
@@ -757,11 +796,12 @@
         "status": "true",
         "slots": 20,
         "api_url": "http://188.225.43.203:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "188.225.43.120": {
         "ssh_user": "root",
-        "ssh_pass": "rjbrjrjBdujhruhGyeh2662",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv39",
         "country": "Russia",
         "city": "St Petersburg",
@@ -773,10 +813,11 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 20,
         "api_url": "http://188.225.43.120:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "4.227.83.2": {
         "ssh_user": "root",
@@ -792,10 +833,11 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 40,
         "api_url": "http://4.227.83.2:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "4.210.149.63": {
         "ssh_user": "root",
@@ -814,11 +856,12 @@
         "status": "test",
         "slots": 35,
         "api_url": "http://4.210.149.63:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "185.238.191.121": {
         "ssh_user": "root",
-        "ssh_pass": "wOW9pwaSb2b06ZK",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv41",
         "country": "Germany",
         "city": "Frankfurt am Main",
@@ -833,11 +876,12 @@
         "status": "true",
         "slots": 40,
         "api_url": "http://185.238.191.121:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     },
     "141.98.6.154": {
         "ssh_user": "root",
-        "ssh_pass": "Ew4zdUJ1OGi5AyC",
+        "ssh_pass": "uihgudfihgdfuihgiuhdfg",
         "name": "serv42",
         "country": "The Netherlands",
         "city": "Amsterdam",
@@ -852,6 +896,7 @@
         "status": "true",
         "slots": 15,
         "api_url": "http://141.98.6.154:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
+        "ssh_key_path": "/root/nh/keys/sharkhost"
     }
 }

@@ -833,7 +833,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 40,
         "api_url": "http://4.227.83.2:8000",
         "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w",
