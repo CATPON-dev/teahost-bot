@@ -8,6 +8,7 @@ from admin_manager import get_all_admins
 import system_manager as sm
 import datetime
 from config_manager import config
+from utils.copy import CopyTextButton
 
 def get_stats_refresh_keyboard():
     builder = InlineKeyboardBuilder()
@@ -228,15 +229,18 @@ def get_management_keyboard(ip: str, port: int, is_running: bool, ub_username: s
         builder.button(text="🔴 Управление отключено", callback_data=f"noop:{owner_id_str}")
     elif is_running:
         builder.button(text="🔴 Выключить", callback_data=create_callback("stop"))
-        builder.button(text="🌐 Веб панель", web_app=WebAppInfo(url=f"https://{ub_username}.sharkhost.space"))
+        builder.button(text="🔄 Перезагрузить", callback_data=create_callback("restart"))
+        
+        web_app_url = f"https://{ub_username}.sharkhost.space"
+        builder.button(text="🔗 Веб панель (url)", copy_text=CopyTextButton(text=web_app_url))
+
         builder.button(text="🔑 Данные для авторизации", callback_data=create_callback("auth"))
         builder.button(text="🇩🇪VPN", callback_data=create_callback("vpn"))
-        builder.button(text="🔄 Перезагрузить", callback_data=create_callback("restart"))
         builder.button(text="🔀 Переустановка", callback_data=create_callback("recreate"))
     else:
         builder.button(text="🚀 Включить", callback_data=create_callback("start"))
     
-    builder.adjust(1, 2)
+    builder.adjust(1, 2, 2, 2, 1)
 
     if is_owner:
         if is_private and not is_installing and not is_deleting:
@@ -247,8 +251,6 @@ def get_management_keyboard(ip: str, port: int, is_running: bool, ub_username: s
         if not is_inline:
             if is_private:
                 builder.row(InlineKeyboardButton(text="📜 Логи", callback_data=f"show_user_logs:docker:{ub_username}:{owner_id_str}:1"))
-            # if ub_type == 'heroku' and is_private:
-            #     builder.row(InlineKeyboardButton(text="💾 Бекап (experimental)", callback_data=f"heroku_backup:{ub_username}:{owner_id_str}"))
             if is_private:
                 builder.row(InlineKeyboardButton(text="👥 Поделиться панелью", callback_data=f"share_panel_start:{ub_username}"))
             if is_super_admin:
