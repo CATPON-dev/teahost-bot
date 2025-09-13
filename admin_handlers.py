@@ -799,7 +799,7 @@ async def cmd_serv_manager(message: types.Message, command: CommandObject, bot: 
         server_name = f"serv{i}"
 
         api_url = f"http://{ip}:8000"
-        api_token = "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        api_token = "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w"
 
         msg = await message.reply(f"⏳ Проверяю SSH-соединение с <code>{ip}</code>...")
         
@@ -4111,3 +4111,98 @@ def _clear_cleanup_message_id_file():
         except OSError as e:
             logging.error(f"Не удалось удалить файл ID сообщения об очистке: {e}")
            
+async def _send_ainfo_panel(message: types.Message, user_id: int, show_pass: bool, show_addr: bool, message_id: int = None):
+    bot = message.bot
+    
+    user_bots = await db.get_userbots_by_tg_id(user_id)
+    if not user_bots:
+        error_text = "❌ У этого пользователя больше нет юзербота."
+        if message_id:
+            await bot.edit_message_text(error_text, chat_id=message.chat.id, message_id=message_id)
+        else:
+            await message.answer(error_text)
+        return
+
+    ub_data = user_bots[0]
+    ub_username = ub_data['ub_username']
+    server_ip = ub_data['server_ip']
+    webui_port = ub_data.get('webui_port', 'N/A')
+
+    auth_data = await db.get_password(user_id)
+    login = auth_data.get("username", "Не найден")
+    password = auth_data.get("password", "Не найден")
+
+    url_panel = f"https://{ub_username}.sharkhost.space"
+    address = f"{server_ip}:{webui_port}"
+
+    password_display = f"<code>{html.quote(password)}</code>" if show_pass else "<tg-spoiler>••••••••••••</tg-spoiler>"
+    address_display = f"<code>{html.quote(address)}</code>" if show_addr else "<tg-spoiler>••••••••••••</tg-spoiler>"
+
+    text = (
+        f"🔑 <b>Данные для входа пользователя</b> <code>{user_id}</code>\n\n"
+        f"<b>Юзербот:</b> <code>{ub_username}</code>\n"
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
+        f"🌐 <b>URL панели:</b> {url_panel}\n"
+        f"👤 <b>Логин:</b> <code>{html.quote(login)}</code>\n"
+        f"🔑 <b>Пароль:</b> {password_display}\n"
+        f"🔌 <b>Адрес:</b> {address_display}"
+    )
+
+    builder = InlineKeyboardBuilder()
+    
+    pass_button_text = "Скрыть пароль" if show_pass else "Показать пароль"
+    builder.button(
+        text=pass_button_text,
+        callback_data=f"ainfo_toggle:{user_id}:{int(not show_pass)}:{int(show_addr)}"
+    )
+
+    addr_button_text = "Скрыть адрес" if show_addr else "Показать адрес"
+    builder.button(
+        text=addr_button_text,
+        callback_data=f"ainfo_toggle:{user_id}:{int(show_pass)}:{int(not show_addr)}"
+    )
+    builder.adjust(2)
+
+    if message_id:
+        try:
+            await bot.edit_message_text(text, chat_id=message.chat.id, message_id=message_id, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+        except TelegramBadRequest:
+            pass
+    else:
+        await message.answer(text, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+
+
+@router.message(Command("ainfo"), IsSuperAdmin())
+async def cmd_ainfo(message: types.Message, command: CommandObject, bot: Bot):
+    msg = await message.reply("⏳ Получаю информацию...")
+    
+    target_user_data, error_message = await _get_target_user_data(message, command, bot)
+
+    if error_message:
+        await msg.edit_text(error_message)
+        return
+        
+    user_id = target_user_data['tg_user_id']
+    user_bots = await db.get_userbots_by_tg_id(user_id)
+    
+    if not user_bots:
+        await msg.edit_text("❌ У этого пользователя нет юзербота.")
+        return
+    
+    await _send_ainfo_panel(msg, user_id, show_pass=False, show_addr=False, message_id=msg.message_id)
+
+
+@router.callback_query(F.data.startswith("ainfo_toggle:"))
+async def cq_ainfo_toggle(call: types.CallbackQuery):
+    await call.answer()
+    
+    try:
+        _, user_id_str, show_pass_str, show_addr_str = call.data.split(":")
+        user_id = int(user_id_str)
+        show_pass = bool(int(show_pass_str))
+        show_addr = bool(int(show_addr_str))
+    except (ValueError, IndexError):
+        await call.answer("Ошибка в данных кнопки.", show_alert=True)
+        return
+
+    await _send_ainfo_panel(call.message, user_id, show_pass, show_addr, message_id=call.message.message_id)
