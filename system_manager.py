@@ -570,7 +570,7 @@ async def add_server_with_security(ip: str, user: str, password: str, details: d
         "status": "test",
         "slots": 0,
         "api_url": f"http://{ip}:8000",
-        "api_token": "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZveOzvr8y"
+        "api_token": "ktLU8sj1/IOl6OK9JDwCe2vorWcUmB1w"
     }
     if server_config._save_servers(servers):
         return password  # Возвращаем оригинальный пароль
