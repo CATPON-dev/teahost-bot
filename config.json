@@ -3,7 +3,6 @@
     "custom_bot_api_server": "http://localhost:8081",
     "admin_user_id": [
         5774747794,
-        6136879235,
         901452146
     ],
     "test_mode": false,
