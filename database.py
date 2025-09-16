@@ -1046,3 +1046,22 @@ async def delete_user_from_db(user_id: int) -> bool:
     except aiomysql.Error as e:
         logger.error(f"Ошибка удаления пользователя {user_id} из БД: {e}")
         return False
+        
+async def generic_update(table_name: str, key_column: str, key_value: Any, update_column: str, new_value: Any) -> bool:
+    if not await ensure_connection():
+        return False
+    
+    safe_table_name = f"`{table_name.replace('`', '')}`"
+    safe_key_column = f"`{key_column.replace('`', '')}`"
+    safe_update_column = f"`{update_column.replace('`', '')}`"
+
+    sql = f"UPDATE {safe_table_name} SET {safe_update_column} = %s WHERE {safe_key_column} = %s"
+    
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, (new_value, key_value))
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка при выполнении generic_update для таблицы {table_name}: {e}", exc_info=True)
+        return False

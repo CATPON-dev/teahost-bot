@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from config_manager import config
 import server_config
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class APIManager:
             api_token = self.token
             
         return api_url, api_token
-    
+        
     async def get_vpn_token(self) -> Optional[str]:
         token_url = f"{self.vpn_base_url}/api/admin/token"
         
@@ -513,97 +514,52 @@ class APIManager:
             logger.error(f"Ошибка при переустановке юзербота {name}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
-    async def backup_userbot(self, server_ip: str, userbot_name: str) -> Dict[str, Any]:
-        """Создает бэкап userbot'а на сервере"""
+    async def backup_container(self, name: str, server_ip: str) -> Dict[str, Any]:
         api_url, api_token = self.get_server_api_config(server_ip)
-        url = f"{api_url}/api/v1/backup"
-        
-        params = {
-            "name": userbot_name
-        }
-        
+        url = f"{api_url}/api/host/backup"
+        params = {"name": name}
         headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Accept": "application/json"
+            "accept": "application/json",
+            "token": api_token
         }
         
         try:
-            timeout = aiohttp.ClientTimeout(total=300.0)
+            timeout = aiohttp.ClientTimeout(total=600.0)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, params=params, headers=headers) as response:
+                async with session.get(url, params=params, headers=headers) as response:
                     if response.status == 200:
                         result = await response.json()
-                        logger.info(f"Бэкап {userbot_name} создан на сервере {server_ip}")
                         return {"success": True, "data": result}
                     else:
                         error_text = await response.text()
-                        logger.error(f"Ошибка создания бэкапа {userbot_name}: {response.status} - {error_text}")
+                        logger.error(f"Ошибка создания бэкапа для {name} на {server_ip}: {response.status} - {error_text}")
                         return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
         except Exception as e:
-            logger.error(f"Ошибка при создании бэкапа {userbot_name}: {e}", exc_info=True)
+            logger.error(f"Исключение при создании бэкапа {name}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
-    async def restore_userbot(self, server_ip: str, userbot_name: str, backup_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Восстанавливает userbot из бэкапа на сервере"""
+    async def restore_container(self, name: str, userbot_type: str, server_ip: str) -> Dict[str, Any]:
         api_url, api_token = self.get_server_api_config(server_ip)
-        url = f"{api_url}/api/v1/restore"
-        
-        data = {
-            "name": userbot_name,
-            "userbot": backup_data
-        }
-        
+        url = f"{api_url}/api/host/restore"
+        params = {"name": name, "userbot": userbot_type}
         headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Accept": "application/json",
-            "Content-Type": "application/json"
+            "accept": "application/json",
+            "token": api_token
         }
         
         try:
-            timeout = aiohttp.ClientTimeout(total=300.0)
+            timeout = aiohttp.ClientTimeout(total=600.0)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, json=data, headers=headers) as response:
+                async with session.get(url, params=params, headers=headers) as response:
                     if response.status == 200:
                         result = await response.json()
-                        logger.info(f"Userbot {userbot_name} восстановлен на сервере {server_ip}")
                         return {"success": True, "data": result}
                     else:
                         error_text = await response.text()
-                        logger.error(f"Ошибка восстановления {userbot_name}: {response.status} - {error_text}")
+                        logger.error(f"Ошибка восстановления {name} на {server_ip}: {response.status} - {error_text}")
                         return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
         except Exception as e:
-            logger.error(f"Ошибка при восстановлении {userbot_name}: {e}", exc_info=True)
+            logger.error(f"Исключение при восстановлении {name}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
-
-    async def transfer_userbot_between_servers(self, userbot_name: str, old_server: str, new_server: str) -> Dict[str, Any]:
-        """Переносит userbot с одного сервера на другой через backup/restore"""
-        logger.info(f"Начинаем перенос {userbot_name} с {old_server} на {new_server}")
-        
-        # Шаг 1: Создаем бэкап на старом сервере
-        backup_result = await self.backup_userbot(old_server, userbot_name)
-        if not backup_result["success"]:
-            return {
-                "success": False, 
-                "error": f"Ошибка создания бэкапа: {backup_result['error']}"
-            }
-        
-        backup_data = backup_result["data"]
-        logger.info(f"Бэкап {userbot_name} создан успешно")
-        
-        # Шаг 2: Восстанавливаем на новом сервере
-        restore_result = await self.restore_userbot(new_server, userbot_name, backup_data)
-        if not restore_result["success"]:
-            return {
-                "success": False,
-                "error": f"Ошибка восстановления: {restore_result['error']}"
-            }
-        
-        logger.info(f"Userbot {userbot_name} успешно перенесен с {old_server} на {new_server}")
-        return {
-            "success": True,
-            "message": f"Userbot {userbot_name} успешно перенесен с {old_server} на {new_server}",
-            "backup_data": backup_data,
-            "restore_data": restore_result["data"]
-        }
 
 api_manager = APIManager()

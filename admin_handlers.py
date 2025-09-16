@@ -72,6 +72,8 @@ API_CONFIG_PAGE_SIZE = 10
 
 SERVERINFO_PAGE_SIZE = 5
 
+ALLOWED_TABLES_FOR_UPDATE = ["userbots", "users"]
+
 async def _generate_container_list_page(containers_on_page: list, total_containers: int, expanded_container_name: str | None = None) -> str:
     text_parts = [f"🖥️ <b>Список всех контейнеров</b> (Всего: {total_containers})\n"]
     
@@ -4206,3 +4208,110 @@ async def cq_ainfo_toggle(call: types.CallbackQuery):
         return
 
     await _send_ainfo_panel(call.message, user_id, show_pass, show_addr, message_id=call.message.message_id)
+
+@router.message(Command("db_update"), IsSuperAdmin())
+async def cmd_db_update(message: types.Message, command: CommandObject):
+    args = command.args.split() if command.args else []
+
+    if len(args) != 5:
+        help_text = (
+            "<b>Формат:</b> <code>/db_update &lt;таблица&gt; &lt;ключ&gt; &lt;значение_ключа&gt; &lt;поле&gt; &lt;новое_значение&gt;</code>\n\n"
+            "<b>Пример:</b> <code>/db_update userbots ub_username ub5774747794 server_ip 90.156.225.42</code>"
+        )
+        await message.reply(help_text)
+        return
+
+    table, key_column, key_value, update_column, new_value = args
+
+    if table not in ALLOWED_TABLES_FOR_UPDATE:
+        await message.reply(f"❌ Редактирование таблицы <code>{html.quote(table)}</code> запрещено.")
+        return
+
+    msg = await message.reply("⏳ Выполняю запрос к БД...")
+
+    try:
+        success = await db.generic_update(table, key_column, key_value, update_column, new_value)
+        
+        if success:
+            await msg.edit_text(
+                f"✅ <b>Запись обновлена:</b>\n\n"
+                f"<b>Таблица:</b> <code>{html.quote(table)}</code>\n"
+                f"<b>Поле:</b> <code>{html.quote(update_column)}</code>\n"
+                f"<b>Новое значение:</b> <code>{html.quote(new_value)}</code>"
+            )
+        else:
+            await msg.edit_text(
+                "❌ <b>Ошибка обновления.</b>\n\n"
+                "Запись с указанным ключом не найдена или данные не изменились."
+            )
+    except Exception as e:
+        await msg.edit_text(f"❌ <b>Критическая ошибка:</b>\n<pre>{html.quote(str(e))}</pre>")
+
+@router.message(Command("transfer"), IsSuperAdmin())
+async def cmd_transfer(message: types.Message, command: CommandObject, bot: Bot):
+    args = command.args.split() if command.args else []
+
+    if len(args) != 3:
+        await message.reply(
+            "<b>Формат:</b> <code>/transfer &lt;код_старого_сервера&gt; &lt;код_нового_сервера&gt; &lt;имя_контейнера&gt;</code>\n"
+            "<b>Пример:</b> <code>/transfer SPB1 DE1 ub12345678</code>"
+        )
+        return
+
+    old_server_code, new_server_code, container_name = args
+    
+    if old_server_code.lower() == new_server_code.lower():
+        await message.reply("❌ Старый и новый серверы не могут быть одинаковыми.")
+        return
+
+    msg = await message.reply(f"⏳ Начинаю перенос <code>{container_name}</code> с {old_server_code} на {new_server_code}...")
+
+    old_server_ip = find_ip_by_code(old_server_code)
+    if not old_server_ip:
+        await msg.edit_text(f"❌ Сервер со старым кодом <code>{old_server_code}</code> не найден.")
+        return
+
+    new_server_ip = find_ip_by_code(new_server_code)
+    if not new_server_ip:
+        await msg.edit_text(f"❌ Сервер с новым кодом <code>{new_server_code}</code> не найден.")
+        return
+
+    ub_data = await db.get_userbot_data(ub_username=container_name)
+    if not ub_data:
+        await msg.edit_text(f"❌ Контейнер <code>{container_name}</code> не найден в базе данных.")
+        return
+        
+    if ub_data.get('server_ip') != old_server_ip:
+        await msg.edit_text(f"❌ Контейнер <code>{container_name}</code> находится на другом сервере, а не на {old_server_code}.")
+        return
+
+    owner_id = ub_data['tg_user_id']
+    ub_type = ub_data['ub_type']
+
+    try:
+        await msg.edit_text("<b>Шаг 1/3:</b> Подготовка данных в БД...")
+        if not await db.update_userbot_server(container_name, new_server_ip):
+            raise Exception("Не удалось обновить IP в базе данных.")
+        await db.delete_password(owner_id)
+
+        await msg.edit_text(f"<b>Шаг 2/3:</b> Создание резервной копии на {old_server_code}...")
+        backup_result = await api_manager.backup_container(container_name, old_server_ip)
+        
+        if not backup_result.get("success"):
+            await db.update_userbot_server(container_name, old_server_ip)
+            raise Exception(f"Ошибка создания резервной копии: {backup_result.get('error', 'Неизвестная ошибка')}")
+
+        await msg.edit_text(f"<b>Шаг 3/3:</b> Восстановление на {new_server_code}...")
+        restore_result = await api_manager.restore_container(container_name, ub_type, new_server_ip)
+
+        if not restore_result.get("success"):
+            raise Exception(f"Ошибка восстановления: {restore_result.get('error', 'Неизвестная ошибка')}")
+
+        await msg.edit_text(f"✅ Перенос контейнера <code>{container_name}</code> успешно завершен.")
+
+    except Exception as e:
+        await msg.edit_text(
+            f"❌ <b>Произошла критическая ошибка на одном из этапов переноса!</b>\n\n"
+            f"<pre>{html.quote(str(e))}</pre>\n\n"
+            "Проверьте состояние контейнера вручную."
+        )
