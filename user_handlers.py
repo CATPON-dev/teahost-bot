@@ -55,6 +55,8 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
     from bot import BANNER_FILE_IDS
     
     user_id = call.from_user.id
+    has_premium = await db.check_premium_access(user_id)
+    
     all_servers = server_config.get_servers()
     all_userbots = await db.get_all_userbots_full_info()
     installed_bots_map = defaultdict(int)
@@ -62,13 +64,16 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
         installed_bots_map[ub['server_ip']] += 1
 
     server_ips = [ip for ip in all_servers if ip != sm.LOCAL_IP]
-    tasks = [server_config.is_install_allowed(ip, user_id) for ip in server_ips]
-    results = await asyncio.gather(*tasks)
     
     available_servers_filtered = []
-    for i, ip in enumerate(server_ips):
-        if results[i]:
-            available_servers_filtered.append((ip, all_servers[ip]))
+    for ip in server_ips:
+        details = all_servers[ip]
+        status = details.get("status")
+        if status == 'false':
+            continue
+        if status == 'test' and user_id not in get_all_admins():
+            continue
+        available_servers_filtered.append((ip, details))
 
     def sort_key(server_info):
         ip, details = server_info
@@ -95,7 +100,8 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
         server_stats=server_stats,
         servers_on_page=servers_on_page,
         page=page,
-        total_pages=total_pages
+        total_pages=total_pages,
+        has_premium_access=has_premium
     )
     
     text = "<b>⬇️ Установка</b>\n\n<b>💻 Выберите сервер, на который хотите установить юзербот</b>"
@@ -111,6 +117,13 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
             logging.error(f"Error editing server selection page: {e}")
+            
+@router.callback_query(F.data == "premium_server_locked", UserBotSetup.ChoosingServer)
+async def cq_premium_server_locked(call: types.CallbackQuery):
+    await call.answer(
+        "Данный сервер является премиум, для покупки доступа к нему обратитесь: @nloveuser",
+        show_alert=True
+    )
 
 @router.callback_query(F.data.startswith("select_server_page:"), UserBotSetup.ChoosingServer)
 async def cq_select_server_page(call: types.CallbackQuery, state: FSMContext):

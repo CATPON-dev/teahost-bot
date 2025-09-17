@@ -118,6 +118,7 @@ async def init_db():
                 
                 await _add_column_if_not_exists(cursor, 'users', 'token_regen_count', 'INT DEFAULT 0')
                 await _add_column_if_not_exists(cursor, 'users', 'token_regen_timestamp', 'DATETIME')
+                await _add_column_if_not_exists(cursor, 'users', 'has_premium_access', 'BOOLEAN NOT NULL DEFAULT FALSE')
 
                 await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS userbots (

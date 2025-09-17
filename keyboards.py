@@ -65,7 +65,9 @@ def get_subscribe_keyboard(channel_id: str):
     builder.adjust(1)
     return builder.as_markup()
 
-def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server_stats: dict, servers_on_page: list, page: int, total_pages: int):
+# Файл: keyboards.py
+
+def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server_stats: dict, servers_on_page: list, page: int, total_pages: int, has_premium_access: bool):
     builder = InlineKeyboardBuilder()
     
     for ip, details in servers_on_page:
@@ -76,7 +78,12 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
         code = details.get("code", "N/A")
         cpu_load = server_stats.get(ip, {}).get('cpu_usage', 'N/A')
         
-        if status == "false":
+        premium_emoji = "💎 " if status == "premium" else ""
+
+        if status == "premium" and not has_premium_access:
+            emoji_status = "💎"
+            callback_data = "premium_server_locked"
+        elif status == "false":
             emoji_status = "🔴"
             callback_data = "server_unavailable"
         elif status == "test":
@@ -85,9 +92,6 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
         elif status == "noub":
             emoji_status = "🟢"
             callback_data = "server_noub"
-        elif status == "premium":
-            emoji_status = "🟢"
-            callback_data = f"select_server:{ip}"
         elif slots > 0 and installed >= slots:
             emoji_status = "🈵"
             callback_data = "server_full"
@@ -95,7 +99,6 @@ def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server
             emoji_status = "🟢"
             callback_data = f"select_server:{ip}"
 
-        premium_emoji = "💎 " if status == "premium" else ""
         button_text = f"{emoji_status} | [{installed}/{slots}] | {premium_emoji}{flag} | {code} | 📈 {cpu_load}%"
         builder.button(text=button_text, callback_data=callback_data)
 
