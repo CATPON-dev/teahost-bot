@@ -238,10 +238,7 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
             for ub in all_ubs_info:
                 ub_type = ub.get('ub_type', 'unknown').capitalize()
                 bots_by_type[ub_type] += 1
-            type_emojis = {
-                "Fox": "🦊", "Heroku": "🪐", "Hikka": "🌘",
-                "Legacy": "🌙", "Unknown": "❓"
-            }
+            
             text_parts = ["📊 <b>SharkHost статистика</b>"]
             
             text_parts.append(
@@ -251,14 +248,17 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
                 f"</blockquote>"
             )
             
-            text_parts.append("<b>⚙️ Распределение по типам:</b>")
-            type_stats = []
-            all_known_types = ["Fox", "Heroku", "Hikka", "Legacy"]
-            for ub_type in all_known_types:
-                count = bots_by_type.get(ub_type, 0)
-                emoji = type_emojis.get(ub_type, "🤖")
-                type_stats.append(f"- {emoji} {ub_type}: <code>{count}</code>")
-            text_parts.append(f"<blockquote>" + "\n".join(type_stats) + "</blockquote>")
+            stats_block = (
+                "🤖 <u><b>Userbots stats:</b></u>\n"
+                "<blockquote>"
+                f"🌘 <b>Hikka:</b> {bots_by_type.get('Hikka', 0)} user(s)\n"
+                f"🪐 <b>Heroku:</b> {bots_by_type.get('Heroku', 0)} user(s)\n"
+                f"🌙 <b>Legacy:</b> {bots_by_type.get('Legacy', 0)} user(s)\n"
+                f"🦊 <b>FoxUserBot:</b> {bots_by_type.get('Fox', 0)} user(s)"
+                "</blockquote>"
+            )
+            text_parts.append(stats_block)
+
             update_time_str = datetime.now(pytz.timezone("Europe/Moscow")).strftime('%d.%m.%Y в %H:%M:%S')
             text_parts.append(f"<i>Последнее обновление: {update_time_str} MSK</i>")
             text = "\n\n".join(text_parts)
@@ -274,6 +274,7 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
             logging.error(f"Не удалось обновить панель статистики: {e}", exc_info=True)
     except Exception as e:
         logging.error(f"Critical error in update_stats_message scheduler task: {e}", exc_info=True)
+       
 
 async def _generate_paginated_status_content(page: int = 1):
     total_users = len(await db.get_all_bot_users())
@@ -290,6 +291,23 @@ async def _generate_paginated_status_content(page: int = 1):
     available_servers = len(active_servers)
     free_slots = sum(max(0, s.get('slots', 0) - installed_bots_map.get(ip, 0)) for ip, s in active_servers.items())
     
+    all_ubs_info = await db.get_all_userbots_full_info()
+    total_ubs = len(all_ubs_info)
+    bots_by_type = defaultdict(int)
+    for ub in all_ubs_info:
+        ub_type = ub.get('ub_type', 'unknown').lower()
+        bots_by_type[ub_type] += 1
+
+    userbots_stats_text = (
+        "<blockquote>"
+        "🤖 <u><b>Userbots stats:</b></u>\n"
+        f"🌘 <b>Hikka:</b> {bots_by_type.get('hikka', 0)} user(s)\n"
+        f"🪐 <b>Heroku:</b> {bots_by_type.get('heroku', 0)} user(s)\n"
+        f"🌙 <b>Legacy:</b> {bots_by_type.get('legacy', 0)} user(s)\n"
+        f"🦊 <b>FoxUserBot:</b> {bots_by_type.get('fox', 0)} user(s)"
+        "</blockquote>"
+    )
+
     async def get_stats_with_semaphore(ip):
         async with SSH_SEMAPHORE:
             return await sm.get_server_stats(ip)
@@ -301,12 +319,14 @@ async def _generate_paginated_status_content(page: int = 1):
     text_parts = [
         "<blockquote>",
         "🦈 <b>SharkHost Status</b>\n",
-       f"<b>📊 Общая статистика:</b>\n"
-       f"{total_users} пользователей\n"
-       f"- {available_servers} серверов доступно\n"
-       f"- {free_slots} {pluralize_userbot(free_slots)} можно установить\n\n"
-       "<b>🚀 Статус серверов:</b>",
-       "</blockquote>\n\n"
+        f"<b>📊 Общая статистика:</b>\n"
+        f"- {total_users} пользователей\n"
+        f"- {total_ubs} юзерботов\n"
+        f"- {available_servers} серверов доступно\n"
+        f"- {free_slots} {pluralize_userbot(free_slots)} можно установить\n",
+        "</blockquote>",
+        userbots_stats_text,
+        "\n<b>🚀 Статус серверов:</b>"
     ]
 
     for ip, details in servers_on_page.items():
