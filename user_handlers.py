@@ -2400,20 +2400,25 @@ async def cq_select_server(call: types.CallbackQuery, state: FSMContext):
 async def _proceed_to_type_selection(call: types.CallbackQuery, state: FSMContext, server_ip: str):
     from bot import BANNER_FILE_IDS
     await state.update_data(server_ip=server_ip)
+    
     text = (
-        "<b>[Шаг 2/3] Выбор типа юзербота</b>\n\n"
-        "<blockquote><b>🌘 Hikka</b> - The most fresh and updateable developer-oriented Telegram userbot</blockquote>\n\n"
-        "<blockquote><b>🪐 Heroku</b> — is the latest fork of Hikka with updates and endless fun!</blockquote>\n\n"
-        "<blockquote><b>🦊 FoxUserbot</b> - Telegram Userbot built with Kurigram (Pyrogram).</blockquote>\n\n"
-        "<blockquote><b>🌙 Legacy</b> —  modern, developer-oriented Telegram userbot with numerous bug fixes and up-to-date improvements, continuously maintained for the latest features and stability.</blockquote>"
+        "⬇️ <b>Установка</b>\n\n"
+        "<blockquote>"
+        "🌘 <b>Hikka</b> - A multifunctional, and most popular developer-focused userbot based on GeekTG, but it is currently closed and will no longer receive updates.\n\n"
+        "🪐 <b>Heroku</b> - The most popular fork of the Hikka userbot, it receives regular updates and has many new features, supports Hikka userbot modules.\n\n"
+        "🌙 <b>Legacy</b> - The most popular fork of the Heroku userbot, it has a log of fixed bugs, receives regular updates and supports Hikka userbot modules.\n\n"
+        "🦊 <b>FoxUserBot</b> - Telegram userbot with the simplest installation, doesn't have much functionality as other userbots, receives regular updates and uses Kurigram (Pyrogram fork)"
+        "</blockquote>\n"
+        "👾 <b>Выберите юзербот который хотите установить</b>"
     )
+    
     photo = BANNER_FILE_IDS.get("select_userbot") or FSInputFile("banners/select_userbot.png")
     
     data = await state.get_data()
     message_id = data.get("message_id_to_edit", call.message.message_id)
 
     try:
-        await safe_callback_answer(call, "", show_alert=True)
+        await call.answer()
         await call.bot.edit_message_media(
             chat_id=call.message.chat.id, message_id=message_id,
             media=InputMediaPhoto(media=photo, caption=text),
@@ -2421,7 +2426,7 @@ async def _proceed_to_type_selection(call: types.CallbackQuery, state: FSMContex
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await safe_callback_answer(call, "", show_alert=True)
+            await call.answer()
         else:
             raise
 
