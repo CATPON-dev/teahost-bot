@@ -268,7 +268,7 @@ async def _show_main_panel(bot: Bot, chat_id: int, user_id: int, user_name: str,
     if str(chat_id).startswith("-"):
         is_chat = True
     text = (f"<b>{get_greeting()}, {html.quote(user_name)}!</b>\n\n"
-            f"<blockquote>🦈 Добро пожаловать в панель управления хостингом <b>SharkHost</b>. "
+            f"<blockquote>☕ Добро пожаловать в панель управления хостингом <b>TeaHost</b>. "
             f"Здесь вы можете легко управлять своими юзерботами.</blockquote>")
     markup = kb.get_main_panel_keyboard(has_bots=bool(user_bots), user_id=owner_id, chat_id=chat_id, is_chat=is_chat)
     photo = BANNER_FILE_IDS.get("main_panel") or FSInputFile("banners/select_action.png")
@@ -553,7 +553,7 @@ async def _show_login_link_success_from_new_message(
         "<blockquote>🎯 <b>Управление юзерботом:</b>\n"
         "• Для управления перейдите в /start → Панель управления\n"
         "• Там вы найдете все необходимые инструменты</blockquote>\n",
-        "<blockquote>💫 <b>Спасибо, что выбрали SharkHost!</b>\n"
+        "<blockquote>💫 <b>Спасибо, что выбрали TeaHost!</b>\n"
         "Мы ценим ваше доверие ❤️</blockquote>",
     ]
 
@@ -818,7 +818,7 @@ async def cmd_start(message: types.Message, state: FSMContext, bot: Bot, command
                 if ref_name:
                     user_data_for_log["referral"] = ref_name
                 await log_event(bot, "new_user_registered", {"user_data": user_data_for_log})
-            text = ("👋 <b>Добро пожаловать в SharkHost!</b>\n\n"
+            text = ("👋 <b>Добро пожаловать в TeaHost!</b>\n\n"
                     "Прежде чем мы начнем, ознакомьтесь с нашим пользовательским соглашением. "
                     "Нажимая кнопку «Принять и продолжить», вы подтверждаете, что прочитали и согласны с нашими правилами.")
             await message.answer(text, reply_markup=kb.get_agreement_keyboard())
@@ -826,14 +826,14 @@ async def cmd_start(message: types.Message, state: FSMContext, bot: Bot, command
             await _show_main_panel(bot=bot, chat_id=message.chat.id, user_id=user.id, user_name=user.full_name, state=state, topic_id=message.message_thread_id, owner_id=user.id)
     except Exception as e:
         logging.error(f"Ошибка при обработке команды /start: {e}")
-        await message.answer("Произошла ошибка при обработке команды /start. Пожалуйста, попробуйте еще раз.")
+        await message.answer("Произошла ошибка при обработке команды /start, Попробуйте еще раз.")
 
 @router.message(Command("review"), F.chat.type == "private")
 async def cmd_review(message: types.Message, state: FSMContext):
     text = (
-        "✍️ <b>Напишите отзыв о SharkHost</b>\n\n"
-        "ℹ️ В отзыве можете рассказать о том, сколько пользуетесь SharkHost, какие отличия заметили от предыдущего хостинга и т.д.\n\n"
-        "📅 В ближайшее время отзыв будет опубликован на @SharkHost_reviews."
+        "✍️ <b>Напишите отзыв о TeaHost</b>\n\n"
+        "ℹ️ В отзыве можете рассказать о том, сколько пользуетесь TeaHost, какие отличия заметили от предыдущего хостинга и т.д.\n\n"
+        "📅 В ближайшее время отзыв будет опубликован на @TeaHostReviews."
     )
     sent_message = await message.reply(text, reply_markup=kb.get_cancel_review_keyboard())
     await state.update_data(original_bot_message_id=sent_message.message_id)
@@ -1103,19 +1103,26 @@ async def cq_select_ub_panel(call: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("refresh_panel:"))
 async def cq_refresh_panel(call: types.CallbackQuery, state: FSMContext):
     try:
+        await call.answer()
+
         parts = call.data.split(":")
-        if len(parts) < 3:
-            await safe_callback_answer(call, "Кнопка устарела, обновите панель.", show_alert=True)
-            return
-        _, ub_username, owner_id_str = parts
+        ub_username = parts[1]
+        
+        owner_id_str = parts[2] if len(parts) >= 3 else str(call.from_user.id)
         owner_id = int(owner_id_str)
+
         if not check_panel_owner(call, owner_id):
             return
-        await safe_callback_answer(call, "", show_alert=True)
+
         await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
         await show_management_panel(call, ub_username, state)
-    except TelegramBadRequest:
-        await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
+    except (TelegramBadRequest, ValueError, IndexError) as e:
+        if isinstance(e, TelegramBadRequest) and "message is not modified" in str(e).lower():
+            return
+        
+        logging.error(f"Ошибка при обновлении панели управления: {e}")
+        await call.answer("Упс... кажется, эти кнопки устарели. Вызовите новые через /start", show_alert=True)
 
 @router.callback_query(F.data.startswith("show_user_logs:"))
 async def cq_show_user_logs(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -1372,7 +1379,7 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                 "<b>ℹ️ Если не удаётся подключиться:</b>\n"
                 "- Попробуйте другой клиент (например, Hiddify)\n"
                 "- Проверьте интернет\n"
-                "- Обратитесь в поддержку @SharkHost_support"
+                "- Обратитесь в поддержку @TeaHostSupport"
                 "</blockquote>"
             )
             buttons = [
@@ -1603,12 +1610,27 @@ async def cq_delete_ub_confirm_request(call: types.CallbackQuery, state: FSMCont
 @router.callback_query(F.data.startswith("delete_ub_cancel:"), UserBotSetup.ConfirmDeleteUserBot)
 async def cq_delete_ub_cancel(call: types.CallbackQuery, state: FSMContext):
     try:
-        await safe_callback_answer(call, "🚫 Удаление отменено.", show_alert=True)
-        ub_username = call.data.split(":")[1]
-        await show_management_panel(call, ub_username, state)
-    except TelegramBadRequest:
-        await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+        await call.answer(
+            "Удаление отменено, будьте осторожны при удалении как бы сносит весь контейнер/юзербот!",
+            show_alert=True
+        )
 
+        await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
+
+        ub_username = call.data.split(":")[1]
+
+        await asyncio.sleep(0.5)
+
+        await show_management_panel(call, ub_username, state)
+
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logging.error(f"Ошибка в cq_delete_ub_cancel: {e}")
+            await call.answer("Упс... кажется, эти кнопки устарели. Вызовите новые через /start", show_alert=True)
+    except Exception as e:
+        logging.error(f"Неожиданная ошибка в cq_delete_ub_cancel: {e}")
+        await call.answer("Произошла ошибка, попробуйте снова.", show_alert=True)
+        
 @router.callback_query(F.data.startswith("delete_ub_execute:"), UserBotSetup.ConfirmDeleteUserBot)
 async def cq_delete_ub_execute(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
@@ -1678,11 +1700,6 @@ async def check_subscription_callback(call: types.CallbackQuery, bot: Bot, state
 async def cq_share_panel_start(call: types.CallbackQuery, state: FSMContext):
     """Временный обработчик для кнопки 'Поделиться панелью'"""
     await safe_callback_answer(call, "⚠️ Функция 'Поделиться панелью' временно недоступна.\n\nМы работаем над её реализацией. Следите за обновлениями!", show_alert=True)
-
-@router.callback_query(F.data.startswith("migrate_ub_start:"))
-async def cq_migrate_ub_start(call: types.CallbackQuery, state: FSMContext):
-    """Временный обработчик для кнопки 'Сменить сервер'"""
-    await safe_callback_answer(call, "⚠️ Функция 'Сменить сервер' временно недоступна.\n\nМы работаем над её реализацией. Следите за обновлениями!", show_alert=True)
 
 @router.message(StateFilter(UserBotShare.WaitingForShareUserID))
 async def msg_process_share_user_id(message: types.Message, state: FSMContext, bot: Bot):
@@ -1823,9 +1840,9 @@ async def cmd_ping(message: types.Message):
 @router.message(Command("review"), F.chat.type == "private")
 async def cmd_review(message: types.Message, state: FSMContext):
     text = (
-        "✍️ <b>Напишите отзыв о SharkHost</b>\n\n"
-        "ℹ️ В отзыве можете рассказать о том, сколько пользуетесь SharkHost, какие отличия заметили от предыдущего хостинга и т.д.\n\n"
-        "📅 В ближайшее время отзыв будет опубликован на @SharkHost_reviews."
+        "✍️ <b>Напишите отзыв о TeaHost</b>\n\n"
+        "ℹ️ В отзыве можете рассказать о том, сколько пользуетесь TeaHost, какие отличия заметили от предыдущего хостинга и т.д.\n\n"
+        "📅 В ближайшее время отзыв будет опубликован на @TeaHostReviews."
     )
     sent_message = await message.reply(text, reply_markup=kb.get_cancel_review_keyboard())
     await state.update_data(original_bot_message_id=sent_message.message_id)
@@ -1852,8 +1869,14 @@ async def reset_review_warn_flag(message: types.Message):
 @router.callback_query(F.data == "cancel_review", StateFilter(UserReview.WaitingForReview))
 async def cq_cancel_review(call: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await safe_callback_answer(call, "Действие отменено.", show_alert=True)
-    await safe_callback_answer(call, "Отменено.", show_alert=True)
+    await call.answer("200 OK.", show_alert=True)
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            pass
+        else:
+            logging.error(f"ошибочка, вот лог: {e}")
 
 @router.message(StateFilter(UserReview.WaitingForReview))
 async def process_review_text(message: types.Message, state: FSMContext, bot: Bot):
@@ -2511,7 +2534,7 @@ async def cq_show_api_panel(call: types.CallbackQuery, state: FSMContext):
     
     text = (
         "🔑 <b>Ваш персональный API-токен</b>\n\n"
-        "Этот токен используется для доступа к API SharkHost из внешних приложений.\n\n"
+        "Этот токен используется для доступа к API TeaHost из внешних приложений.\n\n"
         "<b>Никому не передавайте этот токен!</b>\n\n"
         "Ваш токен:\n"
         f"<code>{html.quote(_mask_token(token))}</code>"
@@ -2535,7 +2558,7 @@ async def cq_toggle_api_token_visibility(call: types.CallbackQuery, state: FSMCo
 
     text = (
         "🔑 <b>Ваш персональный API-токен</b>\n\n"
-        "Этот токен используется для доступа к API SharkHost из внешних приложений.\n\n"
+        "Этот токен используется для доступа к API TeaHost из внешних приложений.\n\n"
         "<b>Никому не передавайте этот токен!</b>\n\n"
         "Ваш токен:\n"
         f"<code>{html.quote(new_text_token)}</code>"
@@ -2545,22 +2568,149 @@ async def cq_toggle_api_token_visibility(call: types.CallbackQuery, state: FSMCo
     await call.message.edit_caption(caption=text, reply_markup=markup)
     await state.set_state(new_state)
     
-@router.message(Command("info"))
-async def cmd_info(message: types.Message):
-    git_info = await sm.get_git_info()
-    
-    status = git_info.get("status", "N/A")
-    commit_hash = git_info.get("last_commit_hash", "N/A")
-    commit_msg = html.quote(git_info.get("last_commit_msg", "N/A"))
-    branch = html.quote(git_info.get("branch", "N/A"))
-    
-    text = (
-        f"<b>🦈 SharkHost</b>\n\n"
-        f"{status}\n\n"
-        f"📁 <b>Last commit:</b> <code>#{commit_hash}</code> - <i>{commit_msg}</i>\n"
-        f"🌳 <b>Branch:</b> <code>{branch}</code>\n"
-        f"🧑‍💻 <b>Devs:</b> @aloya_uwu & @nloveuser"
-    )
-    
-    await message.reply(text)
+def find_ip_by_code(code: str) -> str | None:
+    servers = server_config.get_servers()
+    for ip, details in servers.items():
+        if details.get("code") and details.get("code").lower() == code.lower():
+            return ip
+    return None
+
+@router.callback_query(F.data.startswith("migrate_ub_start:"))
+async def cq_migrate_ub_start(call: types.CallbackQuery, state: FSMContext):
+    from bot import BANNER_FILE_IDS
+    await call.answer()
+
+    try:
+        _, ub_username, owner_id_str = call.data.split(":")
+        owner_id = int(owner_id_str)
+        if not check_panel_owner(call, owner_id):
+            return
+
+        loading_text = "<b>🔄 Смена сервера</b>\n\nЗагружаю доступные сервера..."
+        photo = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
+        await call.message.edit_media(
+            media=InputMediaPhoto(media=photo, caption=loading_text),
+            reply_markup=kb.get_loading_keyboard()
+        )
+        
+        ub_data = await db.get_userbot_data(ub_username)
+        if not ub_data:
+            await call.message.edit_caption(caption="❌ Юзербот не найден.", reply_markup=kb.get_back_to_main_panel_keyboard())
+            return
+
+        current_server_ip = ub_data['server_ip']
+        user_id = call.from_user.id
+        has_premium = await db.check_premium_access(user_id)
+        
+        all_servers = server_config.get_servers()
+        all_userbots = await db.get_all_userbots_full_info()
+        installed_bots_map = defaultdict(int)
+        for ub in all_userbots:
+            installed_bots_map[ub['server_ip']] += 1
+
+        available_servers_filtered = []
+        for ip, details in all_servers.items():
+            if ip == sm.LOCAL_IP or ip == current_server_ip:
+                continue
+            
+            status = details.get("status")
+            if status in ['false', 'test']:
+                continue
+            
+            available_servers_filtered.append((ip, details))
+        
+        data = await state.get_data()
+        server_stats = data.get("server_stats", {})
+        if not server_stats:
+            stats_tasks = [sm.get_server_stats(ip) for ip, _ in available_servers_filtered]
+            stats_results = await asyncio.gather(*stats_tasks)
+            server_stats = {ip: res for (ip, _), res in zip(available_servers_filtered, stats_results)}
+
+        markup = kb.get_migration_server_selection_keyboard(
+            ub_username=ub_username,
+            owner_id=owner_id,
+            servers_list=available_servers_filtered,
+            installed_bots_map=installed_bots_map,
+            server_stats=server_stats,
+            has_premium_access=has_premium
+        )
+        
+        final_text = f"<b>🔄 Смена сервера</b>\n\n<b>💻 Выберите новый сервер для переноса</b>"
+        
+        await call.message.edit_media(
+            media=InputMediaPhoto(media=photo, caption=final_text),
+            reply_markup=markup
+        )
+        await state.set_state(UserBotSetup.Migrating)
+
+    except Exception as e:
+        logging.error(f"Ошибка в cq_migrate_ub_start: {e}")
+        await call.answer("Произошла ошибка при запуске переноса.", show_alert=True)
+
+@router.callback_query(F.data.startswith("migrate_ub_select:"), StateFilter(UserBotSetup.Migrating))
+async def cq_migrate_ub_execute(call: types.CallbackQuery, state: FSMContext, bot: Bot):
+    try:
+        _, ub_username, owner_id_str, new_server_code = call.data.split(":")
+        owner_id = int(owner_id_str)
+        if not check_panel_owner(call, owner_id):
+            return
+
+        await state.clear()
+        
+        await call.message.edit_media(
+            media=InputMediaPhoto(media=FSInputFile("banners/panel_userbot.png"), caption="Переношу на другой сервер контейнер..."),
+            reply_markup=kb.get_loading_keyboard()
+        )
+        await call.answer()
+
+        new_server_ip = find_ip_by_code(new_server_code)
+        if not new_server_ip or not await server_config.is_install_allowed(new_server_ip, owner_id):
+            await call.answer("❌ Выбранный сервер недоступен для установки.", show_alert=True)
+            await show_management_panel(call, ub_username, state)
+            return
+
+        ub_data = await db.get_userbot_data(ub_username=ub_username)
+        if not ub_data:
+            await call.message.edit_caption("❌ Ошибка: Юзербот не найден в базе данных.")
+            return
+        
+        old_server_ip = ub_data.get('server_ip')
+        ub_type = ub_data.get('ub_type')
+        
+        if old_server_ip == new_server_ip:
+            await call.message.edit_caption("❌ Старый и новый серверы не могут быть одинаковыми.")
+            return
+
+        if not await db.update_userbot_server(ub_username, new_server_ip):
+            raise Exception("Не удалось обновить IP в базе данных.")
+        await db.delete_password(owner_id)
+
+        backup_result = await api_manager.backup_container(ub_username, old_server_ip)
+        if not backup_result.get("success"):
+            await db.update_userbot_server(ub_username, old_server_ip)
+            raise Exception(f"Ошибка создания резервной копии: {backup_result.get('error', 'Неизвестная ошибка')}")
+
+        restore_result = await api_manager.restore_container(ub_username, ub_type, new_server_ip)
+        if not restore_result.get("success"):
+            await db.update_userbot_server(ub_username, old_server_ip)
+            raise Exception(f"Ошибка восстановления: {restore_result.get('error', 'Неизвестная ошибка')}")
+
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🔙 Назад", callback_data=f"refresh_panel:{ub_username}:{owner_id}")
+        
+        await call.message.edit_caption(
+            caption="Перенос успешный (200 OK), спасибо что пользуетесь TH (TeaHost).",
+            reply_markup=builder.as_markup()
+        )
+
+    except Exception as e:
+        logging.error(f"Ошибка при переносе контейнера: {e}")
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🔙 Назад", callback_data=f"refresh_panel:{ub_username}:{owner_id}")
+        await call.message.edit_caption(
+            f"❌ <b>Произошла ошибка при переносе!</b>\n\n"
+            f"<pre>{html.quote(str(e))}</pre>\n\n"
+            "Обратитесь в поддержку.",
+            reply_markup=builder.as_markup()
+        )
 # --- END OF FILE user_handlers.py ---

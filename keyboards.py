@@ -65,8 +65,6 @@ def get_subscribe_keyboard(channel_id: str):
     builder.adjust(1)
     return builder.as_markup()
 
-# Файл: keyboards.py
-
 def get_server_selection_keyboard(user_id: int, installed_bots_map: dict, server_stats: dict, servers_on_page: list, page: int, total_pages: int, has_premium_access: bool):
     builder = InlineKeyboardBuilder()
     
@@ -142,8 +140,8 @@ def get_main_panel_keyboard(has_bots: bool, user_id: int = None, chat_id: int = 
         builder.button(text="🚀 Установить юзербот", callback_data="create_userbot_start")
     
     
-    builder.button(text="🛠️ Статус серверов", url="https://t.me/shark_status")
-    builder.button(text="💬 Поддержка", url="t.me/SharkHost_support")
+    builder.button(text="🛠️ Статус серверов", url="https://t.me/TeaHostStatus")
+    builder.button(text="💬 Поддержка", url="t.me/TeaHostSupport")
     builder.adjust(1)
     return builder.as_markup()
     
@@ -257,7 +255,7 @@ def get_management_keyboard(ip: str, port: int, is_running: bool, ub_username: s
             if is_private:
                 builder.row(InlineKeyboardButton(text="👥 Поделиться панелью", callback_data=f"share_panel_start:{ub_username}"))
             if is_super_admin:
-                builder.row(InlineKeyboardButton(text="🔄 Сменить сервер", callback_data=f"migrate_ub_start:{ub_username}"))
+                builder.row(InlineKeyboardButton(text="🔄 Сменить сервер", callback_data=f"migrate_ub_start:{ub_username}:{owner_id_str}"))
             builder.row(InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_ub_confirm_request:{ub_username}:{owner_id_str}"))
     else:
         if not is_inline:
@@ -269,6 +267,45 @@ def get_management_keyboard(ip: str, port: int, is_running: bool, ub_username: s
 
     if hasattr(builder, 'inline_keyboard'):
         builder.inline_keyboard = [row for row in builder.inline_keyboard if row and any(b for b in row)]
+    return builder.as_markup()
+
+def get_migration_server_selection_keyboard(ub_username: str, owner_id: int, servers_list: list, installed_bots_map: dict, server_stats: dict, has_premium_access: bool):
+    builder = InlineKeyboardBuilder()
+    
+    for ip, details in servers_list:
+        status = details.get("status", "false")
+        slots = details.get("slots", 0)
+        installed = installed_bots_map.get(ip, 0)
+        flag = details.get("flag", "🏳️")
+        code = details.get("code", "N/A")
+        cpu_load = server_stats.get(ip, {}).get('cpu_usage', 'N/A')
+        
+        premium_emoji = "💎 " if status == "premium" else ""
+
+        if status == "premium" and not has_premium_access:
+            emoji_status = "💎"
+            callback_data = "premium_server_locked"
+        elif status == "false":
+            emoji_status = "🔴"
+            callback_data = "server_unavailable"
+        elif status == "test":
+            emoji_status = "🧪"
+            callback_data = f"migrate_ub_select:{ub_username}:{owner_id}:{code}"
+        elif status == "noub":
+            emoji_status = "🟢"
+            callback_data = "server_noub"
+        elif slots > 0 and installed >= slots:
+            emoji_status = "🈵"
+            callback_data = "server_full"
+        else:
+            emoji_status = "🟢"
+            callback_data = f"migrate_ub_select:{ub_username}:{owner_id}:{code}"
+
+        button_text = f"{emoji_status} | [{installed}/{slots}] | {premium_emoji}{flag} | {code} | 📈 {cpu_load}%"
+        builder.button(text=button_text, callback_data=callback_data)
+
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data=f"refresh_panel:{ub_username}:{owner_id}"))
     return builder.as_markup()
 
 def get_confirm_delete_keyboard(ub_username: str):

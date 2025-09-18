@@ -28,13 +28,13 @@ class IsBotEnabled(BaseFilter):
             
             if chat and chat.type == "private":
                 text = (
-                    "<b>⚠️ SharkHost is undergoing maintenance</b>\n\n"
+                    "<b>⚠️TeaHost is undergoing maintenance</b>\n\n"
                     "<i>We will notify you about the completion of maintenance in the channel or support chat.</i>"
                 )
                 
                 builder = InlineKeyboardBuilder()
-                builder.button(text="💬 Support Chat", url="https://t.me/SharkHost_support")
-                builder.button(text="📢 Channel", url="https://t.me/Shark_Host")
+                builder.button(text="💬 Support Chat", url="https://t.me/TeaHostSupport")
+                builder.button(text="📢 Channel", url="https://t.me/TeaHostChannel")
                 builder.adjust(2)
                 markup = builder.as_markup()
 
@@ -78,7 +78,7 @@ class IsSubscribed(BaseFilter):
             if member.status in ["left", "kicked"]:
                 text = (
                     "<b>🚫 Доступ ограничен!</b>\n\n"
-                    "Для использования этой функции, пожалуйста, подпишитесь на наш канал."
+                    "Для использования этой функции, подпишитесь на наш канал."
                 )
                 markup = kb.get_subscribe_keyboard(config.CHANNEL_ID)
                 

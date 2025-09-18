@@ -20,7 +20,7 @@ class _Config:
         
         self.TEST_MODE = self._config.get("test_mode", False)
         
-        self.CHANNEL_ID = "@Shark_Host"
+        self.CHANNEL_ID = "@TeaHostChannel"
         
         # В тестовом режиме не используем рабочие каналы
         if self.TEST_MODE:
@@ -34,7 +34,7 @@ class _Config:
         else:
             self.STATUS_CHANNEL_ID = -1002536796447
             self.LOG_CHAT_ID = self._config.get("log_chat_id")
-            self.SUPPORT_CHAT_ID = "@SharkHost_support" 
+            self.SUPPORT_CHAT_ID = "@TeaHostSupport" 
             self.SUPPORT_TOPIC_ID = 22 
             self.LOG_CHANNEL_ID = self._config.get("log_channel_id")
             self.REVIEW_CHANNEL_ID = self._config.get("review_channel_id")
