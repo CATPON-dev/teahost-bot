@@ -254,7 +254,7 @@ def get_management_keyboard(ip: str, port: int, is_running: bool, ub_username: s
                 builder.row(InlineKeyboardButton(text="📜 Логи", callback_data=f"show_user_logs:docker:{ub_username}:{owner_id_str}:1"))
             if is_private:
                 builder.row(InlineKeyboardButton(text="👥 Поделиться панелью", callback_data=f"share_panel_start:{ub_username}"))
-            if is_super_admin:
+            if is_private:
                 builder.row(InlineKeyboardButton(text="🔄 Сменить сервер", callback_data=f"migrate_ub_start:{ub_username}:{owner_id_str}"))
             builder.row(InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_ub_confirm_request:{ub_username}:{owner_id_str}"))
     else:
