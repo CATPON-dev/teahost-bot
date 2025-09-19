@@ -3,6 +3,7 @@ import os
 
 STATUS_FILE = "server_status.json"
 
+
 def is_server_enabled():
     if not os.path.exists(STATUS_FILE):
         return True
@@ -12,6 +13,7 @@ def is_server_enabled():
             return data.get("enabled", True)
     except (json.JSONDecodeError, FileNotFoundError):
         return True
+
 
 def set_server_status(enabled: bool):
     with open(STATUS_FILE, 'w') as f:

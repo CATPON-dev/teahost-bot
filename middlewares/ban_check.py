@@ -3,6 +3,7 @@ from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware, types
 import database as db
 
+
 class BanMiddleware(BaseMiddleware):
     async def __call__(
         self,
@@ -10,13 +11,15 @@ class BanMiddleware(BaseMiddleware):
         event: types.Update,
         data: Dict[str, Any]
     ) -> Any:
-        
+
         user = data.get("event_from_user")
-        
+
         if not user or not await db.is_user_banned(user.id):
             return await handler(event, data)
 
-        if isinstance(event, types.Message) and event.text and event.text.startswith("/start"):
+        if isinstance(
+                event,
+                types.Message) and event.text and event.text.startswith("/start"):
             return await handler(event, data)
-        
+
         return

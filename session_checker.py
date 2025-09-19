@@ -20,6 +20,7 @@ WARNINGS_LOCK = asyncio.Lock()
 WARNED_ON_MISSING_SESSION = set()
 CLEANUP_CANDIDATES_CACHE = {}
 
+
 def _read_cleanup_message_id():
     if not os.path.exists(CLEANUP_PROPOSAL_MESSAGE_ID_FILE):
         return None
@@ -30,11 +31,15 @@ def _read_cleanup_message_id():
     except (json.JSONDecodeError, FileNotFoundError):
         return None
 
+
 def _write_cleanup_message_id(message_id: int):
-    os.makedirs(os.path.dirname(CLEANUP_PROPOSAL_MESSAGE_ID_FILE), exist_ok=True)
+    os.makedirs(
+        os.path.dirname(CLEANUP_PROPOSAL_MESSAGE_ID_FILE),
+        exist_ok=True)
     with open(CLEANUP_PROPOSAL_MESSAGE_ID_FILE, 'w') as f:
         json.dump({"message_id": message_id}, f)
-        
+
+
 def pluralize_session(count):
     if count % 10 == 1 and count % 100 != 11:
         return "сессия"
@@ -42,6 +47,7 @@ def pluralize_session(count):
         return "сессии"
     else:
         return "сессий"
+
 
 async def _check_sessions_on_server(ip: str):
     base_path = "/root/api/volumes"
@@ -56,30 +62,32 @@ async def _check_sessions_on_server(ip: str):
         fi
     done
     """
-    
+
     async with CHECK_SEMAPHORE:
         res = await sm.run_command_async(command, ip, check_output=True, timeout=180)
-    
+
     suspicious = {}
     normal = {}
 
     if res.get("success") and res.get("output"):
         all_bots_on_server = {bot['ub_username'] for bot in await db.get_userbots_by_server_ip(ip)}
-        
+
         found_on_server = set()
         for line in res["output"].strip().splitlines():
-            if ":" not in line: continue
-            
+            if ":" not in line:
+                continue
+
             parts = line.split(":", 2)
-            if len(parts) != 3: continue
-            
+            if len(parts) != 3:
+                continue
+
             name, count_str, files_str = parts
             found_on_server.add(name)
             try:
                 count = int(count_str)
             except ValueError:
                 count = 0
-            
+
             files = files_str.split(',') if files_str else []
             user_data = {'count': count, 'files': files}
 
@@ -87,35 +95,43 @@ async def _check_sessions_on_server(ip: str):
                 suspicious[name] = user_data
             else:
                 normal[name] = user_data
-        
+
         for bot_name in all_bots_on_server:
             if bot_name not in found_on_server:
                 normal[bot_name] = {'count': 0, 'files': []}
 
     return suspicious, normal
 
+
 async def check_all_remote_sessions():
     servers = server_config.get_servers()
     remote_servers_ips = [ip for ip in servers if ip != sm.LOCAL_IP]
-    
+
     if not remote_servers_ips:
         return {}
 
     tasks = [_check_sessions_on_server(ip) for ip in remote_servers_ips]
     results = await asyncio.gather(*tasks)
-    
+
     server_session_map = {}
     for ip, (suspicious, normal) in zip(remote_servers_ips, results):
-        server_session_map[ip] = { "suspicious": suspicious, "normal": normal }
-    
+        server_session_map[ip] = {"suspicious": suspicious, "normal": normal}
+
     return server_session_map
+
 
 async def format_session_check_report(server_results: dict, view_mode: str, page: int = 0):
     servers_info = server_config.get_servers()
-    all_usernames = {uname for ip_data in server_results.values() for view in ip_data.values() for uname in view.keys()}
-    ub_data_tasks = [db.get_userbot_data(username) for username in all_usernames]
+    all_usernames = {uname for ip_data in server_results.values()
+                     for view in ip_data.values() for uname in view.keys()}
+    ub_data_tasks = [db.get_userbot_data(username)
+                     for username in all_usernames]
     ub_data_results = await asyncio.gather(*ub_data_tasks)
-    ub_data_map = {uname: data for uname, data in zip(all_usernames, ub_data_results) if data}
+    ub_data_map = {
+        uname: data for uname,
+        data in zip(
+            all_usernames,
+            ub_data_results) if data}
 
     if view_mode == "suspicious":
         header = "⚠️ <b>Пользователи с >1 сессией:</b>\n"
@@ -123,12 +139,15 @@ async def format_session_check_report(server_results: dict, view_mode: str, page
         for ip, session_data in server_results.items():
             if session_data.get("suspicious"):
                 suspicious_by_server[ip] = session_data["suspicious"]
-        
+
         if not suspicious_by_server:
             return "<blockquote>✅ Проверка завершена. Подозрительных пользователей не найдено.</blockquote>", 1
 
         content_parts = []
-        for ip, users in sorted(suspicious_by_server.items(), key=lambda item: servers_info.get(item[0], {}).get('name', item[0])):
+        for ip, users in sorted(
+            suspicious_by_server.items(), key=lambda item: servers_info.get(
+                item[0], {}).get(
+                'name', item[0])):
             server_details = servers_info.get(ip, {})
             server_flag = server_details.get("flag", "🏳️")
             server_code = server_details.get("code", "N/A")
@@ -140,59 +159,73 @@ async def format_session_check_report(server_results: dict, view_mode: str, page
                 if owner_id:
                     owner_data = await db.get_user_data(owner_id)
                     owner_info = f"<i>({escape(owner_data.get('full_name', ''))}, <code>{owner_id}</code>)</i>" if owner_data else f"<i>(ID: <code>{owner_id}</code>)</i>"
-                
-                files_str = ", ".join([f"<code>{escape(f)}</code>" for f in data['files']])
-                user_lines.append(f"  - <b>{escape(username)}</b> {owner_info}\n    └ 📂 {data['count']} шт.: {files_str}")
-            
-            content_parts.append(f"<b>{server_flag} {server_code}</b>\n" + "\n".join(user_lines))
-        
-        full_text = "<blockquote>" + header + "\n" + "\n\n".join(content_parts) + "</blockquote>"
+
+                files_str = ", ".join(
+                    [f"<code>{escape(f)}</code>" for f in data['files']])
+                user_lines.append(
+                    f"  - <b>{escape(username)}</b> {owner_info}\n    └ 📂 {data['count']} шт.: {files_str}")
+
+            content_parts.append(
+                f"<b>{server_flag} {server_code}</b>\n" +
+                "\n".join(user_lines))
+
+        full_text = "<blockquote>" + header + "\n" + \
+            "\n\n".join(content_parts) + "</blockquote>"
         return full_text, 1
-        
+
     else:
         header = "✅ <b>Пользователи с 0 или 1 сессией:</b>\n"
         ITEMS_PER_PAGE = 15
-        
+
         all_normal_users = []
         for ip, session_data in server_results.items():
             server_details = servers_info.get(ip, {})
             for username, data in session_data.get("normal", {}).items():
-                all_normal_users.append({
-                    'username': username, 'count': data['count'], 'server_code': server_details.get('code', 'N/A'),
-                    'server_flag': server_details.get('flag', '🏳️')
-                })
-        
+                all_normal_users.append(
+                    {
+                        'username': username,
+                        'count': data['count'],
+                        'server_code': server_details.get(
+                            'code',
+                            'N/A'),
+                        'server_flag': server_details.get(
+                            'flag',
+                            '🏳️')})
+
         if not all_normal_users:
             return "<blockquote>ℹ️ В этой категории нет пользователей.</blockquote>", 1
-            
+
         all_normal_users.sort(key=lambda x: (x['server_code'], x['username']))
-        
+
         total_pages = math.ceil(len(all_normal_users) / ITEMS_PER_PAGE)
         page = max(0, min(page, total_pages - 1))
         start_idx = page * ITEMS_PER_PAGE
         end_idx = start_idx + ITEMS_PER_PAGE
-        
+
         paginated_users = all_normal_users[start_idx:end_idx]
 
         user_lines = []
         for user in paginated_users:
             ub_data = ub_data_map.get(user['username'])
             owner_id = ub_data.get('tg_user_id') if ub_data else 'N/A'
-            user_lines.append(f"{user['server_flag']} {user['server_code']} - <b>{escape(user['username'])}</b> (<code>{owner_id}</code>) - {user['count']} {pluralize_session(user['count'])}")
-            
+            user_lines.append(
+                f"{user['server_flag']} {user['server_code']} - <b>{escape(user['username'])}</b> (<code>{owner_id}</code>) - {user['count']} {pluralize_session(user['count'])}")
+
         content_text = "\n".join(user_lines)
         pagination_info = f"\n📄 Страница {page + 1} из {total_pages}" if total_pages > 1 else ""
-        
-        full_text = "<blockquote>" + header + "\n" + content_text + pagination_info + "</blockquote>"
-            
+
+        full_text = "<blockquote>" + header + "\n" + \
+            content_text + pagination_info + "</blockquote>"
+
         return full_text, total_pages
-        
+
 SESSION_VIOLATION_CACHE = set()
+
 
 async def check_and_log_session_violations(bot: Bot, force: bool = False) -> int:
     if not force:
         logging.info("Running scheduled check for session violations...")
-    
+
     server_results = await check_all_remote_sessions()
     if not server_results:
         return 0
@@ -230,11 +263,12 @@ async def check_and_log_session_violations(bot: Bot, force: bool = False) -> int
         user_info_for_log = {"id": owner_id}
         if owner_data:
             user_info_for_log["full_name"] = owner_data.get('full_name', '')
-            
+
         server_details = servers_info.get(details['ip'], {})
-        
-        files_str = "\n".join([f"    - <code>{escape(f)}</code>" for f in details['files']])
-        
+
+        files_str = "\n".join(
+            [f"    - <code>{escape(f)}</code>" for f in details['files']])
+
         user_info_display = f"<code>{username}</code>"
         if owner_data:
             full_name = escape(owner_data.get('full_name', ''))
@@ -246,16 +280,14 @@ async def check_and_log_session_violations(bot: Bot, force: bool = False) -> int
             f"<b>Юзербот:</b> <code>{escape(username)}</code>\n"
             f"<b>Сервер:</b> {server_details.get('flag', '🏳️')} {server_details.get('code', 'N/A')}\n\n"
             f"🔎 <b>Обнаружено сессий:</b> {details['count']} шт.\n"
-            f"📂 <b>Файлы сессий:</b>\n{files_str}"
-        )
+            f"📂 <b>Файлы сессий:</b>\n{files_str}")
 
         log_data = {
-            "user_data": user_info_for_log,
-            "ub_info": {"name": username},
-            "server_info": {"ip": details['ip'], "code": server_details.get('code', 'N/A')},
-            "formatted_text": formatted_text
-        }
-        
+            "user_data": user_info_for_log, "ub_info": {
+                "name": username}, "server_info": {
+                "ip": details['ip'], "code": server_details.get(
+                    'code', 'N/A')}, "formatted_text": formatted_text}
+
         await log_event(bot, "session_violation", log_data)
 
         if not force:
@@ -264,20 +296,23 @@ async def check_and_log_session_violations(bot: Bot, force: bool = False) -> int
 
     return violations_found_count
 
+
 async def collect_missing_session_userbots() -> list:
     all_servers = server_config.get_servers()
     tasks = []
     for ip in all_servers:
-        if ip == sm.LOCAL_IP: continue
+        if ip == sm.LOCAL_IP:
+            continue
         tasks.append(_check_server_for_missing_sessions(ip))
-    
+
     results = await asyncio.gather(*tasks)
-    
+
     all_candidates = []
     for server_candidates in results:
         all_candidates.extend(server_candidates)
-        
+
     return all_candidates
+
 
 async def _check_server_for_missing_sessions(ip: str) -> list:
     userbots_on_server = await db.get_userbots_by_server_ip(ip)
@@ -298,9 +333,10 @@ async def _check_server_for_missing_sessions(ip: str) -> list:
             })
     return server_candidates
 
+
 async def run_missing_session_check_and_propose_cleanup(bot: Bot):
     logging.info("Запуск проверки отсутствующих сессий...")
-    
+
     candidates = await collect_missing_session_userbots()
     if not candidates:
         logging.info("Проверка завершена, юзерботов без сессии не найдено.")
@@ -311,12 +347,13 @@ async def run_missing_session_check_and_propose_cleanup(bot: Bot):
         try:
             await bot.delete_message(chat_id=config.LOG_CHAT_ID, message_id=old_message_id)
         except Exception as e:
-            logging.warning(f"Не удалось удалить старое сообщение об очистке: {e}")
+            logging.warning(
+                f"Не удалось удалить старое сообщение об очистке: {e}")
 
     total_ubs = len(await db.get_all_userbots_full_info())
     candidates_count = len(candidates)
     remaining_count = total_ubs - candidates_count
-    
+
     cleanup_id = uuid.uuid4().hex
     CLEANUP_CANDIDATES_CACHE[cleanup_id] = candidates
 
@@ -327,14 +364,14 @@ async def run_missing_session_check_and_propose_cleanup(bot: Bot):
         f"<b>Останется после очистки:</b> {remaining_count}\n\n"
         "Удалить неактивные контейнеры для освобождения ресурсов?"
     )
-    
+
     markup = kb.get_cleanup_confirmation_keyboard(cleanup_id)
-    
+
     sent_message = await bot.send_message(
         chat_id=config.LOG_CHAT_ID,
         text=text,
         reply_markup=markup,
         message_thread_id=140
     )
-    
+
     _write_cleanup_message_id(sent_message.message_id)

@@ -5,6 +5,7 @@ import database as db
 from api_manager import api_manager
 from channel_logger import log_event
 
+
 async def execute_ban(target_user_data: dict, admin_user: types.User, bot: Bot, identifier_used: str, is_in_db: bool):
     target_user_id = target_user_data.get('id')
     if not target_user_id:
@@ -21,20 +22,28 @@ async def execute_ban(target_user_data: dict, admin_user: types.User, bot: Bot, 
         tasks = []
         for ub in userbots:
             await db.block_userbot(ub['ub_username'], True)
-            tasks.append(api_manager.stop_container(ub['ub_username'], ub['server_ip']))
-        
+            tasks.append(
+                api_manager.stop_container(
+                    ub['ub_username'],
+                    ub['server_ip']))
+
         if tasks:
             await asyncio.gather(*tasks)
 
     try:
         db_status = "есть в БД" if is_in_db else "нет в БД"
         log_details = f"Цель: {identifier_used} ({db_status})"
-        
+
         log_data = {
-            "admin_data": { "id": admin_user.id, "full_name": admin_user.full_name },
-            "user_data": { "id": target_user_id, "full_name": target_user_data.get('full_name', identifier_used) },
-            "details": log_details
-        }
+            "admin_data": {
+                "id": admin_user.id,
+                "full_name": admin_user.full_name},
+            "user_data": {
+                "id": target_user_id,
+                "full_name": target_user_data.get(
+                    'full_name',
+                    identifier_used)},
+            "details": log_details}
         await log_event(bot, "user_banned", log_data)
     except Exception as e:
         logging.error(f"Failed to log ban event: {e}")
@@ -42,7 +51,9 @@ async def execute_ban(target_user_data: dict, admin_user: types.User, bot: Bot, 
     try:
         await bot.send_message(target_user_id, "❌ <b>Вы были заблокированы администратором.</b>")
     except Exception as e:
-        logging.warning(f"Не удалось уведомить пользователя {target_user_id} о бане: {e}")
+        logging.warning(
+            f"Не удалось уведомить пользователя {target_user_id} о бане: {e}")
+
 
 async def execute_unban(target_user_id: int, admin_user: types.User, bot: Bot):
     await db.set_user_ban_status(target_user_id, False)
@@ -79,4 +90,5 @@ async def execute_unban(target_user_id: int, admin_user: types.User, bot: Bot):
     try:
         await bot.send_message(target_user_id, "✅ Вы были разблокированы администратором.")
     except Exception as e:
-        logging.warning(f"Не удалось уведомить пользователя {target_user_id} о разбане: {e}")
+        logging.warning(
+            f"Не удалось уведомить пользователя {target_user_id} о разбане: {e}")

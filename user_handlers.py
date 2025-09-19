@@ -51,12 +51,13 @@ SERVERS_PER_PAGE = 10
 PING_COOLDOWN_SECONDS = 5
 PING_TIMESTAMPS = {}
 
+
 async def _show_server_selection_page(call: types.CallbackQuery, state: FSMContext, page: int = 1):
     from bot import BANNER_FILE_IDS
-    
+
     user_id = call.from_user.id
     has_premium = await db.check_premium_access(user_id)
-    
+
     all_servers = server_config.get_servers()
     all_userbots = await db.get_all_userbots_full_info()
     installed_bots_map = defaultdict(int)
@@ -64,7 +65,7 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
         installed_bots_map[ub['server_ip']] += 1
 
     server_ips = [ip for ip in all_servers if ip != sm.LOCAL_IP]
-    
+
     available_servers_filtered = []
     for ip in server_ips:
         details = all_servers[ip]
@@ -84,16 +85,18 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
         return is_full, -free_slots
 
     sorted_servers = sorted(available_servers_filtered, key=sort_key)
-    
-    total_pages = math.ceil(len(sorted_servers) / SERVERS_PER_PAGE) if sorted_servers else 1
+
+    total_pages = math.ceil(
+        len(sorted_servers) /
+        SERVERS_PER_PAGE) if sorted_servers else 1
     page = max(1, min(page, total_pages))
     start_index = (page - 1) * SERVERS_PER_PAGE
     end_index = start_index + SERVERS_PER_PAGE
     servers_on_page = sorted_servers[start_index:end_index]
-    
+
     data = await state.get_data()
     server_stats = data.get("server_stats", {})
-    
+
     markup = kb.get_server_selection_keyboard(
         user_id=user_id,
         installed_bots_map=installed_bots_map,
@@ -103,9 +106,10 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
         total_pages=total_pages,
         has_premium_access=has_premium
     )
-    
+
     text = "<b>⬇️ Установка</b>\n\n<b>💻 Выберите сервер, на который хотите установить юзербот</b>"
-    photo = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
+    photo = BANNER_FILE_IDS.get("select_server") or FSInputFile(
+        "banners/select_server.png")
     message_id = data.get("message_id_to_edit", call.message.message_id)
 
     try:
@@ -117,15 +121,19 @@ async def _show_server_selection_page(call: types.CallbackQuery, state: FSMConte
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
             logging.error(f"Error editing server selection page: {e}")
-            
-@router.callback_query(F.data == "premium_server_locked", UserBotSetup.ChoosingServer)
+
+
+@router.callback_query(F.data == "premium_server_locked",
+                       UserBotSetup.ChoosingServer)
 async def cq_premium_server_locked(call: types.CallbackQuery):
     await call.answer(
         "Данный сервер является премиум, для покупки доступа к нему обратитесь: @nloveuser",
         show_alert=True
     )
 
-@router.callback_query(F.data.startswith("select_server_page:"), UserBotSetup.ChoosingServer)
+
+@router.callback_query(F.data.startswith("select_server_page:"),
+                       UserBotSetup.ChoosingServer)
 async def cq_select_server_page(call: types.CallbackQuery, state: FSMContext):
     try:
         page = int(call.data.split(":")[1])
@@ -136,15 +144,16 @@ async def cq_select_server_page(call: types.CallbackQuery, state: FSMContext):
 
 review_warned_users = defaultdict(lambda: False)
 
+
 async def safe_callback_answer(call: types.CallbackQuery, text: str, show_alert: bool = False) -> bool:
     """
     Безопасно отвечает на callback query, обрабатывая устаревшие queries
-    
+
     Args:
         call: CallbackQuery объект
         text: Текст ответа
         show_alert: Показывать ли alert
-        
+
     Returns:
         True если ответ успешен, False если произошла ошибка
     """
@@ -152,14 +161,18 @@ async def safe_callback_answer(call: types.CallbackQuery, text: str, show_alert:
         await call.answer(text, show_alert=show_alert)
         return True
     except TelegramBadRequest as tg_error:
-        if "query is too old" in str(tg_error).lower() or "response timeout expired" in str(tg_error).lower():
-            logging.warning(f"Callback query устарел для пользователя {call.from_user.id}: {tg_error}")
+        if "query is too old" in str(tg_error).lower(
+        ) or "response timeout expired" in str(tg_error).lower():
+            logging.warning(
+                f"Callback query устарел для пользователя {call.from_user.id}: {tg_error}")
         else:
-            logging.error(f"TelegramBadRequest при ответе на callback: {tg_error}")
+            logging.error(
+                f"TelegramBadRequest при ответе на callback: {tg_error}")
         return False
     except Exception as e:
         logging.error(f"Не удалось ответить на callback query: {e}")
         return False
+
 
 class UserBotShare(StatesGroup):
     ConfirmingRevoke = State()
@@ -167,21 +180,28 @@ class UserBotShare(StatesGroup):
     ConfirmingShare = State()
     WaitingForShareAccept = State()
 
+
 def _create_progress_bar(percent_str: str, length: int = 10) -> str:
     try:
-        percent = float(str(percent_str).replace('%',''))
+        percent = float(str(percent_str).replace('%', ''))
         filled_length = int(length * percent / 100)
         bar = '█' * filled_length + '░' * (length - filled_length)
         return f"[{bar}]"
     except (ValueError, TypeError):
         return f"[{'?' * length}]"
 
+
 def get_greeting():
     now = datetime.now(pytz.timezone("Europe/Moscow"))
-    if 5 <= now.hour < 12: return "☀️ Доброе утро"
-    elif 12 <= now.hour < 17: return "👋 Добрый день"
-    elif 17 <= now.hour < 23: return "🌃 Добрый вечер"
-    else: return "🌙 Доброй ночи"
+    if 5 <= now.hour < 12:
+        return "☀️ Доброе утро"
+    elif 12 <= now.hour < 17:
+        return "👋 Добрый день"
+    elif 17 <= now.hour < 23:
+        return "🌃 Добрый вечер"
+    else:
+        return "🌙 Доброй ночи"
+
 
 def seconds_to_human_readable(seconds):
     days, remainder = divmod(seconds, 86400)
@@ -195,6 +215,7 @@ def seconds_to_human_readable(seconds):
     if minutes:
         parts.append(f"{int(minutes)}m")
     return " ".join(parts) if parts else "~1m"
+
 
 def format_container_stats(stats_data: dict) -> str:
     """Форматирует статистику контейнера в читаемый вид (поддержка нового формата /api/host/cont_stat)"""
@@ -227,16 +248,24 @@ def format_container_stats(stats_data: dict) -> str:
     stats = stats_data["stats"]
     inspect = stats_data.get("inspect", {})
     container_name = stats.get("name", "N/A").replace("/", "")
-    status = "🟢 Работает" if inspect.get("State", {}).get("Running", False) else "🔴 Остановлен"
+    status = "🟢 Работает" if inspect.get(
+        "State", {}).get(
+        "Running", False) else "🔴 Остановлен"
     memory_stats = stats.get("memory_stats", {})
     memory_usage = memory_stats.get("usage", 0)
     memory_limit = memory_stats.get("limit", 1)
-    memory_percent = (memory_usage / memory_limit * 100) if memory_limit > 0 else 0
+    memory_percent = (
+        memory_usage /
+        memory_limit *
+        100) if memory_limit > 0 else 0
     cpu_stats = stats.get("cpu_stats", {})
     cpu_usage = cpu_stats.get("cpu_usage", {})
     total_cpu_usage = cpu_usage.get("total_usage", 0)
     system_cpu_usage = cpu_stats.get("system_cpu_usage", 1)
-    cpu_percent = (total_cpu_usage / system_cpu_usage * 100) if system_cpu_usage > 0 else 0
+    cpu_percent = (
+        total_cpu_usage /
+        system_cpu_usage *
+        100) if system_cpu_usage > 0 else 0
     networks = stats.get("networks", {})
     eth0_stats = networks.get("eth0", {})
     rx_bytes = eth0_stats.get("rx_bytes", 0)
@@ -258,6 +287,7 @@ def format_container_stats(stats_data: dict) -> str:
         result += f"🔸 <b>Запущен:</b> {started_at[:19].replace('T', ' ')}\n"
     return result
 
+
 async def _show_main_panel(bot: Bot, chat_id: int, user_id: int, user_name: str, state: FSMContext, message_id: int = None, topic_id: int = None, owner_id: int = None):
     from bot import BANNER_FILE_IDS
     await state.clear()
@@ -267,11 +297,17 @@ async def _show_main_panel(bot: Bot, chat_id: int, user_id: int, user_name: str,
         owner_id = user_id
     if str(chat_id).startswith("-"):
         is_chat = True
-    text = (f"<b>{get_greeting()}, {html.quote(user_name)}!</b>\n\n"
-            f"<blockquote>☕ Добро пожаловать в панель управления хостингом <b>TeaHost</b>. "
-            f"Здесь вы можете легко управлять своими юзерботами.</blockquote>")
-    markup = kb.get_main_panel_keyboard(has_bots=bool(user_bots), user_id=owner_id, chat_id=chat_id, is_chat=is_chat)
-    photo = BANNER_FILE_IDS.get("main_panel") or FSInputFile("banners/select_action.png")
+    text = (
+        f"<b>{get_greeting()}, {html.quote(user_name)}!</b>\n\n"
+        f"<blockquote>☕ Добро пожаловать в панель управления хостингом <b>TeaHost</b>. "
+        f"Здесь вы можете легко управлять своими юзерботами.</blockquote>")
+    markup = kb.get_main_panel_keyboard(
+        has_bots=bool(user_bots),
+        user_id=owner_id,
+        chat_id=chat_id,
+        is_chat=is_chat)
+    photo = BANNER_FILE_IDS.get("main_panel") or FSInputFile(
+        "banners/select_action.png")
 
     if message_id:
         try:
@@ -285,7 +321,8 @@ async def _show_main_panel(bot: Bot, chat_id: int, user_id: int, user_name: str,
                     reply_markup=markup
                 )
             except TelegramBadRequest:
-                # Если не удалось обновить caption, отправляем новое сообщение с фото
+                # Если не удалось обновить caption, отправляем новое сообщение
+                # с фото
                 await bot.edit_message_media(
                     media=InputMediaPhoto(media=photo, caption=text),
                     chat_id=chat_id,
@@ -300,10 +337,14 @@ async def _show_main_panel(bot: Bot, chat_id: int, user_id: int, user_name: str,
             await bot.send_photo(chat_id=chat_id, photo=photo, caption=text, reply_markup=markup, message_thread_id=topic_id)
     else:
         await bot.send_photo(chat_id=chat_id, photo=photo, caption=text, reply_markup=markup, message_thread_id=topic_id)
-       
+
 
 async def _parse_container_stats(stats_data: dict) -> dict:
-    resources = {'cpu_percent': '0.0', 'ram_percent': '0.0', 'ram_used': 0, 'ram_limit': 0}
+    resources = {
+        'cpu_percent': '0.0',
+        'ram_percent': '0.0',
+        'ram_used': 0,
+        'ram_limit': 0}
 
     if not stats_data:
         return resources
@@ -316,37 +357,42 @@ async def _parse_container_stats(stats_data: dict) -> dict:
         resources['ram_percent'] = round(info.get("ram_percent", 0), 1)
         if resources['cpu_percent'] > 0 or resources['ram_used'] > 0:
             return resources
-            
+
     stats = stats_data.get("stats")
     if not stats or not isinstance(stats, dict):
-        return resources 
+        return resources
 
     try:
         memory_stats = stats.get("memory_stats", {})
         memory_usage = memory_stats.get("usage", 0)
         memory_limit = memory_stats.get("limit", 1)
-        
+
         if memory_limit > 0 and memory_usage > 0:
             resources['ram_used'] = round(memory_usage / (1024 * 1024))
             resources['ram_limit'] = round(memory_limit / (1024 * 1024))
-            resources['ram_percent'] = round((memory_usage / memory_limit * 100), 1) if memory_limit > 0 else 0.0
+            resources['ram_percent'] = round(
+                (memory_usage / memory_limit * 100),
+                1) if memory_limit > 0 else 0.0
 
         cpu_stats = stats.get("cpu_stats", {})
         precpu_stats = stats.get("precpu_stats", {})
         online_cpus = cpu_stats.get("online_cpus", 1)
-        
-        cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
-        system_cpu_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get("system_cpu_usage", 0)
+
+        cpu_delta = cpu_stats.get("cpu_usage", {}).get(
+            "total_usage", 0) - precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        system_cpu_delta = cpu_stats.get(
+            "system_cpu_usage", 0) - precpu_stats.get("system_cpu_usage", 0)
 
         if system_cpu_delta > 0 and cpu_delta > 0:
             cpu_percent = (cpu_delta / system_cpu_delta) * online_cpus * 100.0
             resources['cpu_percent'] = round(cpu_percent, 1)
-            
+
     except (TypeError, KeyError, IndexError, ZeroDivisionError) as e:
         logging.error(f"Не удалось полностью разобрать статистику Docker: {e}")
 
     return resources
-        
+
+
 async def show_management_panel(call_or_message: types.Message | types.CallbackQuery, ub_username: str, state: FSMContext = None):
     from bot import BANNER_FILE_IDS
     is_callback = isinstance(call_or_message, types.CallbackQuery)
@@ -380,8 +426,9 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
         return
 
     server_ip = ub_data.get('server_ip', 'N/A')
-    is_server_active = server_config.get_server_status_by_ip(server_ip) not in ["false", "not_found"]
-    
+    is_server_active = server_config.get_server_status_by_ip(server_ip) not in [
+        "false", "not_found"]
+
     is_running = False
     if is_server_active:
         container_status = await api_manager.get_container_status(ub_username, server_ip)
@@ -389,54 +436,63 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
             is_running = False
             error_msg = container_status.get("error", "Неизвестная ошибка")
             if "404" in error_msg or "not found" in error_msg.lower():
-                user_data_for_log = {"id": user.id, "full_name": user.full_name}
+                user_data_for_log = {
+                    "id": user.id, "full_name": user.full_name}
                 server_details_for_log = server_config.get_servers().get(server_ip, {})
                 log_data = {
-                    "user_data": user_data_for_log,
-                    "ub_info": {"name": ub_username},
-                    "server_info": {"ip": server_ip, "code": server_details_for_log.get("code", "N/A")},
-                    "error": error_msg
-                }
-                asyncio.create_task(log_event(bot, "api_container_error", log_data))
+                    "user_data": user_data_for_log, "ub_info": {
+                        "name": ub_username}, "server_info": {
+                        "ip": server_ip, "code": server_details_for_log.get(
+                            "code", "N/A")}, "error": error_msg}
+                asyncio.create_task(
+                    log_event(
+                        bot,
+                        "api_container_error",
+                        log_data))
         else:
-            is_running = container_status.get("data", {}).get("status") == "running"
-    
+            is_running = container_status.get(
+                "data", {}).get("status") == "running"
+
     server_details = server_config.get_servers().get(server_ip, {})
     server_display = f"{server_details.get('flag', '🏳️')} {server_details.get('code', 'N/A')}"
     server_location = f"{server_details.get('country', 'N/A')}, {server_details.get('city', 'N/A')}"
-    
+
     ping_ms_val = await api_manager.get_server_ping(server_ip) if is_server_active else None
-    
+
     resources = {
-        'cpu_percent': '0.0', 
+        'cpu_percent': '0.0',
         'ram_percent': '0.0', 'ram_used': 0, 'ram_limit': 0,
         'disk_percent': '0.0', 'disk_used': 0, 'disk_limit': 0
     }
-    
+
     if is_server_active and is_running:
         stats_result = await api_manager.get_container_stats(ub_username, server_ip)
         if stats_result.get("success"):
             info = stats_result.get("data", {}).get("info", {})
             if info:
-                resources['cpu_percent'] = round(info.get("cpu_percent") or 0.0, 1)
+                resources['cpu_percent'] = round(
+                    info.get("cpu_percent") or 0.0, 1)
                 resources['ram_used'] = round(info.get("ram_usage_mb") or 0)
                 resources['ram_limit'] = round(info.get("ram_limit_mb") or 0)
-                resources['ram_percent'] = round(info.get("ram_percent") or 0.0, 1)
+                resources['ram_percent'] = round(
+                    info.get("ram_percent") or 0.0, 1)
                 resources['disk_used'] = round(info.get("disk_usage_mb") or 0)
                 resources['disk_limit'] = round(info.get("disk_limit_mb") or 0)
-                resources['disk_percent'] = round(info.get("disk_percent") or 0.0, 1)
+                resources['disk_percent'] = round(
+                    info.get("disk_percent") or 0.0, 1)
 
     webui_port = ub_data.get('webui_port')
-    
+
     if not is_server_active:
         status_text = "⚪️ Сервер отключен"
     elif is_running:
         status_text = "🟢 Включен"
     else:
         status_text = "🔴 Выключен"
-        
-    creation_date_str = ub_data['created_at'].strftime('%d.%m.%Y в %H:%M') if ub_data.get('created_at') else "Неизвестно"
-    
+
+    creation_date_str = ub_data['created_at'].strftime(
+        '%d.%m.%Y в %H:%M') if ub_data.get('created_at') else "Неизвестно"
+
     ping_display = f"📡 Пинг: {ping_ms_val:.1f} мс" if ping_ms_val is not None else "📡 Пинг: N/A"
 
     server_info_block = (
@@ -448,42 +504,48 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
     )
 
     text_lines = [
-        "<b>🎛 Панель управления</b>\n",
-        "<blockquote expandable>"
+        "<b>🎛 Панель управления</b>\n", "<blockquote expandable>"
         "<b>Основная информация:</b>\n"
         f"🤖 Юзербот: {html.quote(ub_username)}\n"
         f"💡 Статус: {status_text}\n"
         f"⚙️ Тип: {ub_data.get('ub_type', 'N/A').capitalize()}\n"
         f"📅 Создан: {creation_date_str}"
-        "</blockquote>",
-        server_info_block,
-        "<blockquote expandable>"
+        "</blockquote>", server_info_block, "<blockquote expandable>"
         "<b>Потребление ресурсов:</b>\n"
         f"🧠 CPU: {_create_progress_bar(str(resources.get('cpu_percent', 0)))} ({resources.get('cpu_percent', 0)}%)\n"
         f"💾 RAM: {_create_progress_bar(str(resources.get('ram_percent', 0)))} ({resources.get('ram_used', 0)} / {resources.get('ram_limit', 0)} МБ)\n"
         f"💽 ROM: {_create_progress_bar(str(resources.get('disk_percent', 0)))} ({resources.get('disk_used', 0)} / {resources.get('disk_limit', 0)} МБ)"
-        "</blockquote>\n"
-    ]
-    update_time_str = datetime.now(pytz.timezone("Europe/Moscow")).strftime('%H:%M:%S')
+        "</blockquote>\n"]
+    update_time_str = datetime.now(
+        pytz.timezone("Europe/Moscow")).strftime('%H:%M:%S')
     text_lines.append(f"<i>Последнее обновление: {update_time_str} MSK</i>")
     text = "\n".join(text_lines)
-    
+
     is_owner = ub_data.get('tg_user_id') == user.id
     is_super_admin = user.id in config.SUPER_ADMIN_IDS
-    
+
     markup = kb.get_management_keyboard(
-        ip=server_ip, port=webui_port,
-        is_running=is_running, ub_username=ub_username,
-        ub_type=ub_data.get('ub_type', 'N/A'), is_server_active=is_server_active,
-        is_owner=is_owner, is_private=message.chat.type == 'private',
-        owner_id=user.id, is_shared=False,
-        is_installing=(ub_data.get('status') == 'installing'),
-        is_deleting=(ub_data.get('status') == 'deleting'),
-        is_super_admin=is_super_admin
-    )
-    
-    photo = BANNER_FILE_IDS.get("panel_userbot") or FSInputFile("banners/panel_userbot.png")
-    
+        ip=server_ip,
+        port=webui_port,
+        is_running=is_running,
+        ub_username=ub_username,
+        ub_type=ub_data.get(
+            'ub_type',
+            'N/A'),
+        is_server_active=is_server_active,
+        is_owner=is_owner,
+        is_private=message.chat.type == 'private',
+        owner_id=user.id,
+        is_shared=False,
+        is_installing=(
+            ub_data.get('status') == 'installing'),
+        is_deleting=(
+            ub_data.get('status') == 'deleting'),
+        is_super_admin=is_super_admin)
+
+    photo = BANNER_FILE_IDS.get("panel_userbot") or FSInputFile(
+        "banners/panel_userbot.png")
+
     try:
         if is_callback:
             try:
@@ -500,23 +562,26 @@ async def show_management_panel(call_or_message: types.Message | types.CallbackQ
             if is_callback:
                 await safe_callback_answer(call_or_message, "", show_alert=True)
             return
-        logging.warning(f"Could not edit message to panel. Re-sending. Error: {e}")
+        logging.warning(
+            f"Could not edit message to panel. Re-sending. Error: {e}")
         try:
             await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
         except (TelegramBadRequest, TelegramNotFound):
             pass
         finally:
             await bot.send_photo(chat_id=message.chat.id, photo=photo, caption=text, reply_markup=markup, message_thread_id=message.message_thread_id)
-            
+
+
 async def _safe_cleanup_on_failure(ub_username: str, server_ip: str, state: FSMContext):
     # Удаляем контейнер через API
     await api_manager.delete_container(ub_username, server_ip)
-    
+
     # Удаляем запись из базы данных
     if await db.get_userbot_data(ub_username=ub_username):
         await db.delete_userbot_record(ub_username)
-    
+
     await state.clear()
+
 
 async def _show_login_link_success_from_new_message(
     bot: Bot,
@@ -592,22 +657,26 @@ async def _show_login_link_success_from_new_message(
 
     await state.clear()
 
+
 async def _show_login_link_fail_from_message(bot: Bot, chat_id: int, message_id: int, ub_username: str, timeout: bool = False):
     if timeout:
-        text = (f"⏳ <b>Время вышло.</b>\n\nНе удалось автоматически найти ссылку для <code>{html.quote(ub_username)}</code> за 2 минуты. "
-                f"Попробуйте запросить ссылку снова.")
+        text = (
+            f"⏳ <b>Время вышло.</b>\n\nНе удалось автоматически найти ссылку для <code>{html.quote(ub_username)}</code> за 2 минуты. "
+            f"Попробуйте запросить ссылку снова.")
     else:
-        text = (f"⚠️ <b>Не удалось найти ссылку для <code>{html.quote(ub_username)}</code>.</b>\n\n"
-                f"Попробуйте поискать ссылку еще раз.")
+        text = (
+            f"⚠️ <b>Не удалось найти ссылку для <code>{html.quote(ub_username)}</code>.</b>\n\n"
+            f"Попробуйте поискать ссылку еще раз.")
     await bot.edit_message_caption(caption=text, chat_id=chat_id, message_id=message_id, reply_markup=kb.get_retry_login_link_keyboard(ub_username))
-    
+
+
 async def wait_for_webui_ready(ub_username: str, server_ip: str, max_wait_time: int = 120) -> str | None:
     """
     Ждет готовности веб-интерфейса, проверяя логи каждые 10 секунд
     Возвращает URL для входа или None если не удалось найти
     """
     import re
-    
+
     # Паттерны для поиска готовности веб-интерфейса
     ready_patterns = [
         r'🔎 Web mode ready for configuration',
@@ -618,28 +687,29 @@ async def wait_for_webui_ready(ub_username: str, server_ip: str, max_wait_time: 
         r'Running on http://127\.0\.0\.1:\d+',  # Fox Userbot
         r'Running on http://localhost:\d+'  # Fox Userbot альтернативный вариант
     ]
-    
+
     start_time = time.time()
     check_interval = 10
-    
+
     while time.time() - start_time < max_wait_time:
         try:
             # Получаем логи контейнера
             logs_result = await api_manager.get_container_logs(ub_username, server_ip)
-            
+
             if not logs_result.get("success"):
-                logger.warning(f"Не удалось получить логи для {ub_username}: {logs_result.get('error')}")
+                logger.warning(
+                    f"Не удалось получить логи для {ub_username}: {logs_result.get('error')}")
                 await asyncio.sleep(check_interval)
                 continue
-            
+
             logs_data = logs_result.get("data", {})
             logs_text = logs_data.get("logs", "")
-            
+
             if not logs_text:
                 logger.debug(f"Логи пусты для {ub_username}")
                 await asyncio.sleep(check_interval)
                 continue
-            
+
             # Ищем признаки готовности веб-интерфейса
             for pattern in ready_patterns:
                 if re.search(pattern, logs_text, re.IGNORECASE):
@@ -647,25 +717,30 @@ async def wait_for_webui_ready(ub_username: str, server_ip: str, max_wait_time: 
                     url_match = re.search(r'http://[^\s]+', logs_text)
                     if url_match:
                         login_url = url_match.group(0)
-                        logger.info(f"Веб-интерфейс готов для {ub_username}: {login_url}")
+                        logger.info(
+                            f"Веб-интерфейс готов для {ub_username}: {login_url}")
                         return login_url
-            
-            logger.debug(f"Веб-интерфейс еще не готов для {ub_username}, продолжаем ожидание...")
+
+            logger.debug(
+                f"Веб-интерфейс еще не готов для {ub_username}, продолжаем ожидание...")
             await asyncio.sleep(check_interval)
-            
+
         except Exception as e:
-            logger.error(f"Ошибка при проверке готовности веб-интерфейса для {ub_username}: {e}")
+            logger.error(
+                f"Ошибка при проверке готовности веб-интерфейса для {ub_username}: {e}")
             await asyncio.sleep(check_interval)
-    
-    logger.warning(f"Таймаут ожидания готовности веб-интерфейса для {ub_username}")
+
+    logger.warning(
+        f"Таймаут ожидания готовности веб-интерфейса для {ub_username}")
     return None
+
 
 async def perform_installation_and_find_link(tg_user_id: int, chat_id: int, message_id: int, state: FSMContext, bot: Bot, is_private: bool = True):
     data = await state.get_data()
     ub_username = data.get("ub_username")
     ub_type = data.get("selected_ub_type")
     server_ip = data.get("server_ip")
-    
+
     # Генерируем случайный порт
     port = await db.generate_random_port()
     if port is None:
@@ -681,13 +756,13 @@ async def perform_installation_and_find_link(tg_user_id: int, chat_id: int, mess
         user_data["full_name"] = user_chat.full_name
     except Exception:
         pass
-        
+
     server_details = server_config.get_servers().get(server_ip, {})
     log_data = {
-        "user_data": user_data,
-        "ub_info": {"name": ub_username, "type": ub_type},
-        "server_info": {"ip": server_ip, "code": server_details.get("code", "N/A")}
-    }
+        "user_data": user_data, "ub_info": {
+            "name": ub_username, "type": ub_type}, "server_info": {
+            "ip": server_ip, "code": server_details.get(
+                "code", "N/A")}}
 
     # Создаем контейнер через API
     container_result = await api_manager.create_container(
@@ -724,7 +799,7 @@ async def perform_installation_and_find_link(tg_user_id: int, chat_id: int, mess
     username = container_data.get("username")
     password = container_data.get("password")
     subdomain = container_data.get("subdomain")
-    
+
     # Сохраняем пароль в базу данных
     if username and password:
         await db.add_password(tg_user_id, username, password)
@@ -755,11 +830,11 @@ async def perform_installation_and_find_link(tg_user_id: int, chat_id: int, mess
 
     # Ждем готовности веб-интерфейса
     login_url = await wait_for_webui_ready(ub_username, server_ip)
-    
+
     if login_url:
         # Веб-интерфейс готов - обновляем статус на running
         await db.update_userbot_status(ub_username, "running")
-        
+
         # Веб-интерфейс готов
         await bot.delete_message(chat_id, message_id)
         if is_private:
@@ -772,9 +847,10 @@ async def perform_installation_and_find_link(tg_user_id: int, chat_id: int, mess
             )
         await log_event(bot, "installation_success", log_data)
     else:
-        # Таймаут - обновляем статус на stopped и показываем сообщение с возможностью повторить
+        # Таймаут - обновляем статус на stopped и показываем сообщение с
+        # возможностью повторить
         await db.update_userbot_status(ub_username, "stopped")
-        
+
         await bot.edit_message_caption(
             caption="⏳ <b>Время вышло.</b>\n\nНе удалось автоматически найти ссылку для входа за 2 минуты. "
                     f"Попробуйте запросить ссылку снова.",
@@ -783,44 +859,51 @@ async def perform_installation_and_find_link(tg_user_id: int, chat_id: int, mess
         )
         await log_event(bot, "installation_timeout", log_data)
 
+
 @router.message(Command("start"), F.chat.type != "private")
 async def cmd_start_in_chat(message: types.Message):
     pass
+
 
 @router.message(Command("review"), F.chat.type != "private")
 async def cmd_review_in_chat(message: types.Message):
     pass
 
+
 @router.message(Command("start"), F.chat.type == "private")
 async def cmd_start(message: types.Message, state: FSMContext, bot: Bot, command: CommandObject):
-    print(f"DEBUG: Получена команда /start от пользователя {message.from_user.id}")
+    print(
+        f"DEBUG: Получена команда /start от пользователя {message.from_user.id}")
     try:
         user = message.from_user
         if await db.is_user_banned(user.id):
             ban_message = "❌ <b>Вы забанены.</b>\n\nДоступ к боту для вас ограничен."
             await message.answer(ban_message, message_thread_id=message.message_thread_id)
             return
-        
+
         is_new_user = not await db.get_user_data(user.id)
-        
+
         # Обработка реферальной ссылки
         ref_name = None
         if command.args and command.args.startswith("ref_"):
             ref_name = command.args[4:]  # Убираем "ref_" префикс
             if is_new_user:
                 await db.add_referral_activation(ref_name, user.id)
-                logging.info(f"Новый пользователь {user.id} активировал бота по реферальной ссылке: {ref_name}")
-        
+                logging.info(
+                    f"Новый пользователь {user.id} активировал бота по реферальной ссылке: {ref_name}")
+
         await db.register_or_update_user(tg_user_id=user.id, username=user.username, full_name=user.full_name)
         if not await db.has_user_accepted_agreement(user.id) and not config.TEST_MODE:
             if is_new_user:
-                user_data_for_log = {"id": user.id, "full_name": user.full_name}
+                user_data_for_log = {
+                    "id": user.id, "full_name": user.full_name}
                 if ref_name:
                     user_data_for_log["referral"] = ref_name
                 await log_event(bot, "new_user_registered", {"user_data": user_data_for_log})
-            text = ("👋 <b>Добро пожаловать в TeaHost!</b>\n\n"
-                    "Прежде чем мы начнем, ознакомьтесь с нашим пользовательским соглашением. "
-                    "Нажимая кнопку «Принять и продолжить», вы подтверждаете, что прочитали и согласны с нашими правилами.")
+            text = (
+                "👋 <b>Добро пожаловать в TeaHost!</b>\n\n"
+                "Прежде чем мы начнем, ознакомьтесь с нашим пользовательским соглашением. "
+                "Нажимая кнопку «Принять и продолжить», вы подтверждаете, что прочитали и согласны с нашими правилами.")
             await message.answer(text, reply_markup=kb.get_agreement_keyboard())
         else:
             await _show_main_panel(bot=bot, chat_id=message.chat.id, user_id=user.id, user_name=user.full_name, state=state, topic_id=message.message_thread_id, owner_id=user.id)
@@ -828,16 +911,17 @@ async def cmd_start(message: types.Message, state: FSMContext, bot: Bot, command
         logging.error(f"Ошибка при обработке команды /start: {e}")
         await message.answer("Произошла ошибка при обработке команды /start, Попробуйте еще раз.")
 
+
 @router.message(Command("review"), F.chat.type == "private")
 async def cmd_review(message: types.Message, state: FSMContext):
     text = (
         "✍️ <b>Напишите отзыв о TeaHost</b>\n\n"
         "ℹ️ В отзыве можете рассказать о том, сколько пользуетесь TeaHost, какие отличия заметили от предыдущего хостинга и т.д.\n\n"
-        "📅 В ближайшее время отзыв будет опубликован на @TeaHostReviews."
-    )
+        "📅 В ближайшее время отзыв будет опубликован на @TeaHostReviews.")
     sent_message = await message.reply(text, reply_markup=kb.get_cancel_review_keyboard())
     await state.update_data(original_bot_message_id=sent_message.message_id)
     await state.set_state(UserReview.WaitingForReview)
+
 
 @router.callback_query(F.data == "accept_agreement")
 async def cq_accept_agreement(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -850,6 +934,7 @@ async def cq_accept_agreement(call: types.CallbackQuery, state: FSMContext, bot:
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
+
 @router.callback_query(F.data == "back_to_main_panel")
 async def cq_back_to_main_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
@@ -858,6 +943,7 @@ async def cq_back_to_main_panel(call: types.CallbackQuery, state: FSMContext, bo
         await safe_callback_answer(call, "", show_alert=True)
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
 
 @router.callback_query(F.data == "back_to_main_panel_delete")
 async def cq_back_to_main_panel_delete(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -868,9 +954,11 @@ async def cq_back_to_main_panel_delete(call: types.CallbackQuery, state: FSMCont
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
+
 async def _start_installation_flow(call: types.CallbackQuery, state: FSMContext):
     from bot import BANNER_FILE_IDS
-    photo_file = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
+    photo_file = BANNER_FILE_IDS.get(
+        "select_server") or FSInputFile("banners/select_server.png")
     message_to_edit_id = call.message.message_id
     try:
         await call.message.edit_media(
@@ -880,7 +968,7 @@ async def _start_installation_flow(call: types.CallbackQuery, state: FSMContext)
     except TelegramBadRequest:
         await call.message.delete()
         new_msg = await call.message.answer_photo(
-            photo=photo_file, 
+            photo=photo_file,
             caption="<b>[Шаг 1/3] Выбор сервера</b>\n\nЗагружаю список доступных серверов...",
             reply_markup=kb.get_loading_keyboard()
         )
@@ -890,29 +978,39 @@ async def _start_installation_flow(call: types.CallbackQuery, state: FSMContext)
     servers = server_config.get_servers()
     tasks = [sm.get_server_stats(ip) for ip in servers.keys()]
     stats_results = await asyncio.gather(*tasks, return_exceptions=True)
-    server_stats = {ip: result for ip, result in zip(servers.keys(), stats_results) if not isinstance(result, Exception)}
+    server_stats = {
+        ip: result for ip,
+        result in zip(
+            servers.keys(),
+            stats_results) if not isinstance(
+            result,
+            Exception)}
     await state.update_data(server_stats=server_stats)
-    
+
     await _show_server_selection_page(call, state, page=1)
     await state.set_state(UserBotSetup.ChoosingServer)
 
-@router.callback_query(F.data == "create_userbot_start", IsSubscribed(), StateFilter("*"))
+
+@router.callback_query(F.data == "create_userbot_start",
+                       IsSubscribed(), StateFilter("*"))
 async def cq_create_userbot_start(call: types.CallbackQuery, state: FSMContext):
     try:
         if len(await db.get_userbots_by_tg_id(call.from_user.id)) >= 1:
             await safe_callback_answer(call, "❌ У вас уже есть юзербот. Вы можете установить только одного.", show_alert=True)
             return
-        
+
         await state.clear()
         await safe_callback_answer(call, "", show_alert=True)
         await _start_installation_flow(call, state)
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
+
 class ReinstallUBCallback(CallbackData, prefix="reinstall_ub_start_request"):
     ub_username: str
     owner_id: int
-    
+
+
 @router.callback_query(ReinstallUBCallback.filter())
 async def cq_reinstall_ub_start_request(call: types.CallbackQuery, callback_data: ReinstallUBCallback, state: FSMContext, bot: Bot):
     try:
@@ -924,27 +1022,35 @@ async def cq_reinstall_ub_start_request(call: types.CallbackQuery, callback_data
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
-@router.callback_query(F.data.in_({"server_unavailable", "server_test_unavailable", "server_noub", "server_full"}), UserBotSetup.ChoosingServer)
+
+@router.callback_query(F.data.in_({"server_unavailable",
+                                   "server_test_unavailable",
+                                   "server_noub",
+                                   "server_full"}),
+                       UserBotSetup.ChoosingServer)
 async def cq_server_unavailable(call: types.CallbackQuery):
     try:
         alerts = {
             "server_unavailable": "🔴 Этот сервер временно недоступен для выбора.",
             "server_test_unavailable": "🧪 Нельзя выбрать тестовый сервер!",
             "server_noub": "🟢 Установка новых юзерботов на этот сервер временно отключена.",
-            "server_full": "❌ Сервера переполнен\n\nВыберите другой сервер."
-        }
+            "server_full": "❌ Сервера переполнен\n\nВыберите другой сервер."}
         await safe_callback_answer(call, alerts.get(call.data, "Это действие сейчас недоступно."), show_alert=True)
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
-@router.callback_query(F.data == "server_is_service", UserBotSetup.ChoosingServer)
+
+@router.callback_query(F.data == "server_is_service",
+                       UserBotSetup.ChoosingServer)
 async def cq_service_server_selected(call: types.CallbackQuery):
     try:
         await safe_callback_answer(call, "ℹ️ Это сервисный сервер, на котором работает бот.\n\nУстановка юзерботов на него невозможна.", show_alert=True)
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
-@router.callback_query(F.data.startswith("confirm_unstable:"), UserBotSetup.ChoosingServer)
+
+@router.callback_query(F.data.startswith("confirm_unstable:"),
+                       UserBotSetup.ChoosingServer)
 async def cq_confirm_unstable_server(call: types.CallbackQuery, state: FSMContext):
     try:
         await safe_callback_answer(call, "Хорошо, продолжаю установку.", show_alert=True)
@@ -953,7 +1059,9 @@ async def cq_confirm_unstable_server(call: types.CallbackQuery, state: FSMContex
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
-@router.callback_query(F.data.startswith("ub_type:"), UserBotSetup.ChoosingUserBotType)
+
+@router.callback_query(F.data.startswith("ub_type:"),
+                       UserBotSetup.ChoosingUserBotType)
 async def cq_process_ub_type_selection(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
         await safe_callback_answer(call, "", show_alert=True)
@@ -961,7 +1069,7 @@ async def cq_process_ub_type_selection(call: types.CallbackQuery, state: FSMCont
         await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
         _, ub_type, server_ip = call.data.split(":")
         await state.update_data(selected_ub_type=ub_type)
-        
+
         user = call.from_user
         name_base = str(user.id)
         ub_username = f"ub{name_base}"
@@ -971,8 +1079,8 @@ async def cq_process_ub_type_selection(call: types.CallbackQuery, state: FSMCont
         current_state = await state.get_state()
         if current_state != UserBotSetup.Reinstalling.state and await db.get_userbot_data(ub_username=ub_username):
             await safe_callback_answer(call, "❌ <b>Ошибка:</b> У вас уже есть юзербот с таким системным именем.\n\n"
-                        "Это могло произойти, если была прервана предыдущая установка. "
-                        "Обратитесь в поддержку для решения проблемы.", show_alert=True)
+                                       "Это могло произойти, если была прервана предыдущая установка. "
+                                       "Обратитесь в поддержку для решения проблемы.", show_alert=True)
             await state.clear()
             return
 
@@ -993,18 +1101,29 @@ async def cq_process_ub_type_selection(call: types.CallbackQuery, state: FSMCont
                 raise
 
         await state.set_state(UserBotSetup.InstallingUserBot)
-        asyncio.create_task(perform_installation_and_find_link(call.from_user.id, call.message.chat.id, message_id, state, bot, is_private=(call.message.chat.type == 'private')))
+        asyncio.create_task(
+            perform_installation_and_find_link(
+                call.from_user.id,
+                call.message.chat.id,
+                message_id,
+                state,
+                bot,
+                is_private=(
+                    call.message.chat.type == 'private')))
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
-@router.callback_query(F.data == "go_to_control_panel", IsSubscribed(), StateFilter("*"))
+
+@router.callback_query(F.data == "go_to_control_panel",
+                       IsSubscribed(), StateFilter("*"))
 async def cq_go_to_control_panel(call: types.CallbackQuery, state: FSMContext):
     try:
-        # Показываем пользователю только одну кнопку 'Загрузка...' на время загрузки панели
+        # Показываем пользователю только одну кнопку 'Загрузка...' на время
+        # загрузки панели
         await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
         with open("/tmp/bot_debug.log", "a") as f:
             f.write(f"{datetime.now()}: Начинаем обработку callback\n")
-        
+
         if call.message.chat.type != "private":
             with open("/tmp/bot_debug.log", "a") as f:
                 f.write(f"{datetime.now()}: Проверка чата - не приватный\n")
@@ -1016,23 +1135,24 @@ async def cq_go_to_control_panel(call: types.CallbackQuery, state: FSMContext):
             else:
                 await safe_callback_answer(call, "Только тот, кто вызвал /start, может использовать эти кнопки!", show_alert=True)
                 return
-        
+
         with open("/tmp/bot_debug.log", "a") as f:
             f.write(f"{datetime.now()}: Отвечаем на callback\n")
         await safe_callback_answer(call, "", show_alert=True)
-        
+
         with open("/tmp/bot_debug.log", "a") as f:
             f.write(f"{datetime.now()}: Показываем загрузку\n")
         await safe_callback_answer(call, "", show_alert=True)
 
         with open("/tmp/bot_debug.log", "a") as f:
-            f.write(f"{datetime.now()}: Получаем юзерботы для пользователя {call.from_user.id}\n")
+            f.write(
+                f"{datetime.now()}: Получаем юзерботы для пользователя {call.from_user.id}\n")
         print(f"DEBUG: Получаем юзерботы для пользователя {call.from_user.id}")
         all_bots = await db.get_userbots_by_tg_id(call.from_user.id)
         with open("/tmp/bot_debug.log", "a") as f:
             f.write(f"{datetime.now()}: Найдено юзерботов: {len(all_bots)}\n")
         print(f"DEBUG: Найдено юзерботов: {len(all_bots)}")
-        
+
         if not all_bots:
             with open("/tmp/bot_debug.log", "a") as f:
                 f.write(f"{datetime.now()}: Юзерботы не найдены\n")
@@ -1048,18 +1168,19 @@ async def cq_go_to_control_panel(call: types.CallbackQuery, state: FSMContext):
         ub_username = the_only_bot['ub_username']
         server_ip = the_only_bot['server_ip']
         with open("/tmp/bot_debug.log", "a") as f:
-            f.write(f"{datetime.now()}: Юзербот: {ub_username}, сервер: {server_ip}\n")
+            f.write(
+                f"{datetime.now()}: Юзербот: {ub_username}, сервер: {server_ip}\n")
         print(f"DEBUG: Юзербот: {ub_username}, сервер: {server_ip}")
         service_name = f"hikka-{ub_username}.service"
-        
+
         with open("/tmp/bot_debug.log", "a") as f:
             f.write(f"{datetime.now()}: Проверяем статус контейнера\n")
         print(f"DEBUG: Проверяем статус контейнера")
-        
+
         # Временно отключаем проверку статуса контейнера для ускорения загрузки
         container_exists = True  # Считаем что контейнер работает
         disk_space_ok = True  # Упрощенная проверка
-        
+
         with open("/tmp/bot_debug.log", "a") as f:
             f.write(f"{datetime.now()}: Статус контейнера проверен\n")
         print(f"DEBUG: Статус контейнера проверен")
@@ -1075,11 +1196,13 @@ async def cq_go_to_control_panel(call: types.CallbackQuery, state: FSMContext):
         #     builder.button(text="🔙 Назад", callback_data="back_to_main_panel")
         #     await call.message.edit_caption(caption=error_text, reply_markup=builder.as_markup())
         #     return
-        
+
         if len(all_bots) == 1:
             with open("/tmp/bot_debug.log", "a") as f:
-                f.write(f"{datetime.now()}: Показываем панель управления для единственного юзербота {ub_username}\n")
-            print(f"DEBUG: Показываем панель управления для единственного юзербота {ub_username}")
+                f.write(
+                    f"{datetime.now()}: Показываем панель управления для единственного юзербота {ub_username}\n")
+            print(
+                f"DEBUG: Показываем панель управления для единственного юзербота {ub_username}")
             await show_management_panel(call, ub_username, state)
             return
 
@@ -1091,6 +1214,7 @@ async def cq_go_to_control_panel(call: types.CallbackQuery, state: FSMContext):
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
+
 @router.callback_query(F.data.startswith("select_ub_panel:"))
 async def cq_select_ub_panel(call: types.CallbackQuery, state: FSMContext):
     try:
@@ -1100,6 +1224,7 @@ async def cq_select_ub_panel(call: types.CallbackQuery, state: FSMContext):
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
+
 @router.callback_query(F.data.startswith("refresh_panel:"))
 async def cq_refresh_panel(call: types.CallbackQuery, state: FSMContext):
     try:
@@ -1107,7 +1232,7 @@ async def cq_refresh_panel(call: types.CallbackQuery, state: FSMContext):
 
         parts = call.data.split(":")
         ub_username = parts[1]
-        
+
         owner_id_str = parts[2] if len(parts) >= 3 else str(call.from_user.id)
         owner_id = int(owner_id_str)
 
@@ -1118,11 +1243,14 @@ async def cq_refresh_panel(call: types.CallbackQuery, state: FSMContext):
         await show_management_panel(call, ub_username, state)
 
     except (TelegramBadRequest, ValueError, IndexError) as e:
-        if isinstance(e, TelegramBadRequest) and "message is not modified" in str(e).lower():
+        if isinstance(
+                e,
+                TelegramBadRequest) and "message is not modified" in str(e).lower():
             return
-        
+
         logging.error(f"Ошибка при обновлении панели управления: {e}")
         await call.answer("Упс... кажется, эти кнопки устарели. Вызовите новые через /start", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("show_user_logs:"))
 async def cq_show_user_logs(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -1157,13 +1285,14 @@ async def cq_show_user_logs(call: types.CallbackQuery, state: FSMContext, bot: B
         # Используем API для получения логов контейнера
         if log_type == "docker":
             # Проверяем статус сервера
-            server_status = server_config.get_server_status_by_ip(ub_data['server_ip'])
+            server_status = server_config.get_server_status_by_ip(
+                ub_data['server_ip'])
             if server_status in ["false", "not_found"]:
                 logs = f"❌ Сервер {ub_data['server_ip']} недоступен"
             else:
                 container_name = ub_username  # Имя контейнера = имя юзербота
                 logs_result = await api_manager.get_container_logs(container_name, ub_data['server_ip'])
-                
+
                 if logs_result.get("success"):
                     logs_data = logs_result.get("data", {})
                     logs = logs_data.get("logs", "")
@@ -1181,23 +1310,30 @@ async def cq_show_user_logs(call: types.CallbackQuery, state: FSMContext, bot: B
             await show_management_panel(call, ub_username, state)
             await call.bot.send_message(call.from_user.id, f"📜 {logs}")
             return
-        
+
         log_lines = logs.strip().split('\n')
-        total_pages = max(1, (len(log_lines) + LOG_LINES_PER_PAGE - 1) // LOG_LINES_PER_PAGE)
+        total_pages = max(
+            1,
+            (len(log_lines) +
+             LOG_LINES_PER_PAGE -
+             1) //
+            LOG_LINES_PER_PAGE)
         page = max(1, min(page, total_pages))
         start_index = (page - 1) * LOG_LINES_PER_PAGE
         end_index = start_index + LOG_LINES_PER_PAGE
         page_content = "\n".join(log_lines[start_index:end_index])
-        
-        text = (f"📜 <b>Логи ({log_type.capitalize()}) для <code>{html.quote(ub_username)}</code></b>\n"
-                f"<i>(Стр. {page}/{total_pages}, новые логи сверху)</i>\n\n"
-                f"<pre>{html.quote(page_content)}</pre>")
-                
+
+        text = (
+            f"📜 <b>Логи ({log_type.capitalize()}) для <code>{html.quote(ub_username)}</code></b>\n"
+            f"<i>(Стр. {page}/{total_pages}, новые логи сверху)</i>\n\n"
+            f"<pre>{html.quote(page_content)}</pre>")
+
         if len(text) > 4096:
             text = text[:4090] + "...</pre>"
 
-        markup = kb.get_user_logs_paginator_keyboard(log_type, ub_username, page, total_pages, owner_id)
-        
+        markup = kb.get_user_logs_paginator_keyboard(
+            log_type, ub_username, page, total_pages, owner_id)
+
         try:
             await safe_callback_answer(call, text, show_alert=True)
             await msg_to_edit.edit_text(text=text, reply_markup=markup)
@@ -1213,6 +1349,7 @@ async def cq_show_user_logs(call: types.CallbackQuery, state: FSMContext, bot: B
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
+
 @router.callback_query(F.data.startswith("show_container_stats:"))
 async def cq_show_container_stats(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
@@ -1221,7 +1358,7 @@ async def cq_show_container_stats(call: types.CallbackQuery, state: FSMContext, 
         if not check_panel_owner(call, owner_id):
             return
         await safe_callback_answer(call, "Загружаю статистику...", show_alert=True)
-        
+
         ub_data = await db.get_userbot_data(ub_username)
         if not ub_data:
             await safe_callback_answer(call, "🚫 У вас нет доступа к этому юзерботу.", show_alert=True)
@@ -1233,36 +1370,41 @@ async def cq_show_container_stats(call: types.CallbackQuery, state: FSMContext, 
             return
 
         await safe_callback_answer(call, "", show_alert=True)
-        
+
         try:
             # Получаем статистику контейнера через API
             stats_result = await api_manager.get_container_stats(ub_username, server_ip)
-            
+
             if not stats_result.get("success"):
                 error_msg = stats_result.get("error", "Неизвестная ошибка")
                 await safe_callback_answer(call, f"❌ <b>Ошибка при получении статистики:</b>\n\n<pre>{html.quote(error_msg)}</pre>", show_alert=True)
                 return
-            
+
             stats_data = stats_result.get("data", {})
             formatted_stats = format_container_stats(stats_data)
-            
+
             # Добавляем кнопку обновления
             builder = InlineKeyboardBuilder()
-            builder.button(text="🔄 Обновить", callback_data=f"show_container_stats:{ub_username}:{owner_id_str}")
-            builder.button(text="🔙 Назад", callback_data=f"refresh_panel:{ub_username}:{owner_id_str}")
+            builder.button(
+                text="🔄 Обновить",
+                callback_data=f"show_container_stats:{ub_username}:{owner_id_str}")
+            builder.button(
+                text="🔙 Назад",
+                callback_data=f"refresh_panel:{ub_username}:{owner_id_str}")
             builder.adjust(2)
-            
+
             await safe_callback_answer(call, formatted_stats, show_alert=True)
             await call.message.edit_caption(
                 caption=formatted_stats,
                 reply_markup=builder.as_markup()
             )
-            
+
         except Exception as e:
             logging.error(f"Ошибка при получении статистики: {e}")
             await safe_callback_answer(call, f"❌ <b>Ошибка при получении статистики:</b>\n\n<pre>{html.quote(str(e))}</pre>", show_alert=True)
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("manage_ub:"))
 async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
@@ -1380,11 +1522,9 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                 "- Попробуйте другой клиент (например, Hiddify)\n"
                 "- Проверьте интернет\n"
                 "- Обратитесь в поддержку @TeaHostSupport"
-                "</blockquote>"
-            )
-            buttons = [
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="go_to_control_panel")]
-            ]
+                "</blockquote>")
+            buttons = [[InlineKeyboardButton(
+                text="⬅️ Назад", callback_data="go_to_control_panel")]]
             markup = InlineKeyboardMarkup(inline_keyboard=buttons)
             await call.message.edit_caption(
                 caption=vpn_text,
@@ -1408,12 +1548,14 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                     "<b>🔑 Ваш пароль для входа</b>\n\n"
                     f"<b>Пароль:</b> <tg-spoiler>{password}</tg-spoiler>\n\n"
                     "<i>Скопируйте пароль кнопкой ниже и вставьте его в форму входа на панели управления.</i>\n\n"
-                    "<b>❗️ Не делитесь этим паролем с другими!</b>"
-                )
+                    "<b>❗️ Не делитесь этим паролем с другими!</b>")
                 buttons = [
-                    [InlineKeyboardButton(text="🔑 Скопировать пароль", copy_text=CopyTextButton(text=password))],
-                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="go_to_control_panel")]
-                ]
+                    [
+                        InlineKeyboardButton(
+                            text="🔑 Скопировать пароль", copy_text=CopyTextButton(
+                                text=password))], [
+                        InlineKeyboardButton(
+                            text="⬅️ Назад", callback_data="go_to_control_panel")]]
                 markup = InlineKeyboardMarkup(inline_keyboard=buttons)
             await call.message.edit_caption(
                 caption=auth_message,
@@ -1437,14 +1579,22 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
             error_msg = result.get("error", "неизвестная ошибка").lower()
             server_details = server_config.get_servers().get(server_ip, {})
             server_code = server_details.get("code", "N/A")
-            
+
             log_data = {
-                "user_data": {"id": call.from_user.id, "full_name": call.from_user.full_name},
-                "ub_info": {"name": ub_username},
-                "server_info": {"ip": server_ip, "code": server_code},
-                "error": f"Действие '{action}': {result.get('error', 'N/A')}"
-            }
-            asyncio.create_task(log_event(call.bot, "api_container_error", log_data))
+                "user_data": {
+                    "id": call.from_user.id,
+                    "full_name": call.from_user.full_name},
+                "ub_info": {
+                    "name": ub_username},
+                "server_info": {
+                    "ip": server_ip,
+                    "code": server_code},
+                "error": f"Действие '{action}': {result.get('error', 'N/A')}"}
+            asyncio.create_task(
+                log_event(
+                    call.bot,
+                    "api_container_error",
+                    log_data))
 
             if "invalid token" in error_msg or "403" in error_msg:
                 text = f"На сервере {server_code} установлен неверный API токен. Обратитесь к администратору @aloya_uwu или @nloveuser."
@@ -1458,7 +1608,7 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
                 text = "Брат, у тебя пиздец случился, обратись к @aloya_uwu или @nloveuser."
                 await call.message.edit_caption(caption=text, reply_markup=kb.get_back_to_main_panel_keyboard())
                 return
-            
+
             try:
                 await safe_callback_answer(call, f"❌ Ошибка {action_text}: {result.get('error')}", show_alert=True)
             except Exception:
@@ -1466,56 +1616,65 @@ async def cq_manage_container(call: types.CallbackQuery, state: FSMContext):
             try:
                 await show_management_panel(call, ub_username, state)
             except Exception as e:
-                logging.error(f"Ошибка при обновлении панели после ошибки: {e}")
+                logging.error(
+                    f"Ошибка при обновлении панели после ошибки: {e}")
 
     except Exception as e:
         logging.error(f"Ошибка при управлении контейнером: {e}")
         try:
             await safe_callback_answer(call, "❌ Произошла ошибка при выполнении действия", show_alert=True)
         except aiogram.exceptions.TelegramBadRequest as tg_error:
-            if "query is too old" in str(tg_error).lower() or "response timeout expired" in str(tg_error).lower():
-                logging.warning(f"Callback query устарел для пользователя {call.from_user.id}: {tg_error}")
+            if "query is too old" in str(tg_error).lower(
+            ) or "response timeout expired" in str(tg_error).lower():
+                logging.warning(
+                    f"Callback query устарел для пользователя {call.from_user.id}: {tg_error}")
             else:
-                logging.error(f"TelegramBadRequest при ответе на callback: {tg_error}")
+                logging.error(
+                    f"TelegramBadRequest при ответе на callback: {tg_error}")
         except Exception as answer_error:
-            logging.error(f"Не удалось ответить на callback query: {answer_error}")
+            logging.error(
+                f"Не удалось ответить на callback query: {answer_error}")
 
         try:
             await show_management_panel(call, ub_username, state)
         except Exception as panel_error:
-            logging.error(f"Ошибка при обновлении панели после исключения: {panel_error}")
+            logging.error(
+                f"Ошибка при обновлении панели после исключения: {panel_error}")
+
 
 @router.callback_query(F.data.startswith("inline_btn_manage:"))
 async def cq_inline_manage_container(call: types.CallbackQuery, state: FSMContext):
     """Обработчик для inline управления контейнером"""
     try:
         # Парсим данные из callback
-        _, action, ub_username, owner_id_str, inline_message_id = call.data.split(":")
+        _, action, ub_username, owner_id_str, inline_message_id = call.data.split(
+            ":")
         owner_id = int(owner_id_str)
-        
+
         # Проверяем права доступа
         if not check_panel_owner(call, owner_id):
             return
-        
+
         # Получаем данные юзербота
         ub_data = await db.get_userbot_data(ub_username)
         if not ub_data:
             await safe_callback_answer(call, "❌ Юзербот не найден", show_alert=True)
             return
-        
+
         server_ip = ub_data.get('server_ip')
         if not server_ip:
             await safe_callback_answer(call, "❌ Сервер не найден", show_alert=True)
             return
-        
+
         # Сразу заменяем клавиатуру на "Загрузка..."
         try:
             await safe_callback_answer(call, "", show_alert=True)
             await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
         except Exception as e:
-            # Если не удалось отредактировать сообщение, просто отвечаем на callback
+            # Если не удалось отредактировать сообщение, просто отвечаем на
+            # callback
             await safe_callback_answer(call, "⏳ Выполняю команду...", show_alert=True)
-        
+
         # Выполняем действие в зависимости от типа
         if action == "start":
             result = await api_manager.start_container(ub_username, server_ip)
@@ -1529,7 +1688,7 @@ async def cq_inline_manage_container(call: types.CallbackQuery, state: FSMContex
         else:
             await safe_callback_answer(call, "❌ Неизвестное действие", show_alert=True)
             return
-        
+
         if result.get("success"):
             # Обновляем inline сообщение
             try:
@@ -1544,34 +1703,43 @@ async def cq_inline_manage_container(call: types.CallbackQuery, state: FSMContex
             except Exception:
                 # Если callback query устарел, логируем ошибку
                 pass
-            # В случае ошибки тоже обновляем панель, чтобы показать актуальное состояние
+            # В случае ошибки тоже обновляем панель, чтобы показать актуальное
+            # состояние
             try:
                 await show_management_panel(call, ub_username, state)
             except Exception as e:
-                logging.error(f"Ошибка при обновлении inline панели после ошибки: {e}")
-            
+                logging.error(
+                    f"Ошибка при обновлении inline панели после ошибки: {e}")
+
     except Exception as e:
         logging.error(f"Ошибка при inline управлении контейнером: {e}")
         try:
             await safe_callback_answer(call, "❌ Произошла ошибка при выполнении действия", show_alert=True)
         except aiogram.exceptions.TelegramBadRequest as tg_error:
             # Если callback query устарел, логируем ошибку
-            if "query is too old" in str(tg_error).lower() or "response timeout expired" in str(tg_error).lower():
-                logging.warning(f"Callback query устарел для пользователя {call.from_user.id}: {tg_error}")
+            if "query is too old" in str(tg_error).lower(
+            ) or "response timeout expired" in str(tg_error).lower():
+                logging.warning(
+                    f"Callback query устарел для пользователя {call.from_user.id}: {tg_error}")
             else:
-                logging.error(f"TelegramBadRequest при ответе на callback: {tg_error}")
+                logging.error(
+                    f"TelegramBadRequest при ответе на callback: {tg_error}")
         except Exception as answer_error:
             # Если callback query устарел, логируем ошибку
-            logging.error(f"Не удалось ответить на callback query: {answer_error}")
+            logging.error(
+                f"Не удалось ответить на callback query: {answer_error}")
         # В случае исключения тоже обновляем панель
         try:
             await show_management_panel(call, ub_username, state)
         except Exception as panel_error:
-            logging.error(f"Ошибка при обновлении inline панели после исключения: {panel_error}")
+            logging.error(
+                f"Ошибка при обновлении inline панели после исключения: {panel_error}")
+
 
 @router.callback_query(F.data.startswith("noop"))
 async def noop_handler(call: types.CallbackQuery):
     await call.answer()
+
 
 @router.callback_query(F.data.startswith("delete_ub_confirm_request:"))
 async def cq_delete_ub_confirm_request(call: types.CallbackQuery, state: FSMContext):
@@ -1584,10 +1752,8 @@ async def cq_delete_ub_confirm_request(call: types.CallbackQuery, state: FSMCont
         owner_id = int(owner_id_str)
         if not check_panel_owner(call, owner_id):
             return
-        text = (
-            f"<b>⚠️ Вы уверены, что хотите удалить ваш юзербот?</b>\n\n"
-            f"❗️ Все ваши модули и настройки будут <b>безвозвратно удалены</b>."
-        )
+        text = (f"<b>⚠️ Вы уверены, что хотите удалить ваш юзербот?</b>\n\n"
+                f"❗️ Все ваши модули и настройки будут <b>безвозвратно удалены</b>.")
         markup = kb.get_confirm_delete_keyboard(ub_username)
         try:
             if call.message.text:
@@ -1604,10 +1770,13 @@ async def cq_delete_ub_confirm_request(call: types.CallbackQuery, state: FSMCont
                 await call.message.answer(text, reply_markup=markup, parse_mode="HTML")
         await state.set_state(UserBotSetup.ConfirmDeleteUserBot)
     except Exception as e:
-        logging.error(f"Неожиданная ошибка в cq_delete_ub_confirm_request: {e}")
+        logging.error(
+            f"Неожиданная ошибка в cq_delete_ub_confirm_request: {e}")
         await safe_callback_answer(call, "Произошла ошибка, попробуйте снова через /start", show_alert=True)
 
-@router.callback_query(F.data.startswith("delete_ub_cancel:"), UserBotSetup.ConfirmDeleteUserBot)
+
+@router.callback_query(F.data.startswith("delete_ub_cancel:"),
+                       UserBotSetup.ConfirmDeleteUserBot)
 async def cq_delete_ub_cancel(call: types.CallbackQuery, state: FSMContext):
     try:
         await call.answer(
@@ -1630,8 +1799,10 @@ async def cq_delete_ub_cancel(call: types.CallbackQuery, state: FSMContext):
     except Exception as e:
         logging.error(f"Неожиданная ошибка в cq_delete_ub_cancel: {e}")
         await call.answer("Произошла ошибка, попробуйте снова.", show_alert=True)
-        
-@router.callback_query(F.data.startswith("delete_ub_execute:"), UserBotSetup.ConfirmDeleteUserBot)
+
+
+@router.callback_query(F.data.startswith("delete_ub_execute:"),
+                       UserBotSetup.ConfirmDeleteUserBot)
 async def cq_delete_ub_execute(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
         # Показываем индикатор загрузки вместо всех кнопок
@@ -1641,42 +1812,47 @@ async def cq_delete_ub_execute(call: types.CallbackQuery, state: FSMContext, bot
         await safe_callback_answer(call, "🗑️ <b>Удаление юзербота...</b>\n\n<blockquote>Этот процесс может занять до минуты.</blockquote>", show_alert=True)
 
         ub_username = call.data.split(":")[1]
-        
+
         ub_data = await db.get_userbot_data(ub_username)
         if not ub_data:
             await safe_callback_answer(call, "❌ <b>Ошибка:</b> Юзербот не найден или у вас больше нет к нему доступа.", show_alert=True)
             return
 
         await db.update_userbot_status(ub_username, "deleting")
-        
+
         # Удаляем контейнер через API
         tg_id = call.from_user.id
         delete_result = await api_manager.delete_container(ub_username, ub_data['server_ip'])
         await db.delete_password(tg_id)
         await db.delete_vpn(tg_id)
         await api_manager.delete_vpn(f"ub{tg_id}")
-        
+
         if delete_result.get("success"):
             # Удаляем запись из базы данных
             await db.delete_userbot_record(ub_username)
-            
-            user_data = {"id": call.from_user.id, "full_name": call.from_user.full_name}
-            server_details = server_config.get_servers().get(ub_data['server_ip'], {})
+
+            user_data = {
+                "id": call.from_user.id,
+                "full_name": call.from_user.full_name}
+            server_details = server_config.get_servers().get(
+                ub_data['server_ip'], {})
             log_data = {
-                "user_data": user_data,
-                "ub_info": {"name": ub_username},
-                "server_info": {"ip": ub_data['server_ip'], "code": server_details.get("code", "N/A")}
-            }
+                "user_data": user_data, "ub_info": {
+                    "name": ub_username}, "server_info": {
+                    "ip": ub_data['server_ip'], "code": server_details.get(
+                        "code", "N/A")}}
             await log_event(call.bot, "deletion_by_owner", log_data)
-            
+
             await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=call.from_user.id,
-                user_name=call.from_user.full_name, state=state, message_id=call.message.message_id
-            )
+                                   user_name=call.from_user.full_name, state=state, message_id=call.message.message_id
+                                   )
         else:
-            error_message = delete_result.get('error', 'Произошла неизвестная ошибка.')
+            error_message = delete_result.get(
+                'error', 'Произошла неизвестная ошибка.')
             await safe_callback_answer(call, f"❌ <b>Ошибка при удалении:</b>\n\n<pre>{html.quote(error_message)}</pre>", show_alert=True)
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
 
 @router.callback_query(F.data == "check_subscription")
 async def check_subscription_callback(call: types.CallbackQuery, bot: Bot, state: FSMContext):
@@ -1696,10 +1872,12 @@ async def check_subscription_callback(call: types.CallbackQuery, bot: Bot, state
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
+
 @router.callback_query(F.data.startswith("share_panel_start:"))
 async def cq_share_panel_start(call: types.CallbackQuery, state: FSMContext):
     """Временный обработчик для кнопки 'Поделиться панелью'"""
     await safe_callback_answer(call, "⚠️ Функция 'Поделиться панелью' временно недоступна.\n\nМы работаем над её реализацией. Следите за обновлениями!", show_alert=True)
+
 
 @router.message(StateFilter(UserBotShare.WaitingForShareUserID))
 async def msg_process_share_user_id(message: types.Message, state: FSMContext, bot: Bot):
@@ -1709,19 +1887,19 @@ async def msg_process_share_user_id(message: types.Message, state: FSMContext, b
     await message.delete()
     if not message.text or not message.text.isdigit():
         await safe_callback_answer(message, "❌ ID пользователя должен быть числом. Попробуйте снова.",
-            chat_id=message.chat.id, message_id=message_id_to_edit,
-            reply_markup=kb.get_cancel_revoke_shared_keyboard(ub_username)
-        )
+                                   chat_id=message.chat.id, message_id=message_id_to_edit,
+                                   reply_markup=kb.get_cancel_revoke_shared_keyboard(ub_username)
+                                   )
         return
     share_user_id = int(message.text)
     if share_user_id == message.from_user.id:
         await safe_callback_answer(message, "❌ Вы не можете поделиться панелью с самим собой.",
-            chat_id=message.chat.id, message_id=message_id_to_edit)
+                                   chat_id=message.chat.id, message_id=message_id_to_edit)
         await show_management_panel(message, ub_username, state)
         return
     if await db.has_userbot_shared_access(ub_username, share_user_id):
         await safe_callback_answer(message, "❗️ У пользователя уже есть доступ к этой панели.",
-            chat_id=message.chat.id, message_id=message_id_to_edit)
+                                   chat_id=message.chat.id, message_id=message_id_to_edit)
         await show_management_panel(message, ub_username, state)
         return
     await state.update_data(share_user_id=share_user_id)
@@ -1731,18 +1909,20 @@ async def msg_process_share_user_id(message: types.Message, state: FSMContext, b
     text = f"Вы точно хотите выдать доступ к панели <code>{html.quote(ub_username)}</code> пользователю {html.quote(user_display)} (<code>{share_user_id}</code>)?"
     markup = kb.get_confirm_share_panel_keyboard(ub_username, share_user_id)
     await safe_callback_answer(message, text, chat_id=message.chat.id, message_id=message_id_to_edit, reply_markup=markup)
-    
 
-@router.callback_query(F.data.startswith("confirm_share_panel:"), UserBotShare.ConfirmingShare)
+
+@router.callback_query(F.data.startswith("confirm_share_panel:"),
+                       UserBotShare.ConfirmingShare)
 async def cq_confirm_share_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
         _, ub_username, share_user_id_str = call.data.split(":")
         share_user_id = int(share_user_id_str)
         owner = call.from_user
-        text = (f"Пользователь {html.quote(owner.full_name)} (<code>{owner.id}</code>) хочет поделиться с вами панелью управления юзерботом <code>{html.quote(ub_username)}</code>.\n\n"
-                "Вы хотите принять доступ? Вы сможете отказаться в любой момент.")
+        text = (
+            f"Пользователь {html.quote(owner.full_name)} (<code>{owner.id}</code>) хочет поделиться с вами панелью управления юзерботом <code>{html.quote(ub_username)}</code>.\n\n"
+            "Вы хотите принять доступ? Вы сможете отказаться в любой момент.")
         markup = kb.get_accept_share_panel_keyboard(ub_username, owner.id)
-        
+
         try:
             await safe_callback_answer(call, "", show_alert=True)
             await call.bot.send_message(chat_id=share_user_id, text=text, reply_markup=markup)
@@ -1751,42 +1931,53 @@ async def cq_confirm_share_panel(call: types.CallbackQuery, state: FSMContext, b
             await safe_callback_answer(call, "❌ Не удалось отправить приглашение. Пользователь должен сначала начать диалог с ботом.", show_alert=True)
             await safe_callback_answer(call, "❌ Ошибка: пользователь не начал диалог с ботом", reply_markup=kb.get_back_to_main_panel_keyboard())
         except Exception as e:
-            logging.error(f"Ошибка при отправке приглашения пользователю {share_user_id}: {e}")
+            logging.error(
+                f"Ошибка при отправке приглашения пользователю {share_user_id}: {e}")
             await safe_callback_answer(call, "❌ Произошла ошибка при отправке приглашения", show_alert=True)
             await safe_callback_answer(call, "❌ Ошибка при отправке приглашения", reply_markup=kb.get_back_to_main_panel_keyboard())
-        
+
         await state.clear()
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
-@router.callback_query(F.data.startswith("accept_share_panel:"), F.chat.type == "private")
+
+@router.callback_query(F.data.startswith("accept_share_panel:"),
+                       F.chat.type == "private")
 async def cq_accept_share_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
         _, ub_username, owner_id_str = call.data.split(":")
         await db.add_userbot_shared_access(ub_username, call.from_user.id)
-        
+
         try:
             owner_id = int(owner_id_str)
             sharer_data_log = {"id": owner_id, "full_name": (await bot.get_chat(owner_id)).full_name}
-            user_data_log = {"id": call.from_user.id, "full_name": call.from_user.full_name}
+            user_data_log = {
+                "id": call.from_user.id,
+                "full_name": call.from_user.full_name}
             ub_info_log = {"name": ub_username}
-            log_data = {"sharer_data": sharer_data_log, "user_data": user_data_log, "ub_info": ub_info_log}
+            log_data = {
+                "sharer_data": sharer_data_log,
+                "user_data": user_data_log,
+                "ub_info": ub_info_log}
             await log_event(bot, "panel_shared_accepted", log_data)
         except Exception as e:
             logging.error(f"Failed to log panel share event: {e}")
 
         await safe_callback_answer(call, "✅ Доступ выдан! Теперь вы можете управлять этим юзерботом.", show_alert=True)
         await show_management_panel(call, ub_username, state)
-        
+
         try:
             await safe_callback_answer(call, "", show_alert=True)
             await call.bot.send_message(chat_id=int(owner_id_str), text=f"Пользователь <code>{call.from_user.id}</code> принял доступ к панели <code>{html.quote(ub_username)}</code>.")
         except TelegramForbiddenError:
-            logging.warning(f"Не удалось уведомить владельца {owner_id_str} о принятии доступа: пользователь не начал диалог с ботом")
+            logging.warning(
+                f"Не удалось уведомить владельца {owner_id_str} о принятии доступа: пользователь не начал диалог с ботом")
         except Exception as e:
-            logging.error(f"Ошибка при уведомлении владельца {owner_id_str}: {e}")
+            logging.error(
+                f"Ошибка при уведомлении владельца {owner_id_str}: {e}")
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("accept_share_panel:"))
 async def cq_accept_share_panel_fallback(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -1796,13 +1987,15 @@ async def cq_accept_share_panel_fallback(call: types.CallbackQuery, state: FSMCo
             await cq_accept_share_panel(call, state, bot)
         else:
             await safe_callback_answer(call,
-                "⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.",
-                show_alert=True
-            )
+                                       "⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.",
+                                       show_alert=True
+                                       )
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
-@router.callback_query(F.data.startswith("decline_share_panel:"), F.chat.type == "private")
+
+@router.callback_query(F.data.startswith("decline_share_panel:"),
+                       F.chat.type == "private")
 async def cq_decline_share_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
         await safe_callback_answer(call, "Вы отклонили приглашение.", show_alert=True)
@@ -1810,15 +2003,18 @@ async def cq_decline_share_panel(call: types.CallbackQuery, state: FSMContext, b
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
 
-@router.callback_query(F.data.startswith("decline_share_panel:"), F.chat.type != "private")
+
+@router.callback_query(F.data.startswith("decline_share_panel:"),
+                       F.chat.type != "private")
 async def cq_decline_share_panel_in_chat(call: types.CallbackQuery):
     try:
         await safe_callback_answer(call,
-            "⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.",
-            show_alert=True
-        )
+                                   "⚠️ Функция 'Поделиться панелью' работает только в личных сообщениях с ботом.",
+                                   show_alert=True
+                                   )
     except TelegramBadRequest:
         await safe_callback_answer(call, "Упс... кажется кнопки устарели, вызовите новые через /start", show_alert=True)
+
 
 @router.message(Command("ping"))
 async def cmd_ping(message: types.Message):
@@ -1830,23 +2026,24 @@ async def cmd_ping(message: types.Message):
             return
 
     PING_TIMESTAMPS[user_id] = current_time
-    
+
     start_time = time.perf_counter()
     msg = await message.reply("...")
     end_time = time.perf_counter()
     delay = (end_time - start_time) * 1000
     await msg.edit_text(f"🏓 <b>Понг!</b>\nЗадержка: <code>{delay:.2f} мс</code>")
-    
+
+
 @router.message(Command("review"), F.chat.type == "private")
 async def cmd_review(message: types.Message, state: FSMContext):
     text = (
         "✍️ <b>Напишите отзыв о TeaHost</b>\n\n"
         "ℹ️ В отзыве можете рассказать о том, сколько пользуетесь TeaHost, какие отличия заметили от предыдущего хостинга и т.д.\n\n"
-        "📅 В ближайшее время отзыв будет опубликован на @TeaHostReviews."
-    )
+        "📅 В ближайшее время отзыв будет опубликован на @TeaHostReviews.")
     sent_message = await message.reply(text, reply_markup=kb.get_cancel_review_keyboard())
     await state.update_data(original_bot_message_id=sent_message.message_id)
     await state.set_state(UserReview.WaitingForReview)
+
 
 @router.message(Command("review"), F.chat.type != "private")
 async def cmd_review_in_chat(message: types.Message):
@@ -1858,6 +2055,7 @@ async def cmd_review_in_chat(message: types.Message):
     )
     review_warned_users[key] = True
 
+
 @router.message(F.chat.type != "private")
 async def reset_review_warn_flag(message: types.Message):
     if message.text and message.text.strip().startswith("/review"):
@@ -1866,7 +2064,9 @@ async def reset_review_warn_flag(message: types.Message):
     if review_warned_users[key]:
         review_warned_users[key] = False
 
-@router.callback_query(F.data == "cancel_review", StateFilter(UserReview.WaitingForReview))
+
+@router.callback_query(F.data == "cancel_review",
+                       StateFilter(UserReview.WaitingForReview))
 async def cq_cancel_review(call: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await call.answer("200 OK.", show_alert=True)
@@ -1878,14 +2078,15 @@ async def cq_cancel_review(call: types.CallbackQuery, state: FSMContext):
         else:
             logging.error(f"ошибочка, вот лог: {e}")
 
+
 @router.message(StateFilter(UserReview.WaitingForReview))
 async def process_review_text(message: types.Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     original_bot_message_id = data.get("original_bot_message_id")
-    
+
     await state.clear()
     admins = get_all_admins()
-    
+
     for admin_id in admins:
         try:
             forwarded_msg = await bot.forward_message(
@@ -1897,12 +2098,14 @@ async def process_review_text(message: types.Message, state: FSMContext, bot: Bo
                 reply_markup=kb.get_review_approval_keyboard(message.from_user.id, message.message_id)
             )
         except TelegramForbiddenError:
-            logging.warning(f"Не удалось отправить отзыв на модерацию администратору {admin_id}: пользователь не начал диалог с ботом")
+            logging.warning(
+                f"Не удалось отправить отзыв на модерацию администратору {admin_id}: пользователь не начал диалог с ботом")
         except Exception as e:
-            logging.error(f"Не удалось отправить отзыв на модерацию администратору {admin_id}: {e}")
-            
+            logging.error(
+                f"Не удалось отправить отзыв на модерацию администратору {admin_id}: {e}")
+
     await safe_callback_answer(message, "✅ Отправлен на модерацию.", show_alert=True)
-    
+
     if original_bot_message_id:
         try:
             await safe_callback_answer(message, "", show_alert=True)
@@ -1910,12 +2113,15 @@ async def process_review_text(message: types.Message, state: FSMContext, bot: Bo
                 chat_id=message.chat.id, message_id=original_bot_message_id, reply_markup=None
             )
         except Exception as e:
-            logging.error(f"Не удалось удалить клавиатуру у сообщения с отзывом: {e}")
+            logging.error(
+                f"Не удалось удалить клавиатуру у сообщения с отзывом: {e}")
+
 
 @router.message(Command("commits"))
 async def cmd_commits(message: types.Message):
     text, markup = await _get_commits_list_message()
     await message.answer(text, reply_markup=markup)
+
 
 @router.callback_query(F.data.startswith("view_commit:"))
 async def cq_view_commit(call: types.CallbackQuery):
@@ -1923,17 +2129,19 @@ async def cq_view_commit(call: types.CallbackQuery):
     commit_id = call.data.split(":")[1]
     await _display_commit_details(call, commit_id)
 
+
 @router.callback_query(F.data.startswith("vote_commit:"))
 async def cq_vote_commit(call: types.CallbackQuery):
     _, commit_id, vote_type_str = call.data.split(":")
     vote_type = int(vote_type_str)
-    
+
     await db.set_vote(commit_id, call.from_user.id, vote_type)
-    
+
     alert_text = "Ваш 👍 поставлен на коммит!" if vote_type == 1 else "Ваш 👎 поставлен на коммит!"
     await safe_callback_answer(call, alert_text, show_alert=False)
-    
+
     await _display_commit_details(call, commit_id)
+
 
 @router.callback_query(F.data == "back_to_commits")
 async def cq_back_to_commits(call: types.CallbackQuery):
@@ -1942,20 +2150,23 @@ async def cq_back_to_commits(call: types.CallbackQuery):
     await safe_callback_answer(call, text, show_alert=True)
     await call.message.edit_text(text, reply_markup=markup)
 
+
 @router.callback_query(F.data == "hide_commits")
 async def cq_hide_commits(call: types.CallbackQuery):
     await safe_callback_answer(call, "", show_alert=True)
     await safe_callback_answer(call, "", show_alert=True)
     await call.message.delete()
 
+
 async def _get_commits_list_message():
     commits = await db.get_all_commits()
     if not commits:
         return "<b>📜 История обновлений</b>\n\nПока не было ни одного коммита.", None
-    
+
     text = "<b>📜 История обновлений</b>\n\nВыберите коммит для просмотра деталей."
     markup = kb.get_commits_list_keyboard(commits)
     return text, markup
+
 
 async def _send_commit_details_new_message(bot: Bot, chat_id: int, commit_id: str, user_id_for_admin_check: int):
     commit = await db.get_commit_by_id(commit_id)
@@ -1967,7 +2178,7 @@ async def _send_commit_details_new_message(bot: Bot, chat_id: int, commit_id: st
     admin_info = f"<a href='tg://user?id={commit['admin_id']}'>{admin_name}</a>"
     if commit['admin_username']:
         admin_info += f" (@{html.quote(commit['admin_username'])})"
-    
+
     try:
         locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     except locale.Error:
@@ -1975,17 +2186,23 @@ async def _send_commit_details_new_message(bot: Bot, chat_id: int, commit_id: st
 
     commit_date = datetime.strptime(commit['created_at'], '%Y-%m-%d %H:%M:%S')
     formatted_date = commit_date.strftime('%d %B %Y в %H:%M')
-    
+
     vote_counts = await db.get_vote_counts(commit_id)
     is_admin = user_id_for_admin_check in get_all_admins()
 
-    text = (f"<b>Commit <code>#{commit['commit_id']}</code> by {admin_info}</b>\n\n"
-            f"🕕 <b>Дата коммита:</b> {formatted_date}\n\n"
-            f"<b>✍️ ChangeLog:</b>\n"
-            f"<blockquote>{html.quote(commit['commit_text'])}</blockquote>")
-    
-    markup = kb.get_commit_details_keyboard(commit_id, vote_counts['likes'], vote_counts['dislikes'], is_admin)
+    text = (
+        f"<b>Commit <code>#{commit['commit_id']}</code> by {admin_info}</b>\n\n"
+        f"🕕 <b>Дата коммита:</b> {formatted_date}\n\n"
+        f"<b>✍️ ChangeLog:</b>\n"
+        f"<blockquote>{html.quote(commit['commit_text'])}</blockquote>")
+
+    markup = kb.get_commit_details_keyboard(
+        commit_id,
+        vote_counts['likes'],
+        vote_counts['dislikes'],
+        is_admin)
     await bot.send_message(chat_id, text, reply_markup=markup, disable_web_page_preview=True)
+
 
 async def _display_commit_details(call: types.CallbackQuery, commit_id: str):
     commit = await db.get_commit_by_id(commit_id)
@@ -1997,7 +2214,7 @@ async def _display_commit_details(call: types.CallbackQuery, commit_id: str):
     admin_info = f"<a href='tg://user?id={commit['admin_id']}'>{admin_name}</a>"
     if commit['admin_username']:
         admin_info += f" (@{html.quote(commit['admin_username'])})"
-    
+
     try:
         locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     except locale.Error:
@@ -2007,24 +2224,30 @@ async def _display_commit_details(call: types.CallbackQuery, commit_id: str):
     formatted_date = "Неизвестно"
     if isinstance(commit_date, datetime):
         formatted_date = commit_date.strftime('%d %B %Y в %H:%M')
-    
+
     vote_counts = await db.get_vote_counts(commit_id)
     is_admin = call.from_user.id in get_all_admins()
 
-    text = (f"<b>Commit <code>#{commit['commit_id']}</code> by {admin_info}</b>\n\n"
-            f"🕕 <b>Дата коммита:</b> {formatted_date}\n\n"
-            f"<b>✍️ ChangeLog:</b>\n"
-            f"<blockquote>{html.quote(commit['commit_text'])}</blockquote>")
-    
-    markup = kb.get_commit_details_keyboard(commit_id, vote_counts['likes'], vote_counts['dislikes'], is_admin)
-    
+    text = (
+        f"<b>Commit <code>#{commit['commit_id']}</code> by {admin_info}</b>\n\n"
+        f"🕕 <b>Дата коммита:</b> {formatted_date}\n\n"
+        f"<b>✍️ ChangeLog:</b>\n"
+        f"<blockquote>{html.quote(commit['commit_text'])}</blockquote>")
+
+    markup = kb.get_commit_details_keyboard(
+        commit_id,
+        vote_counts['likes'],
+        vote_counts['dislikes'],
+        is_admin)
+
     try:
         await safe_callback_answer(call, text, show_alert=True)
         await call.message.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
             logging.error(f"Ошибка обновления деталей коммита: {e}")
-         
+
+
 @router.inline_query(F.query.startswith("exec"))
 async def inline_exec_handler(inline_query: InlineQuery):
     user_id = inline_query.from_user.id
@@ -2032,11 +2255,12 @@ async def inline_exec_handler(inline_query: InlineQuery):
 
     if not user_bots:
         result = InlineQueryResultArticle(
-            id=f"exec_no_bot_{user_id}", 
-            title="Нет юзербота", 
-            description="У вас нет юзербота для выполнения команд.", 
-            input_message_content=InputTextMessageContent(message_text="❌ <b>У вас нет юзербота.</b>", parse_mode="HTML")
-        )
+            id=f"exec_no_bot_{user_id}",
+            title="Нет юзербота",
+            description="У вас нет юзербота для выполнения команд.",
+            input_message_content=InputTextMessageContent(
+                message_text="❌ <b>У вас нет юзербота.</b>",
+                parse_mode="HTML"))
         await inline_query.answer([result], cache_time=5, is_personal=True)
         return
 
@@ -2045,13 +2269,15 @@ async def inline_exec_handler(inline_query: InlineQuery):
     ub_data = await db.get_userbot_data(ub_username)
 
     if not ub_data or ub_data.get('status') in ['installing', 'deleting']:
-        status_text = "Установка в процессе..." if ub_data.get('status') == 'installing' else "Удаление в процессе..."
+        status_text = "Установка в процессе..." if ub_data.get(
+            'status') == 'installing' else "Удаление в процессе..."
         result = InlineQueryResultArticle(
-            id=f"exec_status_fail_{user_id}", 
-            title="Действие недоступно", 
+            id=f"exec_status_fail_{user_id}",
+            title="Действие недоступно",
             description=status_text,
-            input_message_content=InputTextMessageContent(message_text=f"⏳ <b>Действие временно недоступно.</b>\n\n{status_text}", parse_mode="HTML")
-        )
+            input_message_content=InputTextMessageContent(
+                message_text=f"⏳ <b>Действие временно недоступно.</b>\n\n{status_text}",
+                parse_mode="HTML"))
         await inline_query.answer([result], cache_time=5, is_personal=True)
         return
 
@@ -2059,16 +2285,16 @@ async def inline_exec_handler(inline_query: InlineQuery):
 
     if not command_str:
         result = InlineQueryResultArticle(
-            id=f"exec_help_{user_id}", 
-            title="Введите команду", 
-            description="Напишите команду.", 
-            input_message_content=InputTextMessageContent(message_text="ℹ️ Введите команду после `exec ` для выполнения команды..")
-        )
+            id=f"exec_help_{user_id}",
+            title="Введите команду",
+            description="Напишите команду.",
+            input_message_content=InputTextMessageContent(
+                message_text="ℹ️ Введите команду после `exec ` для выполнения команды.."))
         await inline_query.answer([result], cache_time=5, is_personal=True)
         return
-        
+
     server_ip = the_only_bot['server_ip']
-    
+
     exec_result = await api_manager.exec_in_container(ub_username, command_str, server_ip)
 
     if not exec_result.get("success"):
@@ -2083,20 +2309,22 @@ async def inline_exec_handler(inline_query: InlineQuery):
             f"<b>Команда:</b> <pre>{html.quote(command_str)}</pre>\n"
             f"<b>Код выхода:</b> <code>{exit_code}</code>\n\n"
         )
-        
+
         if output:
             if len(output) > 3800:
                 output = output[:3800] + "\n\n[...Вывод обрезан...]"
-            response_text = header + f"<b>Вывод:</b>\n<blockquote>{html.quote(output)}</blockquote>"
+            response_text = header + \
+                f"<b>Вывод:</b>\n<blockquote>{html.quote(output)}</blockquote>"
         else:
             response_text = header + "<i>(Нет вывода)</i>"
-        
+
     result = InlineQueryResultArticle(
-        id=f"exec_result_{user_id}_{command_str}", 
-        title=f"Выполнить: {command_str[:50]}", 
-        description="Показать результат выполнения команды", 
-        input_message_content=InputTextMessageContent(message_text=response_text, parse_mode="HTML")
-    )
+        id=f"exec_result_{user_id}_{command_str}",
+        title=f"Выполнить: {command_str[:50]}",
+        description="Показать результат выполнения команды",
+        input_message_content=InputTextMessageContent(
+            message_text=response_text,
+            parse_mode="HTML"))
 
     try:
         await inline_query.answer([result], cache_time=1, is_personal=True)
@@ -2106,6 +2334,7 @@ async def inline_exec_handler(inline_query: InlineQuery):
         else:
             logging.error(f"Ошибка ответа на inline_query exec: {e}")
             raise
+
 
 @router.callback_query(F.data.startswith("revoke_shared_access:"))
 async def cq_revoke_shared_access(call: types.CallbackQuery, state: FSMContext):
@@ -2117,7 +2346,9 @@ async def cq_revoke_shared_access(call: types.CallbackQuery, state: FSMContext):
     await safe_callback_answer(call, text, show_alert=True)
     await safe_callback_answer(call, "", show_alert=True)
 
-@router.callback_query(F.data.startswith("confirm_revoke_shared:"), UserBotShare.ConfirmingRevoke)
+
+@router.callback_query(F.data.startswith("confirm_revoke_shared:"),
+                       UserBotShare.ConfirmingRevoke)
 async def cq_confirm_revoke_shared(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     ub_username = call.data.split(":")[1]
     await db.remove_userbot_shared_access(ub_username, call.from_user.id)
@@ -2125,12 +2356,15 @@ async def cq_confirm_revoke_shared(call: types.CallbackQuery, state: FSMContext,
     await safe_callback_answer(call, f"✅ Вы больше не управляете юзерботом <code>{html.quote(ub_username)}</code>.", show_alert=True)
     await safe_callback_answer(call, "", show_alert=True)
 
-@router.callback_query(F.data.startswith("cancel_revoke_shared:"), UserBotShare.ConfirmingRevoke)
+
+@router.callback_query(F.data.startswith("cancel_revoke_shared:"),
+                       UserBotShare.ConfirmingRevoke)
 async def cq_cancel_revoke_shared(call: types.CallbackQuery, state: FSMContext):
     ub_username = call.data.split(":")[1]
     await state.clear()
     await show_management_panel(call, ub_username, state)
     await safe_callback_answer(call, "", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("owner_revoke_shared:"))
 async def cq_owner_revoke_shared(call: types.CallbackQuery, state: FSMContext):
@@ -2140,14 +2374,17 @@ async def cq_owner_revoke_shared(call: types.CallbackQuery, state: FSMContext):
     await safe_callback_answer(call, "Доступ отозван.", show_alert=True)
     await show_management_panel(call, ub_username, state)
 
+
 def check_panel_owner(call, owner_id: int) -> bool:
     if call.from_user.id != owner_id:
         import asyncio
-        coro = safe_callback_answer(call, "Это не ваша панель!", show_alert=True)
+        coro = safe_callback_answer(
+            call, "Это не ваша панель!", show_alert=True)
         if asyncio.iscoroutine(coro):
             asyncio.create_task(coro)
         return False
     return True
+
 
 @router.callback_query(F.data.startswith("shared_reject_access:"))
 async def cq_shared_reject_access(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -2165,10 +2402,14 @@ async def cq_shared_reject_access(call: types.CallbackQuery, state: FSMContext, 
             pass
     await _show_main_panel(bot=bot, chat_id=call.message.chat.id, user_id=call.from_user.id, user_name=call.from_user.full_name, state=state, message_id=call.message.message_id)
 
+
 def get_cancel_revoke_shared_keyboard(ub_username: str):
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ Отмена", callback_data=f"cancel_share_panel:{ub_username}")
+    builder.button(
+        text="❌ Отмена",
+        callback_data=f"cancel_share_panel:{ub_username}")
     return builder.as_markup()
+
 
 @router.callback_query(F.data.startswith("cancel_share_panel:"))
 async def cq_cancel_share_panel(call: types.CallbackQuery, state: FSMContext):
@@ -2177,31 +2418,40 @@ async def cq_cancel_share_panel(call: types.CallbackQuery, state: FSMContext):
     await show_management_panel(call, ub_username, state)
     await safe_callback_answer(call, "", show_alert=True)
 
-@router.callback_query(F.data.startswith("accept_share_panel:"), F.chat.type == "private")
+
+@router.callback_query(F.data.startswith("accept_share_panel:"),
+                       F.chat.type == "private")
 async def cq_accept_share_panel(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     _, ub_username, owner_id_str = call.data.split(":")
     await db.add_userbot_shared_access(ub_username, call.from_user.id)
-    
+
     try:
         owner_id = int(owner_id_str)
         sharer_data_log = {"id": owner_id, "full_name": (await bot.get_chat(owner_id)).full_name}
-        user_data_log = {"id": call.from_user.id, "full_name": call.from_user.full_name}
+        user_data_log = {
+            "id": call.from_user.id,
+            "full_name": call.from_user.full_name}
         ub_info_log = {"name": ub_username}
-        log_data = {"sharer_data": sharer_data_log, "user_data": user_data_log, "ub_info": ub_info_log}
+        log_data = {
+            "sharer_data": sharer_data_log,
+            "user_data": user_data_log,
+            "ub_info": ub_info_log}
         await log_event(bot, "panel_shared_accepted", log_data)
     except Exception as e:
         logging.error(f"Failed to log panel share event: {e}")
 
     await safe_callback_answer(call, "✅ Доступ выдан! Теперь вы можете управлять этим юзерботом.", show_alert=True)
     await show_management_panel(call, ub_username, state)
-    
+
     try:
         await safe_callback_answer(call, "", show_alert=True)
         await call.bot.send_message(chat_id=int(owner_id_str), text=f"Пользователь <code>{call.from_user.id}</code> принял доступ к панели <code>{html.quote(ub_username)}</code>.")
     except TelegramForbiddenError:
-        logging.warning(f"Не удалось уведомить владельца {owner_id_str} о принятии доступа: пользователь не начал диалог с ботом")
+        logging.warning(
+            f"Не удалось уведомить владельца {owner_id_str} о принятии доступа: пользователь не начал диалог с ботом")
     except Exception as e:
         logging.error(f"Ошибка при уведомлении владельца {owner_id_str}: {e}")
+
 
 @router.callback_query(F.data.startswith("manage_shared_access:"))
 async def cq_manage_shared_access(call: types.CallbackQuery, state: FSMContext):
@@ -2228,11 +2478,13 @@ async def cq_manage_shared_access(call: types.CallbackQuery, state: FSMContext):
                 callback_data=f"remove_shared_access:{ub_username}:{shared_id}"
             )
         ])
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_panel:{ub_username}")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад",
+                                         callback_data=f"back_to_panel:{ub_username}")])
     markup = InlineKeyboardMarkup(inline_keyboard=buttons)
     await safe_callback_answer(call, text, show_alert=True)
     await call.message.edit_caption(caption=text, reply_markup=markup)
     await safe_callback_answer(call, "", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("remove_shared_access:"))
 async def cq_remove_shared_access(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -2241,17 +2493,24 @@ async def cq_remove_shared_access(call: types.CallbackQuery, state: FSMContext, 
     await db.remove_userbot_shared_access(ub_username, shared_id)
 
     try:
-        sharer_data_log = {"id": call.from_user.id, "full_name": call.from_user.full_name}
+        sharer_data_log = {
+            "id": call.from_user.id,
+            "full_name": call.from_user.full_name}
         shared_user_data = await db.get_user_data(shared_id)
-        user_data_log = {"id": shared_id, "full_name": shared_user_data.get("full_name") if shared_user_data else str(shared_id)}
+        user_data_log = {"id": shared_id, "full_name": shared_user_data.get(
+            "full_name") if shared_user_data else str(shared_id)}
         ub_info_log = {"name": ub_username}
-        log_data = {"sharer_data": sharer_data_log, "user_data": user_data_log, "ub_info": ub_info_log}
+        log_data = {
+            "sharer_data": sharer_data_log,
+            "user_data": user_data_log,
+            "ub_info": ub_info_log}
         await log_event(bot, "panel_share_revoked", log_data)
     except Exception as e:
         logging.error(f"Failed to log panel revoke event: {e}")
 
     await safe_callback_answer(call, "Доступ отозван.", show_alert=True)
     await cq_manage_shared_access(call, state)
+
 
 @router.callback_query(F.data.startswith("back_to_panel:"))
 async def cq_back_to_panel_from_shared(call: types.CallbackQuery, state: FSMContext):
@@ -2260,6 +2519,7 @@ async def cq_back_to_panel_from_shared(call: types.CallbackQuery, state: FSMCont
     await call.message.edit_reply_markup(reply_markup=kb.get_loading_keyboard())
     await show_management_panel(call, ub_username, state)
     await safe_callback_answer(call, "", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("reinstall_ub_start_request:"))
 async def cq_reinstall_ub_start_request_fallback(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -2285,7 +2545,8 @@ async def cq_reinstall_ub_start_request_fallback(call: types.CallbackQuery, stat
 #         except Exception:
 #             pass
 #     return {'used': 0, 'total': 0, 'percent': 0}
-    
+
+
 @router.callback_query(F.data.startswith("health_check_retry:"))
 async def cq_health_check_retry(call: types.CallbackQuery, state: FSMContext):
     await safe_callback_answer(call, "Проверяю снова...", show_alert=True)
@@ -2294,14 +2555,14 @@ async def cq_health_check_retry(call: types.CallbackQuery, state: FSMContext):
 
     ub_username = call.data.split(":")[1]
     ub_data = await db.get_userbot_data(ub_username)
-    
+
     if not ub_data:
         await safe_callback_answer(call, "❌ Юзербот не найден.", show_alert=True)
         await _show_main_panel(call.bot, call.message.chat.id, call.from_user.id, call.from_user.full_name, state, call.message.message_id)
         return
 
     server_ip = ub_data['server_ip']
-    
+
     # Проверяем статус контейнера через API
     container_status = await api_manager.get_container_status(ub_username, server_ip)
     container_exists = container_status.get("success", False)
@@ -2311,8 +2572,7 @@ async def cq_health_check_retry(call: types.CallbackQuery, state: FSMContext):
         error_text = (
             f"<b>🎛 Панель управления</b>\n\n"
             f"<i>😢 На данный момент наблюдаются сбои в работе юзербота/сервера.</i>\n\n"
-            f"<b>Повторите попытку через <code>10-15</code> минут</b>"
-        )
+            f"<b>Повторите попытку через <code>10-15</code> минут</b>")
         try:
             from config_manager import Config
             config = Config()
@@ -2330,17 +2590,21 @@ async def cq_health_check_retry(call: types.CallbackQuery, state: FSMContext):
             import logging
             logging.error(f"Не удалось отправить уведомление админам: {e}")
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔄 Обновить", callback_data=f"health_check_retry:{ub_username}")
+        builder.button(
+            text="🔄 Обновить",
+            callback_data=f"health_check_retry:{ub_username}")
         builder.button(text="🔙 Назад", callback_data="back_to_main_panel")
         await safe_callback_answer(call, error_text, show_alert=True)
         await call.message.edit_caption(caption=error_text, reply_markup=builder.as_markup())
     else:
         await show_management_panel(call, ub_username, state)
 
+
 class HerokuBackupType(CallbackData, prefix="heroku_backup_type"):
     ub_username: str
     owner_id: int
     backup_type: str
+
 
 @router.callback_query(F.data.startswith("heroku_backup:"))
 async def cq_heroku_backup_start(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -2350,13 +2614,23 @@ async def cq_heroku_backup_start(call: types.CallbackQuery, state: FSMContext, b
         return
     builder = InlineKeyboardBuilder()
     for btype, label in [("all", "all"), ("db", "db"), ("mods", "mods")]:
-        builder.row(InlineKeyboardButton(text=label, callback_data=HerokuBackupType(ub_username=ub_username, owner_id=owner_id, backup_type=btype).pack()))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"refresh_panel:{ub_username}:{owner_id}"))
+        builder.row(
+            InlineKeyboardButton(
+                text=label,
+                callback_data=HerokuBackupType(
+                    ub_username=ub_username,
+                    owner_id=owner_id,
+                    backup_type=btype).pack()))
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=f"refresh_panel:{ub_username}:{owner_id}"))
     await safe_callback_answer(call,
-        "<b>Выберите тип Бекапа:</b>",
-        reply_markup=builder.as_markup()
-    )
+                               "<b>Выберите тип Бекапа:</b>",
+                               reply_markup=builder.as_markup()
+                               )
     await safe_callback_answer(call, "", show_alert=True)
+
 
 @router.callback_query(HerokuBackupType.filter())
 async def cq_heroku_backup_type(call: types.CallbackQuery, callback_data: HerokuBackupType, bot: Bot):
@@ -2367,23 +2641,24 @@ async def cq_heroku_backup_type(call: types.CallbackQuery, callback_data: Heroku
         return
     await safe_callback_answer(call, "Создаю Бекап...", show_alert=False)
     await safe_callback_answer(call,
-        "<b>⏳ Создание Бекапа...</b>",
-        reply_markup=kb.get_loading_keyboard()
-    )
+                               "<b>⏳ Создание Бекапа...</b>",
+                               reply_markup=kb.get_loading_keyboard()
+                               )
     ub_data = await db.get_userbot_data(ub_username)
     if not ub_data or ub_data.get("ub_type") != "heroku":
         await safe_callback_answer(call, "❌ Бекап доступен только для Heroku-юзерботов.", show_alert=True)
         await safe_callback_answer(call,
-            reply_markup=kb.get_back_to_main_panel_keyboard()
-        )
+                                   reply_markup=kb.get_back_to_main_panel_keyboard()
+                                   )
         return
     server_ip = ub_data["server_ip"]
     # try:
-    #     backup_path, backup_name = await sm.make_heroku_backup_ssh(ub_username, server_ip, backup_type)
+    # backup_path, backup_name = await sm.make_heroku_backup_ssh(ub_username,
+    # server_ip, backup_type)
     await safe_callback_answer(call, "❌ Функция бекапа временно недоступна.", show_alert=True)
     await safe_callback_answer(call,
-        reply_markup=kb.get_back_to_main_panel_keyboard()
-    )
+                               reply_markup=kb.get_back_to_main_panel_keyboard()
+                               )
     return
     #     with open(backup_path, "rb") as f:
     #         await bot.send_document(
@@ -2403,27 +2678,30 @@ async def cq_heroku_backup_type(call: types.CallbackQuery, callback_data: Heroku
     #     error_msg = str(e)
     #     if len(error_msg) > 200:
     #         error_msg = error_msg[:197] + "..."
-    #     
+    #
     #     await call.message.edit_caption(
     #         caption=f"❌ Ошибка при создании или отправке Бекапа: <code>{py_html.escape(error_msg)}</code>",
     #         reply_markup=kb.get_back_to_main_panel_keyboard()
     #     )
 
-@router.callback_query(F.data.startswith("select_server:"), UserBotSetup.ChoosingServer)
+
+@router.callback_query(F.data.startswith("select_server:"),
+                       UserBotSetup.ChoosingServer)
 async def cq_select_server(call: types.CallbackQuery, state: FSMContext):
     server_ip = call.data.split(":")[1]
-    
+
     # Проверяем, не является ли это сервисным сервером
     if server_ip == "127.0.0.1" or server_ip == sm.LOCAL_IP:  # LOCAL_IP
         await safe_callback_answer(call, "ℹ️ Это сервисный сервер, на котором работает бот.\n\nУстановка юзерботов на него невозможна.", show_alert=True)
         return
-    
+
     await _proceed_to_type_selection(call, state, server_ip)
+
 
 async def _proceed_to_type_selection(call: types.CallbackQuery, state: FSMContext, server_ip: str):
     from bot import BANNER_FILE_IDS
     await state.update_data(server_ip=server_ip)
-    
+
     text = (
         "⬇️ <b>Установка</b>\n\n"
         "<blockquote>"
@@ -2432,11 +2710,11 @@ async def _proceed_to_type_selection(call: types.CallbackQuery, state: FSMContex
         "🌙 <b>Legacy</b> - The most popular fork of the Heroku userbot, it has a log of fixed bugs, receives regular updates and supports Hikka userbot modules.\n\n"
         "🦊 <b>FoxUserBot</b> - Telegram userbot with the simplest installation, doesn't have much functionality as other userbots, receives regular updates and uses Kurigram (Pyrogram fork)"
         "</blockquote>\n"
-        "👾 <b>Выберите юзербот который хотите установить</b>"
-    )
-    
-    photo = BANNER_FILE_IDS.get("select_userbot") or FSInputFile("banners/select_userbot.png")
-    
+        "👾 <b>Выберите юзербот который хотите установить</b>")
+
+    photo = BANNER_FILE_IDS.get("select_userbot") or FSInputFile(
+        "banners/select_userbot.png")
+
     data = await state.get_data()
     message_id = data.get("message_id_to_edit", call.message.message_id)
 
@@ -2454,6 +2732,7 @@ async def _proceed_to_type_selection(call: types.CallbackQuery, state: FSMContex
             raise
 
     await state.set_state(UserBotSetup.ChoosingUserBotType)
+
 
 def parse_ps_etime_to_human(etime: str) -> str:
     etime = etime.strip()
@@ -2491,6 +2770,7 @@ def parse_ps_etime_to_human(etime: str) -> str:
         result.append(f"{minutes}m")
     return ' '.join(result) if result else '~1m'
 
+
 async def _generate_and_save_token(user: types.User) -> str:
     username = user.username or f"user{user.id}"
     random_part = secrets.token_urlsafe(32)
@@ -2498,20 +2778,24 @@ async def _generate_and_save_token(user: types.User) -> str:
     await db.set_api_token(user.id, new_token)
     return new_token
 
-@router.callback_query(F.data == "regenerate_api_token", StateFilter(APITokenManagement.TokenHidden, APITokenManagement.TokenShown))
+
+@router.callback_query(F.data == "regenerate_api_token",
+                       StateFilter(APITokenManagement.TokenHidden,
+                                   APITokenManagement.TokenShown))
 async def cq_regenerate_api_token(call: types.CallbackQuery, state: FSMContext):
     user = call.from_user
     username = user.username or f"user{user.id}"
     random_part = secrets.token_urlsafe(32)
     new_token = f"{username}:{user.id}:{random_part}"
-    
+
     if await db.regenerate_user_token(user.id, new_token):
         await state.update_data(token=new_token)
         await safe_callback_answer(call, "✅ API токен успешно обновлен!", show_alert=True)
         await cq_show_api_panel(call, state)
     else:
         await safe_callback_answer(call, "❌ Ошибка обновления токена", show_alert=True)
-    
+
+
 def _mask_token(token: str) -> str:
     if not token or ':' not in token:
         return "********************"
@@ -2520,38 +2804,42 @@ def _mask_token(token: str) -> str:
         return "********************"
     return f"{parts[0]}:{parts[1]}:{'*' * len(parts[2])}"
 
+
 async def _get_or_create_token(user: types.User) -> str:
     user_data = await db.get_user_data(user.id)
     token = user_data.get("api_token")
     if not token:
         token = await _generate_and_save_token(user)
     return token
-    
-@router.callback_query(F.data == "api_panel_show")  
+
+
+@router.callback_query(F.data == "api_panel_show")
 async def cq_show_api_panel(call: types.CallbackQuery, state: FSMContext):
     await safe_callback_answer(call, "", show_alert=True)
     token = await _get_or_create_token(call.from_user)
-    
+
     text = (
         "🔑 <b>Ваш персональный API-токен</b>\n\n"
         "Этот токен используется для доступа к API TeaHost из внешних приложений.\n\n"
         "<b>Никому не передавайте этот токен!</b>\n\n"
         "Ваш токен:\n"
-        f"<code>{html.quote(_mask_token(token))}</code>"
-    )
-    
+        f"<code>{html.quote(_mask_token(token))}</code>")
+
     markup = kb.get_api_token_keyboard(is_shown=False)
     await call.message.edit_caption(caption=text, reply_markup=markup)
     await state.set_state(APITokenManagement.TokenHidden)
 
-@router.callback_query(F.data == "toggle_api_token_visibility", StateFilter(APITokenManagement.TokenHidden, APITokenManagement.TokenShown))
+
+@router.callback_query(F.data == "toggle_api_token_visibility",
+                       StateFilter(APITokenManagement.TokenHidden,
+                                   APITokenManagement.TokenShown))
 async def cq_toggle_api_token_visibility(call: types.CallbackQuery, state: FSMContext):
     await safe_callback_answer(call, "", show_alert=True)
     current_state = await state.get_state()
     token = await _get_or_create_token(call.from_user)
-    
+
     is_currently_shown = current_state == APITokenManagement.TokenShown
-    
+
     new_text_token = _mask_token(token) if is_currently_shown else token
     new_is_shown = not is_currently_shown
     new_state = APITokenManagement.TokenHidden if is_currently_shown else APITokenManagement.TokenShown
@@ -2561,19 +2849,20 @@ async def cq_toggle_api_token_visibility(call: types.CallbackQuery, state: FSMCo
         "Этот токен используется для доступа к API TeaHost из внешних приложений.\n\n"
         "<b>Никому не передавайте этот токен!</b>\n\n"
         "Ваш токен:\n"
-        f"<code>{html.quote(new_text_token)}</code>"
-    )
-    
+        f"<code>{html.quote(new_text_token)}</code>")
+
     markup = kb.get_api_token_keyboard(is_shown=new_is_shown)
     await call.message.edit_caption(caption=text, reply_markup=markup)
     await state.set_state(new_state)
-    
+
+
 def find_ip_by_code(code: str) -> str | None:
     servers = server_config.get_servers()
     for ip, details in servers.items():
         if details.get("code") and details.get("code").lower() == code.lower():
             return ip
     return None
+
 
 @router.callback_query(F.data.startswith("migrate_ub_start:"))
 async def cq_migrate_ub_start(call: types.CallbackQuery, state: FSMContext):
@@ -2587,12 +2876,13 @@ async def cq_migrate_ub_start(call: types.CallbackQuery, state: FSMContext):
             return
 
         loading_text = "<b>🔄 Смена сервера</b>\n\nЗагружаю доступные сервера..."
-        photo = BANNER_FILE_IDS.get("select_server") or FSInputFile("banners/select_server.png")
+        photo = BANNER_FILE_IDS.get("select_server") or FSInputFile(
+            "banners/select_server.png")
         await call.message.edit_media(
             media=InputMediaPhoto(media=photo, caption=loading_text),
             reply_markup=kb.get_loading_keyboard()
         )
-        
+
         ub_data = await db.get_userbot_data(ub_username)
         if not ub_data:
             await call.message.edit_caption(caption="❌ Юзербот не найден.", reply_markup=kb.get_back_to_main_panel_keyboard())
@@ -2601,7 +2891,7 @@ async def cq_migrate_ub_start(call: types.CallbackQuery, state: FSMContext):
         current_server_ip = ub_data['server_ip']
         user_id = call.from_user.id
         has_premium = await db.check_premium_access(user_id)
-        
+
         all_servers = server_config.get_servers()
         all_userbots = await db.get_all_userbots_full_info()
         installed_bots_map = defaultdict(int)
@@ -2612,19 +2902,24 @@ async def cq_migrate_ub_start(call: types.CallbackQuery, state: FSMContext):
         for ip, details in all_servers.items():
             if ip == sm.LOCAL_IP or ip == current_server_ip:
                 continue
-            
+
             status = details.get("status")
             if status in ['false', 'test']:
                 continue
-            
+
             available_servers_filtered.append((ip, details))
-        
+
         data = await state.get_data()
         server_stats = data.get("server_stats", {})
         if not server_stats:
-            stats_tasks = [sm.get_server_stats(ip) for ip, _ in available_servers_filtered]
+            stats_tasks = [
+                sm.get_server_stats(ip) for ip,
+                _ in available_servers_filtered]
             stats_results = await asyncio.gather(*stats_tasks)
-            server_stats = {ip: res for (ip, _), res in zip(available_servers_filtered, stats_results)}
+            server_stats = {
+                ip: res for (
+                    ip, _), res in zip(
+                    available_servers_filtered, stats_results)}
 
         markup = kb.get_migration_server_selection_keyboard(
             ub_username=ub_username,
@@ -2634,9 +2929,9 @@ async def cq_migrate_ub_start(call: types.CallbackQuery, state: FSMContext):
             server_stats=server_stats,
             has_premium_access=has_premium
         )
-        
+
         final_text = f"<b>🔄 Смена сервера</b>\n\n<b>💻 Выберите новый сервер для переноса</b>"
-        
+
         await call.message.edit_media(
             media=InputMediaPhoto(media=photo, caption=final_text),
             reply_markup=markup
@@ -2647,7 +2942,9 @@ async def cq_migrate_ub_start(call: types.CallbackQuery, state: FSMContext):
         logging.error(f"Ошибка в cq_migrate_ub_start: {e}")
         await call.answer("Произошла ошибка при запуске переноса.", show_alert=True)
 
-@router.callback_query(F.data.startswith("migrate_ub_select:"), StateFilter(UserBotSetup.Migrating))
+
+@router.callback_query(F.data.startswith("migrate_ub_select:"),
+                       StateFilter(UserBotSetup.Migrating))
 async def cq_migrate_ub_execute(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     try:
         _, ub_username, owner_id_str, new_server_code = call.data.split(":")
@@ -2656,7 +2953,7 @@ async def cq_migrate_ub_execute(call: types.CallbackQuery, state: FSMContext, bo
             return
 
         await state.clear()
-        
+
         await call.message.edit_media(
             media=InputMediaPhoto(media=FSInputFile("banners/panel_userbot.png"), caption="Переношу на другой сервер контейнер..."),
             reply_markup=kb.get_loading_keyboard()
@@ -2673,10 +2970,10 @@ async def cq_migrate_ub_execute(call: types.CallbackQuery, state: FSMContext, bo
         if not ub_data:
             await call.message.edit_caption("❌ Ошибка: Юзербот не найден в базе данных.")
             return
-        
+
         old_server_ip = ub_data.get('server_ip')
         ub_type = ub_data.get('ub_type')
-        
+
         if old_server_ip == new_server_ip:
             await call.message.edit_caption("❌ Старый и новый серверы не могут быть одинаковыми.")
             return
@@ -2688,28 +2985,32 @@ async def cq_migrate_ub_execute(call: types.CallbackQuery, state: FSMContext, bo
         backup_result = await api_manager.backup_container(ub_username, old_server_ip)
         if not backup_result.get("success"):
             await db.update_userbot_server(ub_username, old_server_ip)
-            raise Exception(f"Ошибка создания резервной копии: {backup_result.get('error', 'Неизвестная ошибка')}")
+            raise Exception(
+                f"Ошибка создания резервной копии: {backup_result.get('error', 'Неизвестная ошибка')}")
 
         restore_result = await api_manager.restore_container(ub_username, ub_type, new_server_ip)
         if not restore_result.get("success"):
             await db.update_userbot_server(ub_username, old_server_ip)
-            raise Exception(f"Ошибка восстановления: {restore_result.get('error', 'Неизвестная ошибка')}")
+            raise Exception(
+                f"Ошибка восстановления: {restore_result.get('error', 'Неизвестная ошибка')}")
 
         all_servers = server_config.get_servers()
         old_server_details = all_servers.get(old_server_ip, {})
         old_server_code_for_log = old_server_details.get('code', 'N/A')
 
         log_data = {
-            "user_data": {"id": call.from_user.id, "full_name": call.from_user.full_name},
-            "ub_info": {"name": ub_username, "type": ub_type},
-            "server_info": {"ip": new_server_ip, "code": new_server_code},
-            "old_server_info": {"ip": old_server_ip, "code": old_server_code_for_log}
-        }
+            "user_data": {
+                "id": call.from_user.id, "full_name": call.from_user.full_name}, "ub_info": {
+                "name": ub_username, "type": ub_type}, "server_info": {
+                "ip": new_server_ip, "code": new_server_code}, "old_server_info": {
+                    "ip": old_server_ip, "code": old_server_code_for_log}}
         await log_event(bot, "userbot_migrated", log_data)
 
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 Назад", callback_data=f"refresh_panel:{ub_username}:{owner_id}")
-        
+        builder.button(
+            text="🔙 Назад",
+            callback_data=f"refresh_panel:{ub_username}:{owner_id}")
+
         await call.message.edit_caption(
             caption="Перенос успешный (200 OK), спасибо что пользуетесь TH (TeaHost).",
             reply_markup=builder.as_markup()
@@ -2718,7 +3019,9 @@ async def cq_migrate_ub_execute(call: types.CallbackQuery, state: FSMContext, bo
     except Exception as e:
         logging.error(f"Ошибка при переносе контейнера: {e}")
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 Назад", callback_data=f"refresh_panel:{ub_username}:{owner_id}")
+        builder.button(
+            text="🔙 Назад",
+            callback_data=f"refresh_panel:{ub_username}:{owner_id}")
         await call.message.edit_caption(
             f"❌ <b>Произошла ошибка при переносе!</b>\n\n"
             f"<pre>{html.quote(str(e))}</pre>\n\n"

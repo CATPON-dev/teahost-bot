@@ -10,6 +10,7 @@ from config_manager import config
 import database as db
 import keyboards as kb
 
+
 class IsBotEnabled(BaseFilter):
     async def __call__(self, update: types.Update) -> bool:
         user = getattr(update, 'from_user', None)
@@ -18,23 +19,26 @@ class IsBotEnabled(BaseFilter):
 
         if user.id in get_all_admins():
             return True
-            
+
         if maintenance_manager.is_maintenance_mode():
             chat = None
             if isinstance(update, types.Message):
                 chat = update.chat
             elif isinstance(update, types.CallbackQuery):
                 chat = update.message.chat
-            
+
             if chat and chat.type == "private":
                 text = (
                     "<b>⚠️TeaHost is undergoing maintenance</b>\n\n"
-                    "<i>We will notify you about the completion of maintenance in the channel or support chat.</i>"
-                )
-                
+                    "<i>We will notify you about the completion of maintenance in the channel or support chat.</i>")
+
                 builder = InlineKeyboardBuilder()
-                builder.button(text="💬 Support Chat", url="https://t.me/TeaHostSupport")
-                builder.button(text="📢 Channel", url="https://t.me/TeaHostChannel")
+                builder.button(
+                    text="💬 Support Chat",
+                    url="https://t.me/TeaHostSupport")
+                builder.button(
+                    text="📢 Channel",
+                    url="https://t.me/TeaHostChannel")
                 builder.adjust(2)
                 markup = builder.as_markup()
 
@@ -42,10 +46,11 @@ class IsBotEnabled(BaseFilter):
                     await update.answer("Бот на технических работах.", show_alert=True)
                 elif isinstance(update, types.Message):
                     await update.answer(text, reply_markup=markup)
-            
+
             return False
-            
+
         return True
+
 
 class IsAdmin(BaseFilter):
     async def __call__(self, update: types.Update) -> bool:
@@ -54,12 +59,14 @@ class IsAdmin(BaseFilter):
             return False
         return user.id in get_all_admins()
 
+
 class IsSuperAdmin(BaseFilter):
     async def __call__(self, update: types.Update) -> bool:
         user = getattr(update, 'from_user', None)
         if not user:
             return False
         return user.id in config.SUPER_ADMIN_IDS
+
 
 class IsSubscribed(BaseFilter):
     async def __call__(self, update: types.Update, bot: Bot) -> bool:
@@ -69,7 +76,7 @@ class IsSubscribed(BaseFilter):
 
         if user.id in get_all_admins():
             return True
-            
+
         if config.TEST_MODE:
             return True
 
@@ -81,16 +88,17 @@ class IsSubscribed(BaseFilter):
                     "Для использования этой функции, подпишитесь на наш канал."
                 )
                 markup = kb.get_subscribe_keyboard(config.CHANNEL_ID)
-                
+
                 if isinstance(update, types.CallbackQuery):
                     await update.answer("Для продолжения нужна подписка.", show_alert=True)
                     await update.message.answer(text, reply_markup=markup, disable_web_page_preview=True)
                 elif isinstance(update, types.Message):
                     await update.answer(text, reply_markup=markup, disable_web_page_preview=True)
-                
+
                 return False
         except Exception as e:
-            logging.error(f"Ошибка проверки подписки в фильтре IsSubscribed для user_id {user.id}: {e}")
+            logging.error(
+                f"Ошибка проверки подписки в фильтре IsSubscribed для user_id {user.id}: {e}")
             return True
 
         return True

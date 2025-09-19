@@ -6,6 +6,7 @@ import logging
 STATUS_FILE = "maintenance_status.json"
 logger = logging.getLogger(__name__)
 
+
 def is_maintenance_mode() -> bool:
     """Проверяет, включен ли режим технических работ."""
     if not os.path.exists(STATUS_FILE):
@@ -16,6 +17,7 @@ def is_maintenance_mode() -> bool:
             return data.get("maintenance_on", False)
     except (json.JSONDecodeError, FileNotFoundError):
         return False
+
 
 def set_maintenance_mode(is_on: bool) -> bool:
     """Включает или выключает режим технических работ."""

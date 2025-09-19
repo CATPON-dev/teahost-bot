@@ -1,3 +1,4 @@
+import outage_manager
 import logging
 import asyncio
 import os
@@ -49,6 +50,7 @@ PAGINATION_LIMITS = defaultdict(lambda: {"count": 0, "timestamp": 0})
 PAGINATION_MAX_ACTIONS = 10
 PAGINATION_COOLDOWN_SECONDS = 30
 
+
 def _read_status_ids() -> dict:
     if not os.path.exists(STATUS_IDS_FILE):
         return {}
@@ -60,10 +62,12 @@ def _read_status_ids() -> dict:
                 if isinstance(value, int) and value is not None:
                     filtered_data[key] = value
                 else:
-                    logging.warning(f"Invalid status ID for key {key}: {value}")
+                    logging.warning(
+                        f"Invalid status ID for key {key}: {value}")
             return filtered_data
     except (json.JSONDecodeError, FileNotFoundError):
         return {}
+
 
 def _save_status_ids(ids: dict):
     try:
@@ -72,6 +76,7 @@ def _save_status_ids(ids: dict):
             json.dump(ids, f)
     except Exception as e:
         logging.error(f"Failed to save status IDs: {e}")
+
 
 def _read_stats_id() -> int | None:
     if not os.path.exists(STATS_MESSAGE_ID_FILE):
@@ -88,6 +93,7 @@ def _read_stats_id() -> int | None:
     except (json.JSONDecodeError, FileNotFoundError, TypeError):
         return None
 
+
 def _save_stats_id(message_id: int | None):
     try:
         os.makedirs(os.path.dirname(STATS_MESSAGE_ID_FILE), exist_ok=True)
@@ -96,10 +102,12 @@ def _save_stats_id(message_id: int | None):
     except Exception as e:
         logging.error(f"Failed to save stats message ID: {e}")
 
+
 async def upload_banners(bot: Bot):
     logging.info("Uploading and caching banner file_ids...")
     if not config.SUPER_ADMIN_IDS:
-        logging.warning("No SUPER_ADMIN_IDS found in config. Cannot upload banners.")
+        logging.warning(
+            "No SUPER_ADMIN_IDS found in config. Cannot upload banners.")
         return
     if config.TEST_MODE:
         logging.info("Test mode enabled, skipping banner upload")
@@ -112,19 +120,24 @@ async def upload_banners(bot: Bot):
             await bot.delete_message(chat_id=config.LOG_CHANNEL_ID, message_id=test_message.message_id)
             target_chat_id = config.LOG_CHANNEL_ID
             chat_type = "log_channel"
-            logging.info(f"Using log channel {target_chat_id} for banner caching")
+            logging.info(
+                f"Using log channel {target_chat_id} for banner caching")
         except Exception as e:
-            logging.warning(f"Cannot use log channel {config.LOG_CHANNEL_ID}: {e}")
+            logging.warning(
+                f"Cannot use log channel {config.LOG_CHANNEL_ID}: {e}")
     if target_chat_id is None:
         target_chat_id = config.SUPER_ADMIN_IDS[0]
         chat_type = "admin_pm"
         try:
             test_message = await bot.send_message(chat_id=target_chat_id, text="🔄 Инициализация кеша баннеров...")
             await bot.delete_message(chat_id=target_chat_id, message_id=test_message.message_id)
-            logging.info(f"Successfully tested communication with admin {target_chat_id}")
+            logging.info(
+                f"Successfully tested communication with admin {target_chat_id}")
         except Exception as e:
-            logging.error(f"Cannot send messages to admin {target_chat_id}: {e}")
-            logging.warning("Banner caching will be skipped. Banners will be loaded from disk when needed.")
+            logging.error(
+                f"Cannot send messages to admin {target_chat_id}: {e}")
+            logging.warning(
+                "Banner caching will be skipped. Banners will be loaded from disk when needed.")
             return
     banner_files = {
         "main_panel": "banners/select_action.png",
@@ -141,15 +154,19 @@ async def upload_banners(bot: Bot):
             sent_message = await bot.send_photo(chat_id=target_chat_id, photo=photo)
             BANNER_FILE_IDS[key] = sent_message.photo[-1].file_id
             await bot.delete_message(chat_id=target_chat_id, message_id=sent_message.message_id)
-            logging.info(f"Cached banner '{key}' via {chat_type}: {BANNER_FILE_IDS[key]}")
+            logging.info(
+                f"Cached banner '{key}' via {chat_type}: {BANNER_FILE_IDS[key]}")
             await asyncio.sleep(0.5)
         except Exception as e:
-            logging.error(f"Failed to upload and cache banner '{key}' from '{path}': {e}")
+            logging.error(
+                f"Failed to upload and cache banner '{key}' from '{path}': {e}")
             continue
     if BANNER_FILE_IDS:
-        logging.info(f"Banner caching complete. Successfully cached {len(BANNER_FILE_IDS)} banners.")
+        logging.info(
+            f"Banner caching complete. Successfully cached {len(BANNER_FILE_IDS)} banners.")
     else:
         logging.warning("No banners were cached. Will use disk files.")
+
 
 async def refresh_public_status_handler(call: CallbackQuery, bot: Bot):
     global LAST_REFRESH_TIMESTAMP
@@ -162,6 +179,7 @@ async def refresh_public_status_handler(call: CallbackQuery, bot: Bot):
     await call.answer("Обновляю...", show_alert=False)
     await update_status_message(bot, force_resend=False, page=1)
 
+
 async def refresh_stats_panel_handler(call: CallbackQuery, bot: Bot):
     global LAST_STATS_REFRESH_TIMESTAMP
     current_time = time.time()
@@ -173,14 +191,16 @@ async def refresh_stats_panel_handler(call: CallbackQuery, bot: Bot):
     await call.answer("Обновляю...", show_alert=False)
     await update_stats_message(bot, force_resend=False)
 
+
 def _create_progress_bar(percent_str: str, length: int = 10) -> str:
     try:
-        percent = float(str(percent_str).replace('%',''))
+        percent = float(str(percent_str).replace('%', ''))
         filled_length = int(length * percent / 100)
         bar = '█' * filled_length + '░' * (length - filled_length)
         return f"[{bar}]"
     except (ValueError, TypeError):
         return f"[{'?' * length}]"
+
 
 async def _send_or_edit_status_message(bot: Bot, chat_id: int, message_id: int | None, text: str, markup, **kwargs) -> int | None:
     if chat_id is None:
@@ -188,16 +208,20 @@ async def _send_or_edit_status_message(bot: Bot, chat_id: int, message_id: int |
         return None
     if message_id:
         try:
-            edit_kwargs = {k: v for k, v in kwargs.items() if k in ['disable_web_page_preview']}
+            edit_kwargs = {k: v for k, v in kwargs.items() if k in [
+                'disable_web_page_preview']}
             await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=markup, **edit_kwargs)
             return message_id
         except TelegramBadRequest as e:
-            if "message to edit not found" in str(e) or "message can't be edited" in str(e):
-                logging.warning(f"Status message {message_id} not found in chat {chat_id}. Sending a new one.")
+            if "message to edit not found" in str(
+                    e) or "message can't be edited" in str(e):
+                logging.warning(
+                    f"Status message {message_id} not found in chat {chat_id}. Sending a new one.")
             elif "message is not modified" in str(e).lower():
                 return message_id
             else:
-                logging.error(f"Failed to edit status message {message_id} in {chat_id}: {e}")
+                logging.error(
+                    f"Failed to edit status message {message_id} in {chat_id}: {e}")
                 return message_id
     try:
         sent_msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=markup, **kwargs)
@@ -205,6 +229,7 @@ async def _send_or_edit_status_message(bot: Bot, chat_id: int, message_id: int |
     except Exception as e:
         logging.error(f"Failed to send new status message to {chat_id}: {e}")
         return None
+
 
 def pluralize_userbot(n):
     n = abs(n)
@@ -215,11 +240,13 @@ def pluralize_userbot(n):
     else:
         return "юзерботов"
 
+
 async def update_stats_message(bot: Bot, force_resend: bool = False):
     try:
         global STATS_MESSAGE_ID
         if not config.STATS_CHAT_ID or not config.STATS_TOPIC_ID:
-            logging.warning("STATS_CHAT_ID или STATS_TOPIC_ID не настроены. Обновление статистики пропущено.")
+            logging.warning(
+                "STATS_CHAT_ID или STATS_TOPIC_ID не настроены. Обновление статистики пропущено.")
             return
         if force_resend:
             old_id = _read_stats_id()
@@ -238,16 +265,16 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
             for ub in all_ubs_info:
                 ub_type = ub.get('ub_type', 'unknown').capitalize()
                 bots_by_type[ub_type] += 1
-            
+
             text_parts = ["📊 <b>SharkHost статистика</b>"]
-            
+
             text_parts.append(
                 f"<blockquote>"
                 f"Всего пользователей: <code>{total_users}</code>\n"
                 f"Всего юзерботов: <code>{total_ubs}</code>"
                 f"</blockquote>"
             )
-            
+
             stats_block = (
                 "🤖 <u><b>Userbots stats:</b></u>\n"
                 "<blockquote>"
@@ -259,8 +286,10 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
             )
             text_parts.append(stats_block)
 
-            update_time_str = datetime.now(pytz.timezone("Europe/Moscow")).strftime('%d.%m.%Y в %H:%M:%S')
-            text_parts.append(f"<i>Последнее обновление: {update_time_str} MSK</i>")
+            update_time_str = datetime.now(
+                pytz.timezone("Europe/Moscow")).strftime('%d.%m.%Y в %H:%M:%S')
+            text_parts.append(
+                f"<i>Последнее обновление: {update_time_str} MSK</i>")
             text = "\n\n".join(text_parts)
             new_id = await _send_or_edit_status_message(
                 bot=bot, chat_id=config.STATS_CHAT_ID, message_id=STATS_MESSAGE_ID,
@@ -271,26 +300,37 @@ async def update_stats_message(bot: Bot, force_resend: bool = False):
                 STATS_MESSAGE_ID = new_id
                 _save_stats_id(new_id)
         except Exception as e:
-            logging.error(f"Не удалось обновить панель статистики: {e}", exc_info=True)
+            logging.error(
+                f"Не удалось обновить панель статистики: {e}",
+                exc_info=True)
     except Exception as e:
-        logging.error(f"Critical error in update_stats_message scheduler task: {e}", exc_info=True)
-       
+        logging.error(
+            f"Critical error in update_stats_message scheduler task: {e}",
+            exc_info=True)
+
 
 async def _generate_paginated_status_content(page: int = 1):
     total_users = len(await db.get_all_bot_users())
     servers = server_config.get_servers()
-    servers_to_display_all = {ip: d for ip, d in servers.items() if ip != sm.LOCAL_IP and d.get("status") in ("true", "noub")}
+    servers_to_display_all = {ip: d for ip, d in servers.items(
+    ) if ip != sm.LOCAL_IP and d.get("status") in ("true", "noub")}
     total_servers = len(servers_to_display_all)
-    total_pages = math.ceil(total_servers / SERVERS_PER_PAGE) if total_servers > 0 else 1
+    total_pages = math.ceil(total_servers /
+                            SERVERS_PER_PAGE) if total_servers > 0 else 1
     page = max(1, min(page, total_pages))
     start_index = (page - 1) * SERVERS_PER_PAGE
     end_index = start_index + SERVERS_PER_PAGE
-    servers_on_page = dict(list(servers_to_display_all.items())[start_index:end_index])
+    servers_on_page = dict(
+        list(
+            servers_to_display_all.items())[
+            start_index:end_index])
     installed_bots_map = {ip: len(await db.get_userbots_by_server_ip(ip)) for ip in servers.keys()}
-    active_servers = {ip: s for ip, s in servers.items() if s.get('status') == "true" and ip != sm.LOCAL_IP}
+    active_servers = {ip: s for ip, s in servers.items() if s.get(
+        'status') == "true" and ip != sm.LOCAL_IP}
     available_servers = len(active_servers)
-    free_slots = sum(max(0, s.get('slots', 0) - installed_bots_map.get(ip, 0)) for ip, s in active_servers.items())
-    
+    free_slots = sum(max(0, s.get('slots', 0) - installed_bots_map.get(ip, 0))
+                     for ip, s in active_servers.items())
+
     all_ubs_info = await db.get_all_userbots_full_info()
     total_ubs = len(all_ubs_info)
     bots_by_type = defaultdict(int)
@@ -311,11 +351,11 @@ async def _generate_paginated_status_content(page: int = 1):
     async def get_stats_with_semaphore(ip):
         async with SSH_SEMAPHORE:
             return await sm.get_server_stats(ip)
-    
+
     tasks = [get_stats_with_semaphore(ip) for ip in servers_on_page.keys()]
     stats_results = await asyncio.gather(*tasks)
     server_stats = dict(zip(servers_on_page.keys(), stats_results))
-    
+
     text_parts = [
         "<blockquote>",
         "🦈 <b>SharkHost Status</b>\n",
@@ -336,7 +376,8 @@ async def _generate_paginated_status_content(page: int = 1):
         def safe_float(value, default=0):
             try:
                 if isinstance(value, str):
-                    value = ''.join(c for c in value if c.isdigit() or c == '.')
+                    value = ''.join(
+                        c for c in value if c.isdigit() or c == '.')
                 return float(value) if value else default
             except (ValueError, TypeError):
                 return default
@@ -350,7 +391,7 @@ async def _generate_paginated_status_content(page: int = 1):
         disk_used = stats.get('disk_used', 'N/A')
         disk_total = stats.get('disk_total', 'N/A')
         uptime = stats.get('uptime', 'N/A')
-        
+
         cpu_bar = _create_progress_bar(cpu_usage)
         ram_bar = _create_progress_bar(ram_percent)
         disk_bar = _create_progress_bar(disk_percent)
@@ -388,13 +429,19 @@ async def _generate_paginated_status_content(page: int = 1):
             f"┃ ⏱️ <b>Uptime:</b> {uptime}\n"
             f"┃ 🤖 <b>Юзерботы:</b> <code>{ub_count} шт.</code>\n"
             f"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-             "</blockquote>"
+            "</blockquote>"
         )
         text_parts.append(server_block)
-    
+
     text = "".join(text_parts)
-    markup = kb.get_public_status_keyboard(installed_bots_map, server_stats, servers_on_page, page, total_pages)
+    markup = kb.get_public_status_keyboard(
+        installed_bots_map,
+        server_stats,
+        servers_on_page,
+        page,
+        total_pages)
     return text, markup
+
 
 async def update_status_message(bot: Bot, force_resend: bool = False, page: int = 1):
     """Обновление статуса серверов - с обработкой ошибок для планировщика"""
@@ -402,12 +449,14 @@ async def update_status_message(bot: Bot, force_resend: bool = False, page: int 
         if config.TEST_MODE:
             return
         global STATUS_MESSAGE_IDS
-        logging.info(f"Running status panel update. Force resend: {force_resend}, Page: {page}")
+        logging.info(
+            f"Running status panel update. Force resend: {force_resend}, Page: {page}")
         current_ids = _read_status_ids()
         if force_resend:
             for key, msg_id in current_ids.items():
                 if msg_id is None or not isinstance(msg_id, int):
-                    logging.warning(f"Skipping invalid message_id for key {key}: {msg_id}")
+                    logging.warning(
+                        f"Skipping invalid message_id for key {key}: {msg_id}")
                     continue
                 chat_id = config.STATUS_CHANNEL_ID if key == "channel" else config.SUPPORT_CHAT_ID
                 try:
@@ -423,12 +472,17 @@ async def update_status_message(bot: Bot, force_resend: bool = False, page: int 
                 new_channel_id = await _send_or_edit_status_message(bot, config.STATUS_CHANNEL_ID, current_ids.get("channel"), text, markup, disable_web_page_preview=True)
             if config.SUPPORT_CHAT_ID:
                 new_topic_id = await _send_or_edit_status_message(bot, config.SUPPORT_CHAT_ID, current_ids.get("topic"), text, markup, message_thread_id=config.SUPPORT_TOPIC_ID, disable_web_page_preview=True)
-            STATUS_MESSAGE_IDS = {"channel": new_channel_id, "topic": new_topic_id}
+            STATUS_MESSAGE_IDS = {
+                "channel": new_channel_id,
+                "topic": new_topic_id}
             _save_status_ids(STATUS_MESSAGE_IDS)
         except Exception as e:
             logging.error(f"Failed to update status panel: {e}", exc_info=True)
     except Exception as e:
-        logging.error(f"Critical error in update_status_message scheduler task: {e}", exc_info=True)
+        logging.error(
+            f"Critical error in update_status_message scheduler task: {e}",
+            exc_info=True)
+
 
 async def check_servers_on_startup(bot: Bot):
     if config.TEST_MODE:
@@ -439,7 +493,22 @@ async def check_servers_on_startup(bot: Bot):
     if not servers:
         logging.warning("ip.json is empty. No servers to check.")
         return
-    default_params = {"ssh_user": "root", "ssh_pass": "password", "name": "Unnamed", "country": "Unknown", "city": "Unknown", "flag": "🏳️", "code": "N/A", "status": "false", "slots": 0, "regionName": "N/A", "org": "N/A", "timezone": "N/A", "hosting": False, "proxy": False, "vpn": False}
+    default_params = {
+        "ssh_user": "root",
+        "ssh_pass": "password",
+        "name": "Unnamed",
+        "country": "Unknown",
+        "city": "Unknown",
+        "flag": "🏳️",
+        "code": "N/A",
+        "status": "false",
+        "slots": 0,
+        "regionName": "N/A",
+        "org": "N/A",
+        "timezone": "N/A",
+        "hosting": False,
+        "proxy": False,
+        "vpn": False}
     needs_saving = False
     for ip, details in servers.items():
         for key, value in default_params.items():
@@ -447,15 +516,21 @@ async def check_servers_on_startup(bot: Bot):
                 details[key] = value
                 needs_saving = True
         if ip == sm.LOCAL_IP:
-            if details.get('ssh_user') is not None: details['ssh_user'] = None; needs_saving = True
-            if details.get('ssh_pass') is not None: details['ssh_pass'] = None; needs_saving = True
+            if details.get('ssh_user') is not None:
+                details['ssh_user'] = None
+                needs_saving = True
+            if details.get('ssh_pass') is not None:
+                details['ssh_pass'] = None
+                needs_saving = True
     if needs_saving:
-        logging.info("Updating ip.json with default parameters and nullifying local SSH creds.")
+        logging.info(
+            "Updating ip.json with default parameters and nullifying local SSH creds.")
         server_config._save_servers(servers)
     remote_servers_ips = [ip for ip, d in servers.items() if ip != sm.LOCAL_IP]
     if not remote_servers_ips:
         logging.info("No remote servers to check.")
         return
+
     async def check_conn_with_semaphore(ip):
         async with SSH_SEMAPHORE:
             try:
@@ -464,30 +539,35 @@ async def check_servers_on_startup(bot: Bot):
                 logging.error(f"Failed to check connection to {ip}: {e}")
                 return {"success": False, "error": str(e)}
     tasks = [check_conn_with_semaphore(ip) for ip in remote_servers_ips]
-    logging.info(f"Checking connectivity for {len(tasks)} remote servers concurrently...")
+    logging.info(
+        f"Checking connectivity for {len(tasks)} remote servers concurrently...")
     results = await asyncio.gather(*tasks)
     unreachable_servers = []
     for ip, conn_res in zip(remote_servers_ips, results):
         if not conn_res.get("success"):
-            error_details = html.quote(conn_res.get('error', 'Неизвестная ошибка SSH'))
-            unreachable_servers.append(f" • <code>{ip}</code> - {error_details}")
+            error_details = html.quote(conn_res.get(
+                'error', 'Неизвестная ошибка SSH'))
+            unreachable_servers.append(
+                f" • <code>{ip}</code> - {error_details}")
     if unreachable_servers:
-        text = "<b>‼️ Обнаружены недоступные серверы при запуске:</b>\n\n" + "\n".join(unreachable_servers)
+        text = "<b>‼️ Обнаружены недоступные серверы при запуске:</b>\n\n" + \
+            "\n".join(unreachable_servers)
         await log_to_channel(bot, text)
     else:
         logging.info("All remote servers checked. Status: OK.")
 
-import outage_manager
 
 async def monitor_servers_health(bot: Bot):
     try:
         global DOWN_SERVERS_NOTIFIED
         if config.TEST_MODE:
             return
-        
+
         logging.info("Running scheduled server health check...")
-        servers = {ip: d for ip, d in server_config.get_servers().items() if ip != sm.LOCAL_IP}
-        
+        servers = {
+            ip: d for ip,
+            d in server_config.get_servers().items() if ip != sm.LOCAL_IP}
+
         for ip, details in servers.items():
             async with SSH_SEMAPHORE:
                 try:
@@ -502,8 +582,13 @@ async def monitor_servers_health(bot: Bot):
                     outage_manager.save_previous_status(ip, current_status)
                     server_config.update_server_status(ip, 'test')
                     DOWN_SERVERS_NOTIFIED.add(ip)
-                    
-                    log_data = {"server_info": {"ip": ip, "code": details.get("code", "N/A")}}
+
+                    log_data = {
+                        "server_info": {
+                            "ip": ip,
+                            "code": details.get(
+                                "code",
+                                "N/A")}}
                     await log_event(bot, "server_unreachable", log_data)
                 continue
 
@@ -511,27 +596,35 @@ async def monitor_servers_health(bot: Bot):
                 DOWN_SERVERS_NOTIFIED.remove(ip)
                 restored_status = outage_manager.restore_previous_status(ip)
                 server_config.update_server_status(ip, restored_status)
-                
+
                 log_data = {
-                    "server_info": {"ip": ip, "code": details.get("code", "N/A")},
-                    "details": f"Статус восстановлен на '{restored_status}'"
-                }
+                    "server_info": {
+                        "ip": ip,
+                        "code": details.get(
+                            "code",
+                            "N/A")},
+                    "details": f"Статус восстановлен на '{restored_status}'"}
                 await log_event(bot, "server_recovered", log_data)
 
     except Exception as e:
-        logging.error(f"Critical error in monitor_servers_health scheduler task: {e}", exc_info=True)
-        
+        logging.error(
+            f"Critical error in monitor_servers_health scheduler task: {e}",
+            exc_info=True)
+
+
 async def daily_backup_task(bot: Bot):
     if config.TEST_MODE:
         logging.info("Test mode enabled, skipping daily backup task")
         return
     source_directory = "/root/nh"
     if not os.path.exists(source_directory):
-        logging.warning(f"Ежедневный бэкап: Директория {source_directory} не найдена. Пропускаю.")
+        logging.warning(
+            f"Ежедневный бэкап: Директория {source_directory} не найдена. Пропускаю.")
         return
     logging.info("Starting daily backup task...")
     backup_filename_base = f"daily_backup_newhost_{datetime.now().strftime('%Y-%m-%d')}"
     backup_filepath_zip = f"{backup_filename_base}.zip"
+
     def _blocking_create_backup():
         try:
             shutil.make_archive(backup_filename_base, 'zip', source_directory)
@@ -557,21 +650,28 @@ async def daily_backup_task(bot: Bot):
                 )
                 await asyncio.sleep(1)
             except Exception as e:
-                logging.error(f"Не удалось отправить бэкап администратору {admin_id}: {e}")
+                logging.error(
+                    f"Не удалось отправить бэкап администратору {admin_id}: {e}")
     finally:
         if os.path.exists(backup_filepath_zip):
             os.remove(backup_filepath_zip)
-            logging.info(f"Daily backup archive deleted: {backup_filepath_zip}")
+            logging.info(
+                f"Daily backup archive deleted: {backup_filepath_zip}")
+
 
 def seconds_to_human_readable(seconds):
     days, remainder = divmod(seconds, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, _ = divmod(remainder, 60)
     parts = []
-    if days: parts.append(f"{int(days)}d")
-    if hours: parts.append(f"{int(hours)}h")
-    if minutes: parts.append(f"{int(minutes)}m")
+    if days:
+        parts.append(f"{int(days)}d")
+    if hours:
+        parts.append(f"{int(hours)}h")
+    if minutes:
+        parts.append(f"{int(minutes)}m")
     return " ".join(parts) if parts else "<1m"
+
 
 async def daily_log_cleanup():
     if config.TEST_MODE:
@@ -586,11 +686,40 @@ async def daily_log_cleanup():
     except Exception as e:
         logging.error(f"Failed to truncate {log_file}: {e}")
 
+
 async def main():
     try:
         await db.init_pool()
         await db.init_db()
-        bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        bot = Bot(
+            token=config.BOT_TOKEN,
+            default=DefaultBotProperties(
+                parse_mode=ParseMode.HTML))
+
+        logging.info("Запуск автоматического форматирования кода...")
+        format_command = "cd /root/nh && autopep8 --in-place --aggressive --aggressive --recursive ."
+
+        result = await sm.run_command_async(format_command, sm.LOCAL_IP, timeout=300)
+
+        if result.get("success"):
+            log_text = (
+                "<b>✅ Фформатирование кода завершено</b>\n\n"
+                "Код в директории <code>/root/nh</code> был успешно отформатирован.\n\n"
+                "<b>Вывод команды:</b>\n"
+                f"<pre>{html.quote(result.get('output') or 'Нет вывода.')}</pre>")
+            await log_to_channel(bot, log_text, topic_id=3225)
+            logging.info("Форматирование кода завершено.")
+        else:
+            log_text = (
+                "<b>❌ Ошибка автоматического форматирования кода</b>\n\n"
+                "Не удалось отформатировать код в директории <code>/root/nh</code>. Запуск бота прерван.\n\n"
+                "<b>Ошибка:</b>\n"
+                f"<pre>{html.quote(result.get('error') or 'Неизвестная ошибка.')}</pre>")
+            await log_to_channel(bot, log_text, topic_id=3225)
+            logging.critical(
+                "Критическая ошибка: не удалось отформатировать код. Завершение работы.")
+            return
+
         storage = MemoryStorage()
         dp = Dispatcher(storage=storage)
         await upload_banners(bot)
@@ -599,18 +728,26 @@ async def main():
         dp.errors.register(handle_errors)
         dp.include_router(admin_handlers.router)
         dp.include_router(user_handlers.router)
-        dp.callback_query.register(refresh_public_status_handler, F.data == "refresh_public_status")
-        dp.callback_query.register(refresh_stats_panel_handler, F.data == "refresh_stats_panel")
-        dp.callback_query.register(cq_status_page_handler, F.data.startswith("status_page:"))
+        dp.callback_query.register(
+            refresh_public_status_handler,
+            F.data == "refresh_public_status")
+        dp.callback_query.register(
+            refresh_stats_panel_handler,
+            F.data == "refresh_stats_panel")
+        dp.callback_query.register(
+            cq_status_page_handler,
+            F.data.startswith("status_page:"))
         await check_servers_on_startup(bot)
         if config.STATUS_CHANNEL_ID or config.SUPPORT_CHAT_ID:
             old_status_ids = _read_status_ids()
             for key, msg_id in old_status_ids.items():
                 if msg_id is None or not isinstance(msg_id, int):
-                    logging.warning(f"Skipping invalid message_id for key {key}: {msg_id}")
+                    logging.warning(
+                        f"Skipping invalid message_id for key {key}: {msg_id}")
                     continue
                 chat_id = config.STATUS_CHANNEL_ID if key == "channel" else config.SUPPORT_CHAT_ID
-                if chat_id is None: continue
+                if chat_id is None:
+                    continue
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=msg_id)
                 except (TelegramBadRequest, TelegramNotFound):
@@ -624,13 +761,13 @@ async def main():
                 except (TelegramBadRequest, TelegramNotFound):
                     pass
             _save_stats_id(None)
-            
+
         if os.path.exists(CLEANUP_PROPOSAL_MESSAGE_ID_FILE):
             try:
                 os.remove(CLEANUP_PROPOSAL_MESSAGE_ID_FILE)
             except OSError as e:
                 logging.warning(f"ошибка: {e}")
-                
+
         if os.path.exists(RESTART_INFO_FILE):
             try:
                 with open(RESTART_INFO_FILE, "r") as f:
@@ -644,14 +781,68 @@ async def main():
                 os.remove(RESTART_INFO_FILE)
         await bot.delete_webhook(drop_pending_updates=True)
         scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-        # Планировщик не блокирующий основной поток (в теории)
-        scheduler.add_job(update_status_message, 'interval', minutes=10, args=[bot, False, 1], coalesce=True, max_instances=3, misfire_grace_time=300, id="update_status")
-        scheduler.add_job(monitor_servers_health, 'interval', minutes=10, args=[bot], coalesce=True, max_instances=3, misfire_grace_time=300, id="monitor_health")
-        scheduler.add_job(update_stats_message, 'interval', minutes=10, args=[bot, False], coalesce=True, max_instances=3, misfire_grace_time=300, id="update_stats")
-        scheduler.add_job(session_checker.run_missing_session_check_and_propose_cleanup, 'interval', minutes=30, args=[bot], id="propose_cleanup_missing_sessions")
-        scheduler.add_job(session_checker.check_and_log_session_violations, 'interval', minutes=10, args=[bot], coalesce=True, max_instances=3, misfire_grace_time=300, id="check_sessions")
-        scheduler.add_job(daily_log_cleanup, 'cron', hour=3, minute=0, misfire_grace_time=3600, id="daily_log_cleanup")
-        scheduler.add_job(auto_backup_task, 'cron', minute='0,30', timezone='Europe/Moscow', args=[bot], misfire_grace_time=1800, id="auto_backup")
+        scheduler.add_job(
+            update_status_message,
+            'interval',
+            minutes=10,
+            args=[
+                bot,
+                False,
+                1],
+            coalesce=True,
+            max_instances=3,
+            misfire_grace_time=300,
+            id="update_status")
+        scheduler.add_job(
+            monitor_servers_health,
+            'interval',
+            minutes=10,
+            args=[bot],
+            coalesce=True,
+            max_instances=3,
+            misfire_grace_time=300,
+            id="monitor_health")
+        scheduler.add_job(
+            update_stats_message,
+            'interval',
+            minutes=10,
+            args=[
+                bot,
+                False],
+            coalesce=True,
+            max_instances=3,
+            misfire_grace_time=300,
+            id="update_stats")
+        scheduler.add_job(
+            session_checker.run_missing_session_check_and_propose_cleanup,
+            'interval',
+            minutes=30,
+            args=[bot],
+            id="propose_cleanup_missing_sessions")
+        scheduler.add_job(
+            session_checker.check_and_log_session_violations,
+            'interval',
+            minutes=10,
+            args=[bot],
+            coalesce=True,
+            max_instances=3,
+            misfire_grace_time=300,
+            id="check_sessions")
+        scheduler.add_job(
+            daily_log_cleanup,
+            'cron',
+            hour=3,
+            minute=0,
+            misfire_grace_time=3600,
+            id="daily_log_cleanup")
+        scheduler.add_job(
+            auto_backup_task,
+            'cron',
+            minute='0,30',
+            timezone='Europe/Moscow',
+            args=[bot],
+            misfire_grace_time=1800,
+            id="auto_backup")
         scheduler.start()
         await update_status_message(bot, force_resend=True, page=1)
         await update_stats_message(bot, force_resend=True)
@@ -668,12 +859,15 @@ async def main():
     except Exception as e:
         logging.critical("!!! A CRITICAL ERROR OCCURRED !!!", exc_info=True)
 
+
 async def cq_status_page_handler(call: CallbackQuery, bot: Bot):
     user_id = call.from_user.id
     current_time = time.time()
     user_data = PAGINATION_LIMITS[user_id]
-    if user_data["timestamp"] > 0 and current_time - user_data["timestamp"] < PAGINATION_COOLDOWN_SECONDS:
-        remaining_time = int(PAGINATION_COOLDOWN_SECONDS - (current_time - user_data["timestamp"]))
+    if user_data["timestamp"] > 0 and current_time - \
+            user_data["timestamp"] < PAGINATION_COOLDOWN_SECONDS:
+        remaining_time = int(PAGINATION_COOLDOWN_SECONDS -
+                             (current_time - user_data["timestamp"]))
         await call.answer(f"Вы слишком часто перелистываете. Подождите {remaining_time} сек.", show_alert=True)
         return
     if user_data["timestamp"] > 0:
@@ -697,7 +891,9 @@ async def cq_status_page_handler(call: CallbackQuery, bot: Bot):
         if "message is not modified" not in str(e).lower():
             logging.error(f"Ошибка обновления страницы статуса: {e}")
     except Exception as e:
-        logging.error(f"Критическая ошибка в cq_status_page_handler: {e}", exc_info=True)
+        logging.error(
+            f"Критическая ошибка в cq_status_page_handler: {e}",
+            exc_info=True)
 
 if __name__ == '__main__':
     logs_dir = 'logs'
@@ -712,19 +908,25 @@ if __name__ == '__main__':
         archive_path = os.path.join(archive_dir, archive_name)
         shutil.move('bot.log', archive_path)
     logging.basicConfig(
-        level=logging.INFO, stream=sys.stdout, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-    )
-    file_handler = logging.FileHandler(session_log_path, mode='w', encoding='utf-8')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s'))
+        level=logging.INFO,
+        stream=sys.stdout,
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+    file_handler = logging.FileHandler(
+        session_log_path, mode='w', encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(name)s - %(message)s'))
     logging.getLogger().addHandler(file_handler)
+
     class StreamToLogger(object):
         def __init__(self, logger, level):
             self.logger = logger
             self.level = level
+
         def write(self, message):
             message = message.rstrip()
             if message:
                 self.logger.log(self.level, message)
+
         def flush(self):
             pass
     sys.stdout = StreamToLogger(logging.getLogger(), logging.INFO)

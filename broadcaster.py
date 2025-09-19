@@ -9,9 +9,10 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramNotFound, Telegra
 
 logger = logging.getLogger(__name__)
 
+
 async def broadcast_message(
-    bot: Bot, 
-    users: list, 
+    bot: Bot,
+    users: list,
     from_chat_id: int,
     message_id: int,
     disable_notification: bool = False
@@ -22,7 +23,7 @@ async def broadcast_message(
     """
     sent_count = 0
     failed_count = 0
-    
+
     for user_id in users:
         try:
             await bot.copy_message(
@@ -31,18 +32,22 @@ async def broadcast_message(
                 message_id=message_id,
                 disable_notification=disable_notification
             )
-            
+
             sent_count += 1
-            await asyncio.sleep(0.1) 
-            
+            await asyncio.sleep(0.1)
+
         except (TelegramForbiddenError, TelegramNotFound):
-            logger.info(f"Рассылка: пользователь {user_id} заблокировал бота или не найден.")
+            logger.info(
+                f"Рассылка: пользователь {user_id} заблокировал бота или не найден.")
             failed_count += 1
         except TelegramBadRequest as e:
-            logger.warning(f"Рассылка: не удалось отправить сообщение пользователю {user_id}. Ошибка: {e}")
+            logger.warning(
+                f"Рассылка: не удалось отправить сообщение пользователю {user_id}. Ошибка: {e}")
             failed_count += 1
         except Exception as e:
-            logger.error(f"Рассылка: неизвестная ошибка для пользователя {user_id}: {e}", exc_info=True)
+            logger.error(
+                f"Рассылка: неизвестная ошибка для пользователя {user_id}: {e}",
+                exc_info=True)
             failed_count += 1
-            
+
     return {"sent": sent_count, "failed": failed_count}

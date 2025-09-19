@@ -11,11 +11,13 @@ from channel_logger import log_event
 
 logger = logging.getLogger(__name__)
 
+
 def create_bot_instance():
     return Bot(
-        token=config.BOT_TOKEN, 
+        token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
+
 
 async def api_create_and_notify(tg_user_id: int, server_ip: str, webui_port: int):
     bot = create_bot_instance()
@@ -28,12 +30,15 @@ async def api_create_and_notify(tg_user_id: int, server_ip: str, webui_port: int
     finally:
         await bot.session.close()
 
+
 async def api_delete_and_notify(tg_user_id: int, ub_username: str, server_ip: str, request_ip: str):
     bot = create_bot_instance()
     try:
         ub_data = await db.get_userbot_data(ub_username)
-        ub_type = ub_data.get('ub_type', 'Userbot').capitalize() if ub_data else 'Userbot'
-        
+        ub_type = ub_data.get(
+            'ub_type',
+            'Userbot').capitalize() if ub_data else 'Userbot'
+
         server_details = server_config.get_servers().get(server_ip, {})
         server_code = server_details.get('code', 'Unknown')
         server_flag = server_details.get('flag', '🏳️')
@@ -43,11 +48,11 @@ async def api_delete_and_notify(tg_user_id: int, ub_username: str, server_ip: st
             "<blockquote>"
             f"<b>Сервер:</b> {server_flag} {server_code}\n"
             f"<b>IP-адрес запроса:</b> <code>{request_ip}</code>"
-            "</blockquote>"
-        )
+            "</blockquote>")
         await bot.send_message(tg_user_id, text)
     finally:
         await bot.session.close()
+
 
 async def log_api_action(event_type: str, data: dict):
     bot = None

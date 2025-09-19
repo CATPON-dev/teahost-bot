@@ -29,6 +29,7 @@ import server_config
 
 logger_lm = logging.getLogger(__name__)
 
+
 def get_public_ip():
     try:
         with urlopen("https://api.ipify.org") as response:
@@ -36,13 +37,16 @@ def get_public_ip():
         logging.info(f"Public IP address detected: {ip}")
         return ip
     except Exception as e:
-        logging.critical(f"Could not determine public IP address. Exiting. Error: {e}")
+        logging.critical(
+            f"Could not determine public IP address. Exiting. Error: {e}")
         sys.exit("Critical error: Public IP address could not be determined.")
+
 
 LOCAL_IP = get_public_ip()
 GIT_OVERRIDES_FILE = "git_overrides.json"
 STATS_CACHE = {}
 CACHE_LIFETIME_SECONDS = 20
+
 
 def _read_git_overrides():
     if not os.path.exists(GIT_OVERRIDES_FILE):
@@ -53,14 +57,17 @@ def _read_git_overrides():
     except (json.JSONDecodeError, FileNotFoundError):
         return {}
 
+
 def _write_git_overrides(overrides: dict):
     with open(GIT_OVERRIDES_FILE, 'w') as f:
         json.dump(overrides, f, indent=4)
+
 
 def update_git_repository(ub_type: str, url: str):
     overrides = _read_git_overrides()
     overrides[ub_type] = url
     _write_git_overrides(overrides)
+
 
 def get_current_repo_url(ub_type: str) -> str:
     repo_map = {
@@ -70,29 +77,41 @@ def get_current_repo_url(ub_type: str) -> str:
         "legacy": {"url": "https://github.com/Crayz310/Legacy"}
     }
     overrides = _read_git_overrides()
-    return overrides.get(ub_type, repo_map.get(ub_type, {}).get("url", "URL не найден"))
+    return overrides.get(
+        ub_type,
+        repo_map.get(
+            ub_type,
+            {}).get(
+            "url",
+            "URL не найден"))
+
 
 async def get_ping_ms(target: str, source_ip: str) -> str:
     ping_cmd = f"ping -c 1 -W 2 {shlex.quote(target)}"
     res = await run_command_async(ping_cmd, source_ip, check_output=False, timeout=5)
-    
+
     if res["success"] and res["output"]:
         match = re.search(r"time=([\d\.]+)\s*ms", res["output"])
         if match:
             return f"{float(match.group(1)):.1f} мс"
     return "❌ Ошибка"
 
+
 async def get_server_ping(server_ip: str) -> float | None:
     try:
         ping_cmd = f"ping -c 1 -W 2 {shlex.quote(server_ip)}"
-        
+
         process = await asyncio.create_subprocess_shell(
             ping_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         stdout, _ = await asyncio.wait_for(process.communicate(), timeout=3.0)
 
         if process.returncode == 0:
-            match = re.search(r"time=([\d\.]+)\s*ms", stdout.decode('utf-8', 'ignore'))
+            match = re.search(
+                r"time=([\d\.]+)\s*ms",
+                stdout.decode(
+                    'utf-8',
+                    'ignore'))
             if match:
                 return float(match.group(1))
     except (asyncio.TimeoutError, Exception):
@@ -110,6 +129,7 @@ async def get_server_ping(server_ip: str) -> float | None:
 
     return None
 
+
 async def get_userbot_resource_usage(ub_username: str, server_ip: str) -> dict:
     """
     Заглушка для получения информации об использовании ресурсов Docker-контейнером юзербота.
@@ -123,43 +143,60 @@ async def get_userbot_resource_usage(ub_username: str, server_ip: str) -> dict:
         "ram_percent": "0.0"
     }
 
+
 async def run_command_async(command_str: str, server_ip: str, timeout=300, user=None, check_output=True, capture_output=True, ssh_pass=None):
     stdout_pipe = asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL
     stderr_pipe = asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL
-    
+
     try:
         if server_ip == LOCAL_IP:
             if user:
                 final_command = f'sudo -u {shlex.quote(user)} bash -c {shlex.quote("source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; " + command_str)}'
             else:
                 final_command = f'bash -c {shlex.quote("set -o pipefail; " + command_str)}'
-            
+
             process = await asyncio.create_subprocess_shell(
                 final_command, stdout=stdout_pipe, stderr=stderr_pipe
             )
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-            
-            stdout_str = stdout.decode('utf-8', 'ignore').strip() if stdout else ""
-            stderr_str = stderr.decode('utf-8', 'ignore').strip() if stderr else ""
+
+            stdout_str = stdout.decode(
+                'utf-8', 'ignore').strip() if stdout else ""
+            stderr_str = stderr.decode(
+                'utf-8', 'ignore').strip() if stderr else ""
 
             if check_output and process.returncode != 0:
                 err_msg = f"RC={process.returncode}\nSTDERR:\n{stderr_str}\nSTDOUT:\n{stdout_str}"
-                return {"success": False, "output": stdout_str, "error": err_msg, "exit_status": process.returncode}
+                return {
+                    "success": False,
+                    "output": stdout_str,
+                    "error": err_msg,
+                    "exit_status": process.returncode}
 
-            return {"success": True, "output": stdout_str, "error": stderr_str, "exit_status": process.returncode}
+            return {
+                "success": True,
+                "output": stdout_str,
+                "error": stderr_str,
+                "exit_status": process.returncode}
 
         else:
             servers = server_config.get_servers()
             server_details = servers.get(server_ip)
             if not server_details:
-                return {"success": False, "error": f"SSH details not found for server {server_ip}", "exit_status": -1}
+                return {
+                    "success": False,
+                    "error": f"SSH details not found for server {server_ip}",
+                    "exit_status": -1}
 
             ssh_user = server_details.get("ssh_user")
             ssh_pass_final = ssh_pass or server_details.get("ssh_pass")
             ssh_key_path = server_details.get("ssh_key_path")
 
             if not ssh_user:
-                return {"success": False, "error": f"SSH user not configured for remote server {server_ip}", "exit_status": -1}
+                return {
+                    "success": False,
+                    "error": f"SSH user not configured for remote server {server_ip}",
+                    "exit_status": -1}
 
             conn = None
             try:
@@ -167,51 +204,76 @@ async def run_command_async(command_str: str, server_ip: str, timeout=300, user=
                 if ssh_key_path and os.path.exists(ssh_key_path):
                     conn = await asyncio.wait_for(
                         asyncssh.connect(server_ip, username=ssh_user, client_keys=[ssh_key_path], known_hosts=None),
-                        timeout=30.0  
+                        timeout=30.0
                     )
                 elif ssh_pass_final:
                     conn = await asyncio.wait_for(
                         asyncssh.connect(server_ip, username=ssh_user, password=ssh_pass_final, known_hosts=None),
-                        timeout=30.0  
+                        timeout=30.0
                     )
                 else:
-                    return {"success": False, "error": f"No SSH credentials (key or password) configured for server {server_ip}", "exit_status": -1}
-                
+                    return {
+                        "success": False,
+                        "error": f"No SSH credentials (key or password) configured for server {server_ip}",
+                        "exit_status": -1}
+
                 if user:
                     safe_user = shlex.quote(user)
                     full_user_command = f"cd /home/{safe_user} && {command_str}"
                     final_command = f"sudo -u {safe_user} bash -c {shlex.quote('source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; set -o pipefail; ' + full_user_command)}"
                 else:
                     final_command = f"bash -c {shlex.quote('set -o pipefail; ' + command_str)}"
-                
+
                 result = await asyncio.wait_for(conn.run(final_command, check=False), timeout=timeout)
                 conn.close()
 
                 stdout_str = result.stdout.strip() if result.stdout else ""
                 stderr_str = result.stderr.strip() if result.stderr else ""
-                
+
                 if check_output and result.exit_status != 0:
                     err_msg = f"RC={result.exit_status}\nSTDERR:\n{stderr_str}\nSTDOUT:\n{stdout_str}"
-                    return {"success": False, "output": stdout_str, "error": err_msg, "exit_status": result.exit_status}
+                    return {
+                        "success": False,
+                        "output": stdout_str,
+                        "error": err_msg,
+                        "exit_status": result.exit_status}
 
-                return {"success": True, "output": stdout_str, "error": stderr_str, "exit_status": result.exit_status}
+                return {
+                    "success": True,
+                    "output": stdout_str,
+                    "error": stderr_str,
+                    "exit_status": result.exit_status}
 
             except asyncio.TimeoutError:
-                if conn: conn.close()
-                logger_lm.error(f"HARD TIMEOUT on connection to [{server_ip}].")
-                return {"success": False, "error": "Принудительный таймаут SSH-подключения.", "exit_status": -1}
+                if conn:
+                    conn.close()
+                logger_lm.error(
+                    f"HARD TIMEOUT on connection to [{server_ip}].")
+                return {
+                    "success": False,
+                    "error": "Принудительный таймаут SSH-подключения.",
+                    "exit_status": -1}
             except (ConnectionResetError, asyncssh.misc.ConnectionLost, OSError, asyncssh.Error) as e:
-                if conn: conn.close()
-                logger_lm.error(f"SSH Connection Error on [{server_ip}]: {type(e).__name__}")
-                return {"success": False, "error": f"Ошибка соединения: {type(e).__name__}", "exit_status": -1}
+                if conn:
+                    conn.close()
+                logger_lm.error(
+                    f"SSH Connection Error on [{server_ip}]: {type(e).__name__}")
+                return {
+                    "success": False,
+                    "error": f"Ошибка соединения: {type(e).__name__}",
+                    "exit_status": -1}
 
     except Exception as e:
-        logger_lm.error(f"Unhandled EXCEPTION in run_command_async on [{server_ip}]", exc_info=True)
+        logger_lm.error(
+            f"Unhandled EXCEPTION in run_command_async on [{server_ip}]",
+            exc_info=True)
         return {"success": False, "error": str(e), "exit_status": -1}
+
 
 def generate_password(length=20):
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{};:,./<>?"
     return ''.join(secrets.choice(alphabet) for i in range(length))
+
 
 async def get_server_stats(server_ip: str):
     current_time = time.time()
@@ -235,11 +297,17 @@ async def get_server_stats(server_ip: str):
     )
 
     res = await run_command_async(combined_cmd, server_ip, timeout=15)
-    
+
     defaults = {
-        "cpu_usage": "0.0", "cpu_cores": "N/A", "ram_percent": "0.0", "ram_used": "0G", "ram_total": "0G",
-        "disk_percent": "0%", "disk_used": "0B", "disk_total": "0B", "uptime": "N/A"
-    }
+        "cpu_usage": "0.0",
+        "cpu_cores": "N/A",
+        "ram_percent": "0.0",
+        "ram_used": "0G",
+        "ram_total": "0G",
+        "disk_percent": "0%",
+        "disk_used": "0B",
+        "disk_total": "0B",
+        "uptime": "N/A"}
 
     if not res.get("success") or not res.get("output"):
         STATS_CACHE[server_ip] = (defaults, current_time)
@@ -248,21 +316,25 @@ async def get_server_stats(server_ip: str):
     try:
         parts = res['output'].strip().split('---')
         if len(parts) < 5:
-             STATS_CACHE[server_ip] = (defaults, current_time)
-             return defaults
+            STATS_CACHE[server_ip] = (defaults, current_time)
+            return defaults
 
-        cpu_out, ram_out, disk_out, uptime_out, nproc_out = [p.strip() for p in parts]
+        cpu_out, ram_out, disk_out, uptime_out, nproc_out = [
+            p.strip() for p in parts]
 
         cpu_usage = float(cpu_out) if cpu_out else 0.0
-        
+
         ram_data = ram_out.split('|')
         ram_used_mb, ram_total_mb = int(ram_data[0]), int(ram_data[1])
-        ram_percent = (ram_used_mb / ram_total_mb * 100) if ram_total_mb > 0 else 0
+        ram_percent = (
+            ram_used_mb /
+            ram_total_mb *
+            100) if ram_total_mb > 0 else 0
 
         disk_data = disk_out.split('|')
-        
+
         uptime = uptime_out.replace("up ", "")
-        
+
         cpu_cores = nproc_out if nproc_out.isdigit() else "N/A"
 
         stats_data = {
@@ -278,49 +350,61 @@ async def get_server_stats(server_ip: str):
         }
         STATS_CACHE[server_ip] = (stats_data, current_time)
         return stats_data
-        
+
     except (ValueError, IndexError, TypeError) as e:
-        logging.error(f"Failed to parse combined stats from {server_ip}. Error: {e}. Output: {res.get('output')}")
+        logging.error(
+            f"Failed to parse combined stats from {server_ip}. Error: {e}. Output: {res.get('output')}")
         STATS_CACHE[server_ip] = (defaults, current_time)
         return defaults
+
 
 async def user_exists(username, server_ip):
     res = await run_command_async(f"id -u {shlex.quote(username)}", server_ip, capture_output=False, check_output=False)
     return res["exit_status"] == 0
 
+
 async def ensure_system_utils(server_ip: str):
     # Проверяем и ждем завершения процесса apt-get если он запущен
     check_apt_cmd = "sudo fuser -v /var/lib/dpkg/lock* /var/lib/apt/lists/lock* 2>/dev/null || echo 'no_locks'"
     apt_check = await run_command_async(check_apt_cmd, server_ip, capture_output=False)
-    
-    if apt_check.get("success") and "no_locks" not in apt_check.get("output", ""):
-        logging.info(f"Waiting for apt processes to complete on {server_ip}...")
+
+    if apt_check.get("success") and "no_locks" not in apt_check.get(
+        "output",
+            ""):
+        logging.info(
+            f"Waiting for apt processes to complete on {server_ip}...")
         await run_command_async("sudo fuser -k /var/lib/dpkg/lock* /var/lib/apt/lists/lock* 2>/dev/null || true", server_ip, capture_output=False)
         await asyncio.sleep(5)
-    
+
     await run_command_async("sudo apt-get update -qq", server_ip, capture_output=False)
     await run_command_async("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates procps python3-pip", server_ip, capture_output=False)
 
+
 async def check_for_session_file(ub_username: str, server_ip: str) -> bool:
     ub_data = await db.get_userbot_data(ub_username=ub_username)
-    if not ub_data or not await user_exists(ub_username, server_ip): return False
+    if not ub_data or not await user_exists(ub_username, server_ip):
+        return False
     ub_type, hikka_path = ub_data.get("ub_type"), ub_data.get("hikka_path")
-    if not ub_type or not hikka_path: return False
-    
+    if not ub_type or not hikka_path:
+        return False
+
     cmd = f'sudo find {shlex.quote(hikka_path)} -maxdepth 1 \\( -name "*.session" -o -name "heroku*" \\) -print -quit'
     res = await run_command_async(cmd, server_ip, check_output=False)
     return bool(res["success"] and res["output"])
-    
+
+
 async def get_all_userbots_cpu_usage(server_ip: str):
     """
     Заглушка для получения информации об использовании CPU всеми Docker-контейнерами юзерботов.
     """
     # Заглушка - возвращаем пустой словарь
     return {}
-    
+
+
 def generate_strong_password(length=28):
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{};:,./<>?"
     return ''.join(secrets.choice(alphabet) for _ in range(length))
+
 
 async def prepare_server_without_password_change(ip, ssh_user, ssh_pass):
     """
@@ -408,7 +492,8 @@ PermitTunnel no'''
                 # Получаем список ssh-сервисов
                 res_units = await conn.run('systemctl list-units --type=service | grep ssh', check=False)
                 units = res_units.stdout or ''
-                print(f"systemctl list-units --type=service | grep ssh: {units}")
+                print(
+                    f"systemctl list-units --type=service | grep ssh: {units}")
                 if 'ssh.service' in units:
                     ssh_service = 'ssh'
                 elif 'sshd.service' in units:
@@ -418,7 +503,8 @@ PermitTunnel no'''
                 print(f"Выбран сервис для перезапуска: {ssh_service}")
 
                 res = await conn.run(f'sudo systemctl restart {ssh_service}', check=True)
-                logging.info(f"restart {ssh_service}: {res.stdout} {res.stderr}")
+                logging.info(
+                    f"restart {ssh_service}: {res.stdout} {res.stderr}")
             except Exception as e:
                 logging.error(f"Ошибка при перезапуске ssh-сервиса: {e}")
                 raise
@@ -426,9 +512,11 @@ PermitTunnel no'''
             # 6. Пароль НЕ меняется - сохраняем оригинальный
             logging.info(f"Пароль для {ip} сохранен без изменений")
     except Exception as e:
-        logging.error(f"[prepare_server_without_password_change] Ошибка: {repr(e)}")
+        logging.error(
+            f"[prepare_server_without_password_change] Ошибка: {repr(e)}")
         raise
     return ssh_pass  # Возвращаем оригинальный пароль
+
 
 async def secure_and_prepare_server(ip, old_ssh_user, old_ssh_pass):
     """
@@ -517,7 +605,8 @@ PermitTunnel no'''
                 # Получаем список ssh-сервисов
                 res_units = await conn.run('systemctl list-units --type=service | grep ssh', check=False)
                 units = res_units.stdout or ''
-                print(f"systemctl list-units --type=service | grep ssh: {units}")
+                print(
+                    f"systemctl list-units --type=service | grep ssh: {units}")
                 if 'ssh.service' in units:
                     ssh_service = 'ssh'
                 elif 'sshd.service' in units:
@@ -527,7 +616,8 @@ PermitTunnel no'''
                 print(f"Выбран сервис для перезапуска: {ssh_service}")
 
                 res = await conn.run(f'sudo systemctl restart {ssh_service}', check=True)
-                logging.info(f"restart {ssh_service}: {res.stdout} {res.stderr}")
+                logging.info(
+                    f"restart {ssh_service}: {res.stdout} {res.stderr}")
             except Exception as e:
                 logging.error(f"Ошибка при перезапуске ssh-сервиса: {e}")
                 raise
@@ -543,6 +633,7 @@ PermitTunnel no'''
         logging.error(f"[secure_and_prepare_server] Ошибка: {repr(e)}")
         raise
     return new_password
+
 
 async def add_server_with_security(ip: str, user: str, password: str, details: dict) -> str | None:
     try:
@@ -576,7 +667,8 @@ async def add_server_with_security(ip: str, user: str, password: str, details: d
         return password  # Возвращаем оригинальный пароль
     else:
         return None
-        
+
+
 async def service_and_prepare_server(ip: str, bot=None, chat_id=None, ssh_pass=None) -> bool:
     """
     Выполняет полное обслуживание и подготовку сервера для хостинга Docker-контейнеров.
@@ -589,25 +681,28 @@ async def service_and_prepare_server(ip: str, bot=None, chat_id=None, ssh_pass=N
             try:
                 await bot.send_message(chat_id, f"<b>[Обслуживание {html.quote(ip)}]</b>\n{html.quote(text)}")
             except Exception as e:
-                logging.warning(f"Failed to send status update to {chat_id}: {e}")
+                logging.warning(
+                    f"Failed to send status update to {chat_id}: {e}")
 
     try:
         await send_status("Шаг 1/3: Обновление пакетов и установка утилит...")
-        
+
         # Проверяем и ждем завершения процесса apt-get если он запущен
         check_apt_cmd = "sudo fuser -v /var/lib/dpkg/lock* /var/lib/apt/lists/lock* 2>/dev/null || echo 'no_locks'"
         apt_check = await run_command_async(check_apt_cmd, ip, ssh_pass=ssh_pass, capture_output=False)
-        
-        if apt_check.get("success") and "no_locks" not in apt_check.get("output", ""):
+
+        if apt_check.get("success") and "no_locks" not in apt_check.get(
+                "output", ""):
             await send_status("⏳ Ожидание завершения других процессов apt-get...")
             await run_command_async("sudo fuser -k /var/lib/dpkg/lock* /var/lib/apt/lists/lock* 2>/dev/null || true", ip, ssh_pass=ssh_pass, capture_output=False)
             await asyncio.sleep(5)
-        
+
         install_cmd = "sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git python3-venv zip acl"
         install_res = await run_command_async(install_cmd, ip, ssh_pass=ssh_pass, timeout=600)
         if not install_res.get("success"):
             error_msg = f"Ошибка установки базовых пакетов: {install_res.get('error')}"
-            logging.error(f"Failed to install base packages on {ip}: {install_res.get('error')}")
+            logging.error(
+                f"Failed to install base packages on {ip}: {install_res.get('error')}")
             await send_status(f"❌ {error_msg}")
             return False
 
@@ -618,34 +713,34 @@ async def service_and_prepare_server(ip: str, bot=None, chat_id=None, ssh_pass=N
             "fox": {"dir": "FoxUserbot"},
             "legacy": {"dir": "Legacy"}
         }
-        
+
         all_repos_ok = True
         for ub_type, info in repo_map.items():
             repo_url = get_current_repo_url(ub_type)
             target_dir = f"/root/{info['dir']}"
-            
+
             # Пробуем клонировать с retry механизмом
             max_retries = 3
             clone_success = False
-            
+
             for attempt in range(max_retries):
                 if attempt > 0:
                     await send_status(f"🔄 Повторная попытка клонирования {ub_type.capitalize()} (попытка {attempt + 1}/{max_retries})...")
                     await asyncio.sleep(2)
-                
+
                 # Проверяем доступность GitHub перед клонированием
                 if attempt == 0:
                     ping_cmd = "ping -c 1 -W 5 github.com"
                     ping_res = await run_command_async(ping_cmd, ip, ssh_pass=ssh_pass, timeout=10)
                     if not ping_res.get("success"):
                         await send_status(f"⚠️ Проблемы с доступом к GitHub на {ip}")
-                    
+
                     # Проверяем DNS
                     nslookup_cmd = "nslookup github.com"
                     nslookup_res = await run_command_async(nslookup_cmd, ip, ssh_pass=ssh_pass, timeout=10)
                     if not nslookup_res.get("success"):
                         await send_status(f"⚠️ Проблемы с DNS на {ip}")
-                
+
                 # Пробуем разные методы клонирования
                 if attempt == 0:
                     clone_cmd = f"sudo rm -rf {target_dir} && git clone --depth 1 {repo_url} {target_dir}"
@@ -655,42 +750,45 @@ async def service_and_prepare_server(ip: str, bot=None, chat_id=None, ssh_pass=N
                 else:
                     # Пробуем с принудительным IPv4
                     clone_cmd = f"sudo rm -rf {target_dir} && git -c http.sslVerify=false -c url.'https://github.com/'.insteadOf 'https://github.com/' clone --depth 1 {repo_url} {target_dir}"
-                
+
                 clone_res = await run_command_async(clone_cmd, ip, ssh_pass=ssh_pass, timeout=300)
-                
+
                 if clone_res.get("success"):
                     clone_success = True
                     break
                 else:
-                    logging.warning(f"Attempt {attempt + 1} failed to clone {repo_url} on {ip}: {clone_res.get('error')}")
-            
+                    logging.warning(
+                        f"Attempt {attempt + 1} failed to clone {repo_url} on {ip}: {clone_res.get('error')}")
+
             if not clone_success:
-                logging.error(f"Failed to clone {repo_url} on {ip} after {max_retries} attempts: {clone_res.get('error')}")
+                logging.error(
+                    f"Failed to clone {repo_url} on {ip} after {max_retries} attempts: {clone_res.get('error')}")
                 await send_status(f"❌ Ошибка клонирования репозитория для {ub_type.capitalize()}")
                 all_repos_ok = False
-        
+
         if not all_repos_ok:
             return False
 
         await send_status("Шаг 3/3: Настройка сетевых параметров...")
-        
+
         # Проверяем и исправляем сетевые настройки
         await send_status("🔧 Настройка DNS и Git конфигурации...")
         network_fix_cmd = """
         # Проверяем DNS
         echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
         echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf > /dev/null
-        
+
         # Проверяем git конфигурацию
         git config --global --unset-all http.sslVerify 2>/dev/null || true
         git config --global http.sslVerify false
-        
+
         # Очищаем git кэш
         rm -rf ~/.git-cache 2>/dev/null || true
         """
         await run_command_async(network_fix_cmd, ip, ssh_pass=ssh_pass, timeout=60)
-        
-        logging.info(f"Successfully serviced and prepared server {ip} for Docker containers.")
+
+        logging.info(
+            f"Successfully serviced and prepared server {ip} for Docker containers.")
         await send_status("✅ Сервер готов для работы с Docker-контейнерами!")
         return True
 
@@ -699,13 +797,15 @@ async def service_and_prepare_server(ip: str, bot=None, chat_id=None, ssh_pass=N
         logging.error(error_text, exc_info=True)
         await send_status(f"❌ {error_text}")
         return False
-        
+
+
 async def get_all_userbots_ram_usage(server_ip: str) -> dict[str, float]:
     """
     Заглушка для получения информации об использовании RAM всеми Docker-контейнерами юзерботов.
     """
     # Заглушка - возвращаем пустой словарь
     return {}
+
 
 async def get_journal_logs(ub_username: str, server_ip: str, lines: int = 100) -> str:
     """
@@ -717,15 +817,15 @@ async def get_journal_logs(ub_username: str, server_ip: str, lines: int = 100) -
         ub_data = await db.get_userbot_data(ub_username=ub_username)
         if not ub_data:
             return "❌ Юзербот не найден в базе данных"
-        
+
         ub_type = ub_data.get('ub_type', 'hikka')
         service_name = f"{ub_type}-{ub_username}.service"
-        
+
         # Команда для получения логов через journalctl
         log_cmd = f"journalctl -u {shlex.quote(service_name)} --no-pager -n {lines} --output=cat"
-        
+
         result = await run_command_async(log_cmd, server_ip, timeout=30)
-        
+
         if result.get("success"):
             logs = result.get("output", "")
             if logs.strip():
@@ -735,10 +835,12 @@ async def get_journal_logs(ub_username: str, server_ip: str, lines: int = 100) -
         else:
             error_msg = result.get("error", "Неизвестная ошибка")
             return f"❌ Ошибка получения логов: {error_msg}"
-            
+
     except Exception as e:
-        logger_lm.error(f"Exception in get_journal_logs for {ub_username} on {server_ip}: {e}")
+        logger_lm.error(
+            f"Exception in get_journal_logs for {ub_username} on {server_ip}: {e}")
         return f"❌ Исключение при получении логов: {str(e)}"
+
 
 async def get_script_log_file(ub_username: str, ub_type: str, server_ip: str, lines: int = 100) -> str:
     """
@@ -749,20 +851,20 @@ async def get_script_log_file(ub_username: str, ub_type: str, server_ip: str, li
         # Определяем путь к файлу логов на основе типа юзербота
         log_paths = {
             "hikka": f"/home/{ub_username}/Hikka/logs/hikka.log",
-            "heroku": f"/home/{ub_username}/Heroku/logs/heroku.log", 
+            "heroku": f"/home/{ub_username}/Heroku/logs/heroku.log",
             "fox": f"/home/{ub_username}/FoxUserbot/logs/fox.log",
             "legacy": f"/home/{ub_username}/Legacy/logs/legacy.log"
         }
-        
+
         log_path = log_paths.get(ub_type)
         if not log_path:
             return f"❌ Неизвестный тип юзербота: {ub_type}"
-        
+
         # Команда для получения последних строк из файла логов
         log_cmd = f"tail -n {lines} {shlex.quote(log_path)} 2>/dev/null || echo 'Файл логов не найден'"
-        
+
         result = await run_command_async(log_cmd, server_ip, timeout=30)
-        
+
         if result.get("success"):
             logs = result.get("output", "")
             if logs.strip() and "Файл логов не найден" not in logs:
@@ -772,10 +874,12 @@ async def get_script_log_file(ub_username: str, ub_type: str, server_ip: str, li
         else:
             error_msg = result.get("error", "Неизвестная ошибка")
             return f"❌ Ошибка получения логов из файла: {error_msg}"
-            
+
     except Exception as e:
-        logger_lm.error(f"Exception in get_script_log_file for {ub_username} ({ub_type}) on {server_ip}: {e}")
+        logger_lm.error(
+            f"Exception in get_script_log_file for {ub_username} ({ub_type}) on {server_ip}: {e}")
         return f"❌ Исключение при получении логов из файла: {str(e)}"
+
 
 async def get_docker_container_logs(ub_username: str, server_ip: str, lines: int = 100) -> str:
     """
@@ -785,12 +889,12 @@ async def get_docker_container_logs(ub_username: str, server_ip: str, lines: int
     try:
         # Определяем имя контейнера
         container_name = f"userbot-{ub_username}"
-        
+
         # Команда для получения логов Docker-контейнера
         log_cmd = f"docker logs --tail {lines} {shlex.quote(container_name)} 2>&1"
-        
+
         result = await run_command_async(log_cmd, server_ip, timeout=30)
-        
+
         if result.get("success"):
             logs = result.get("output", "")
             if logs.strip():
@@ -802,26 +906,29 @@ async def get_docker_container_logs(ub_username: str, server_ip: str, lines: int
             # Проверяем, существует ли контейнер
             check_cmd = f"docker ps -a --filter name={shlex.quote(container_name)} --format '{{{{.Names}}}}'"
             check_result = await run_command_async(check_cmd, server_ip, timeout=10)
-            
-            if check_result.get("success") and container_name not in check_result.get("output", ""):
+
+            if check_result.get(
+                    "success") and container_name not in check_result.get("output", ""):
                 return f"❌ Контейнер {container_name} не найден"
             else:
                 return f"❌ Ошибка получения логов Docker: {error_msg}"
-                
+
     except Exception as e:
-        logger_lm.error(f"Exception in get_docker_container_logs for {ub_username} on {server_ip}: {e}")
+        logger_lm.error(
+            f"Exception in get_docker_container_logs for {ub_username} on {server_ip}: {e}")
         return f"❌ Исключение при получении логов Docker: {str(e)}"
+
 
 async def get_userbot_logs(ub_username: str, server_ip: str, log_type: str = "journal", lines: int = 100) -> str:
     """
     Универсальный метод для получения логов юзербота.
-    
+
     Args:
         ub_username: Имя пользователя юзербота
         server_ip: IP сервера
         log_type: Тип логов ("journal", "file", "docker")
         lines: Количество строк для получения
-    
+
     Returns:
         Строка с логами или сообщение об ошибке
     """
@@ -838,11 +945,13 @@ async def get_userbot_logs(ub_username: str, server_ip: str, log_type: str = "jo
             return await get_docker_container_logs(ub_username, server_ip, lines)
         else:
             return f"❌ Неизвестный тип логов: {log_type}"
-            
+
     except Exception as e:
-        logger_lm.error(f"Exception in get_userbot_logs for {ub_username} ({log_type}) on {server_ip}: {e}")
+        logger_lm.error(
+            f"Exception in get_userbot_logs for {ub_username} ({log_type}) on {server_ip}: {e}")
         return f"❌ Исключение при получении логов: {str(e)}"
-        
+
+
 async def get_git_info() -> dict:
     info = {
         "status": "N/A",
@@ -873,10 +982,10 @@ async def get_git_info() -> dict:
                 info["status"] = "😔 Update required"
             else:
                 info["status"] = "🤔 Unknown"
-                
+
     except Exception as e:
         logging.error(f"Ошибка при получении информации из Git: {e}")
         for key in info:
             info[key] = "Error"
-            
+
     return info

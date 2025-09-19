@@ -8,6 +8,7 @@ class CopyTextButton(TelegramObject):
 
     if TYPE_CHECKING:
 
-        def __init__(__pydantic__self__, *, text: str, **__pydantic_kwargs: Any) -> None:
+        def __init__(__pydantic__self__, *, text: str,
+                     **__pydantic_kwargs: Any) -> None:
 
             super().__init__(text=text, **__pydantic_kwargs)

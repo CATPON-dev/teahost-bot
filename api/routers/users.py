@@ -10,11 +10,14 @@ from api.utils import log_api_action
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
+
 @router.get("/{identifier}", response_model=APIResponse)
 async def get_user_info(request: Request, identifier: str = Path(...), current_user: dict = Depends(verify_token)):
     target_user_data = await db.get_user_by_username_or_id(identifier)
     if not target_user_data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.")
 
     target_id = target_user_data['tg_user_id']
     user_bots = await db.get_userbots_by_tg_id(target_id)
@@ -23,8 +26,12 @@ async def get_user_info(request: Request, identifier: str = Path(...), current_u
     if user_bots:
         ub = user_bots[0]
         status_res = await api_manager.get_container_status(ub['ub_username'], ub['server_ip'])
-        status_str = status_res.get("data", {}).get("status", "unknown") if status_res.get("success") else "error"
-        
+        status_str = status_res.get(
+            "data",
+            {}).get(
+            "status",
+            "unknown") if status_res.get("success") else "error"
+
         server_details = server_config.get_servers().get(ub['server_ip'], {})
         userbot_info_obj = {
             "ub_username": ub['ub_username'],

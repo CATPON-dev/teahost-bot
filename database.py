@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 pool = None
 
+
 async def init_pool():
     global pool
     if pool:
@@ -27,8 +28,11 @@ async def init_pool():
         )
         logger.info("Пул соединений с MySQL успешно создан.")
     except Exception as e:
-        logger.critical(f"Не удалось создать пул соединений с MySQL: {e}", exc_info=True)
+        logger.critical(
+            f"Не удалось создать пул соединений с MySQL: {e}",
+            exc_info=True)
         raise
+
 
 async def reconnect_pool():
     global pool
@@ -45,13 +49,17 @@ async def reconnect_pool():
         logger.info("Пул соединений с MySQL успешно переподключен.")
         return True
     except Exception as e:
-        logger.error(f"Критическая ошибка при переподключении к MySQL: {e}", exc_info=True)
+        logger.error(
+            f"Критическая ошибка при переподключении к MySQL: {e}",
+            exc_info=True)
         return False
+
 
 async def ensure_connection():
     global pool
     if not pool or pool._closed:
-        logger.warning("Пул соединений не существует или закрыт. Попытка переподключения...")
+        logger.warning(
+            "Пул соединений не существует или закрыт. Попытка переподключения...")
         return await reconnect_pool()
 
     try:
@@ -61,11 +69,15 @@ async def ensure_connection():
                     await cursor.execute("SELECT 1")
         return True
     except (aiomysql.OperationalError, asyncio.TimeoutError, ConnectionResetError) as e:
-        logger.warning(f"Соединение с БД потеряно ({type(e).__name__}). Переподключаемся...")
+        logger.warning(
+            f"Соединение с БД потеряно ({type(e).__name__}). Переподключаемся...")
         return await reconnect_pool()
     except Exception as e:
-        logger.error(f"Неожиданная ошибка при проверке соединения: {e}", exc_info=True)
+        logger.error(
+            f"Неожиданная ошибка при проверке соединения: {e}",
+            exc_info=True)
         return await reconnect_pool()
+
 
 async def _add_column_if_not_exists(cursor, table_name, column_name, column_definition):
     await cursor.execute(f"""
@@ -77,11 +89,14 @@ async def _add_column_if_not_exists(cursor, table_name, column_name, column_defi
     """)
     if (await cursor.fetchone())[0] == 0:
         await cursor.execute(f"ALTER TABLE `{table_name}` ADD COLUMN `{column_name}` {column_definition}")
-        logger.info(f"Добавлен столбец '{column_name}' в таблицу '{table_name}'.")
+        logger.info(
+            f"Добавлен столбец '{column_name}' в таблицу '{table_name}'.")
+
 
 async def init_db():
     if not await ensure_connection():
-        logger.critical("Не удалось установить соединение с БД для инициализации.")
+        logger.critical(
+            "Не удалось установить соединение с БД для инициализации.")
         return
     try:
         async with pool.acquire() as conn:
@@ -100,7 +115,7 @@ async def init_db():
                     password TEXT
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 """)
-                
+
                 await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     tg_user_id BIGINT PRIMARY KEY,
@@ -115,7 +130,7 @@ async def init_db():
                     INDEX(api_token(255))
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 """)
-                
+
                 await _add_column_if_not_exists(cursor, 'users', 'token_regen_count', 'INT DEFAULT 0')
                 await _add_column_if_not_exists(cursor, 'users', 'token_regen_timestamp', 'DATETIME')
                 await _add_column_if_not_exists(cursor, 'users', 'has_premium_access', 'BOOLEAN NOT NULL DEFAULT FALSE')
@@ -143,11 +158,12 @@ async def init_db():
 
                 await _add_column_if_not_exists(cursor, 'userbots', 'webui_port', 'INT DEFAULT NULL')
                 await _add_column_if_not_exists(cursor, 'userbots', 'is_test_mode', 'BOOLEAN NOT NULL DEFAULT FALSE')
-                
+
                 try:
                     await cursor.execute("ALTER TABLE userbots DROP COLUMN hikka_path")
-                    logger.info("Столбец hikka_path удален из таблицы userbots")
-                except:
+                    logger.info(
+                        "Столбец hikka_path удален из таблицы userbots")
+                except BaseException:
                     pass
 
                 await cursor.execute("""
@@ -171,7 +187,7 @@ async def init_db():
                     PRIMARY KEY (commit_id, user_id)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 """)
-                
+
                 await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS referrals (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -183,7 +199,7 @@ async def init_db():
                     INDEX idx_ref_name (ref_name)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 """)
-                
+
                 await _modify_column_if_needed(cursor, 'referrals', 'created_by_admin_id', 'BIGINT')
 
                 await cursor.execute("""
@@ -196,7 +212,8 @@ async def init_db():
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 """)
 
-        logger.info("Инициализация и проверка схемы базы данных MySQL завершены.")
+        logger.info(
+            "Инициализация и проверка схемы базы данных MySQL завершены.")
     except aiomysql.Error as e:
         logger.error(f"Ошибка инициализации БД MySQL: {e}", exc_info=True)
         raise
@@ -205,11 +222,13 @@ async def init_db():
             async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     await cursor.execute("SET sql_notes = 1")
-        except:
+        except BaseException:
             pass
 
+
 async def update_token_regen_info(user_id: int, count: int, timestamp: Optional[datetime.datetime]):
-    if not await ensure_connection(): return
+    if not await ensure_connection():
+        return
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -218,10 +237,13 @@ async def update_token_regen_info(user_id: int, count: int, timestamp: Optional[
                     (count, timestamp, user_id)
                 )
     except aiomysql.Error as e:
-        logger.error(f"Ошибка обновления информации о регенерации токена для {user_id}: {e}")
+        logger.error(
+            f"Ошибка обновления информации о регенерации токена для {user_id}: {e}")
+
 
 async def set_api_token(user_id: int, token: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -231,19 +253,25 @@ async def set_api_token(user_id: int, token: str) -> bool:
         logger.error(f"Ошибка установки API токена для {user_id}: {e}")
         return False
 
+
 async def get_user_by_api_token(token: str) -> Optional[Dict[str, Any]]:
-    if not await ensure_connection(): return None
+    if not await ensure_connection():
+        return None
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM users WHERE api_token = %s", (token,))
                 return await cursor.fetchone()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка поиска пользователя по API токену: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка поиска пользователя по API токену: {e}",
+            exc_info=True)
         return None
 
+
 async def set_user_note(user_id: int, note: Optional[str]) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -253,8 +281,10 @@ async def set_user_note(user_id: int, note: Optional[str]) -> bool:
         logger.error(f"Ошибка установки заметки для {user_id}: {e}")
         return False
 
+
 async def set_user_ban_status(user_id: int, is_banned: bool) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -264,13 +294,17 @@ async def set_user_ban_status(user_id: int, is_banned: bool) -> bool:
         logger.error(f"Ошибка установки статуса бана для {user_id}: {e}")
         return False
 
+
 async def is_user_banned(user_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     user_data = await get_user_data(user_id)
     return bool(user_data and user_data.get("is_banned"))
 
+
 async def get_user_by_username_or_id(identifier: str) -> Optional[Dict[str, Any]]:
-    if not await ensure_connection(): return None
+    if not await ensure_connection():
+        return None
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -281,16 +315,20 @@ async def get_user_by_username_or_id(identifier: str) -> Optional[Dict[str, Any]
                     await cursor.execute("SELECT * FROM users WHERE username = %s", (clean_identifier,))
                 return await cursor.fetchone()
     except (aiomysql.Error, ValueError) as e:
-        logger.error(f"Ошибка поиска пользователя по '{identifier}': {e}", exc_info=True)
+        logger.error(
+            f"Ошибка поиска пользователя по '{identifier}': {e}",
+            exc_info=True)
         return None
 
+
 async def register_or_update_user(tg_user_id: int, username: Optional[str], full_name: Optional[str]) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     sql_insert = """
         INSERT INTO users (tg_user_id, username, full_name, registered_at, agreement_accepted)
         VALUES (%s, %s, %s, CURRENT_TIMESTAMP, FALSE) AS new_values
-        ON DUPLICATE KEY UPDATE 
-            username = new_values.username, 
+        ON DUPLICATE KEY UPDATE
+            username = new_values.username,
             full_name = new_values.full_name;
     """
     try:
@@ -299,11 +337,15 @@ async def register_or_update_user(tg_user_id: int, username: Optional[str], full
                 await cursor.execute(sql_insert, (tg_user_id, username, full_name))
         return True
     except aiomysql.Error as e:
-        logger.error(f"Ошибка БД при работе с пользователем {tg_user_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка БД при работе с пользователем {tg_user_id}: {e}",
+            exc_info=True)
         return False
 
+
 async def set_user_agreement_accepted(tg_user_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -313,13 +355,17 @@ async def set_user_agreement_accepted(tg_user_id: int) -> bool:
         logger.error(f"Ошибка при установке согласия для {tg_user_id}: {e}")
         return False
 
+
 async def has_user_accepted_agreement(tg_user_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     user_data = await get_user_data(tg_user_id)
     return bool(user_data and user_data.get("agreement_accepted"))
 
+
 async def get_user_data(tg_user_id: int) -> Optional[Dict[str, Any]]:
-    if not await ensure_connection(): return None
+    if not await ensure_connection():
+        return None
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -328,6 +374,7 @@ async def get_user_data(tg_user_id: int) -> Optional[Dict[str, Any]]:
     except aiomysql.Error as e:
         logger.error(f"SQL ошибка в get_user_data: {e}", exc_info=True)
         return None
+
 
 async def generate_random_port() -> int:
     forbidden_ranges = [
@@ -341,15 +388,19 @@ async def generate_random_port() -> int:
     max_attempts = 100
     for _ in range(max_attempts):
         port = random.randint(5000, 65000)
-        is_forbidden = any(start <= port <= end for start, end in forbidden_ranges)
+        is_forbidden = any(
+            start <= port <= end for start,
+            end in forbidden_ranges)
         if is_forbidden:
             continue
         if port not in occupied_ports:
             return port
     return None
 
+
 async def get_all_occupied_ports() -> List[int]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -360,8 +411,10 @@ async def get_all_occupied_ports() -> List[int]:
         logger.error(f"Ошибка получения занятых портов: {e}", exc_info=True)
         return []
 
+
 async def add_userbot_record(tg_user_id: int, ub_username: str, ub_type: str, server_ip: str, webui_port: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     sql = """
         INSERT INTO userbots (tg_user_id, ub_username, ub_type, server_ip, status, blocked, webui_port)
         VALUES (%s, %s, %s, %s, 'installing', FALSE, %s)
@@ -372,25 +425,33 @@ async def add_userbot_record(tg_user_id: int, ub_username: str, ub_type: str, se
                 await cursor.execute(sql, (tg_user_id, ub_username, ub_type, server_ip, webui_port))
                 return True
     except aiomysql.IntegrityError:
-        logger.warning(f"Попытка добавить существующего UB: {ub_username}", exc_info=True)
+        logger.warning(
+            f"Попытка добавить существующего UB: {ub_username}",
+            exc_info=True)
         return False
     except aiomysql.Error as e:
         logger.error(f"Ошибка добавления UB {ub_username}: {e}", exc_info=True)
         return False
 
+
 async def update_userbot_status(ub_username: str, status: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("UPDATE userbots SET status = %s WHERE ub_username = %s", (status, ub_username))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка обновления статуса UB {ub_username}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка обновления статуса UB {ub_username}: {e}",
+            exc_info=True)
         return False
 
+
 async def block_userbot(ub_username: str, blocked_status: bool) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -400,8 +461,10 @@ async def block_userbot(ub_username: str, blocked_status: bool) -> bool:
         logger.error(f"Ошибка блокировки {ub_username}: {e}")
         return False
 
+
 async def get_userbot_data(ub_username: str) -> Optional[Dict[str, Any]]:
-    if not await ensure_connection(): return None
+    if not await ensure_connection():
+        return None
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -411,52 +474,70 @@ async def get_userbot_data(ub_username: str) -> Optional[Dict[str, Any]]:
         logger.error(f"Ошибка получения данных UB: {e}", exc_info=True)
         return None
 
+
 async def get_userbots_by_tg_id(tg_user_id: int) -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots WHERE tg_user_id = %s", (tg_user_id,))
                 return await cursor.fetchall()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения списка UB для {tg_user_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения списка UB для {tg_user_id}: {e}",
+            exc_info=True)
         return []
 
+
 async def get_userbot_by_tg_id_and_username(tg_user_id: int, ub_username: str) -> Optional[Dict[str, Any]]:
-    if not await ensure_connection(): return None
+    if not await ensure_connection():
+        return None
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots WHERE tg_user_id = %s AND ub_username = %s", (tg_user_id, ub_username))
                 return await cursor.fetchone()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения UB {ub_username} для пользователя {tg_user_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения UB {ub_username} для пользователя {tg_user_id}: {e}",
+            exc_info=True)
         return None
 
+
 async def get_userbots_by_server_ip(server_ip: str) -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots WHERE server_ip = %s", (server_ip,))
                 return await cursor.fetchall()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения списка UB для сервера {server_ip}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения списка UB для сервера {server_ip}: {e}",
+            exc_info=True)
         return []
 
+
 async def get_all_userbots_full_info() -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots")
                 return await cursor.fetchall()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения полной информации о юзерботах: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения полной информации о юзерботах: {e}",
+            exc_info=True)
         return []
 
+
 async def delete_userbot_record(ub_username: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -466,8 +547,10 @@ async def delete_userbot_record(ub_username: str) -> bool:
         logger.error(f"Ошибка удаления UB {ub_username}: {e}", exc_info=True)
         return False
 
+
 async def get_all_bot_users() -> List[int]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -475,22 +558,30 @@ async def get_all_bot_users() -> List[int]:
                 rows = await cursor.fetchall()
                 return [row['tg_user_id'] for row in rows]
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения всех пользователей: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения всех пользователей: {e}",
+            exc_info=True)
         return []
 
+
 async def get_all_users_with_reg_date() -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT tg_user_id, registered_at FROM users")
                 return await cursor.fetchall()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения всех пользователей с датой регистрации: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения всех пользователей с датой регистрации: {e}",
+            exc_info=True)
         return []
 
+
 async def get_userbot_owners_count() -> int:
-    if not await ensure_connection(): return 0
+    if not await ensure_connection():
+        return 0
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -500,41 +591,55 @@ async def get_userbot_owners_count() -> int:
     except aiomysql.Error:
         return 0
 
+
 async def get_all_registered_users() -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM users WHERE agreement_accepted = TRUE")
                 return await cursor.fetchall()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения зарегистрированных пользователей: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения зарегистрированных пользователей: {e}",
+            exc_info=True)
         return []
 
+
 async def get_all_unregistered_users() -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM users WHERE agreement_accepted = FALSE OR agreement_accepted IS NULL")
                 return await cursor.fetchall()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения незарегистрированных пользователей: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения незарегистрированных пользователей: {e}",
+            exc_info=True)
         return []
 
+
 async def transfer_userbot(ub_username: str, new_owner_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("UPDATE userbots SET tg_user_id = %s WHERE ub_username = %s", (new_owner_id, ub_username))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка переноса юзербота {ub_username} новому владельцу {new_owner_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка переноса юзербота {ub_username} новому владельцу {new_owner_id}: {e}",
+            exc_info=True)
         return False
-        
+
+
 async def add_commit(commit_id: str, admin_id: int, admin_name: str, admin_username: Optional[str], commit_text: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     sql = "INSERT INTO commits (commit_id, admin_id, admin_name, admin_username, commit_text) VALUES (%s, %s, %s, %s, %s)"
     try:
         async with pool.acquire() as conn:
@@ -542,11 +647,15 @@ async def add_commit(commit_id: str, admin_id: int, admin_name: str, admin_usern
                 await cursor.execute(sql, (commit_id, admin_id, admin_name, admin_username, commit_text))
                 return True
     except aiomysql.Error as e:
-        logger.error(f"Ошибка добавления коммита {commit_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка добавления коммита {commit_id}: {e}",
+            exc_info=True)
         return False
 
+
 async def get_all_commits() -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -556,19 +665,25 @@ async def get_all_commits() -> List[Dict[str, Any]]:
         logger.error(f"Ошибка получения всех коммитов: {e}", exc_info=True)
         return []
 
+
 async def get_commit_by_id(commit_id: str) -> Optional[Dict[str, Any]]:
-    if not await ensure_connection(): return None
+    if not await ensure_connection():
+        return None
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM commits WHERE commit_id = %s", (commit_id,))
                 return await cursor.fetchone()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения коммита {commit_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения коммита {commit_id}: {e}",
+            exc_info=True)
         return None
-       
+
+
 async def set_vote(commit_id: str, user_id: int, vote_type: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -585,29 +700,36 @@ async def set_vote(commit_id: str, user_id: int, vote_type: int) -> bool:
                     await cursor.execute(sql_upsert, (commit_id, user_id, vote_type))
                 return True
     except aiomysql.Error as e:
-        logger.error(f"Ошибка установки голоса для коммита {commit_id} от {user_id}: {e}")
+        logger.error(
+            f"Ошибка установки голоса для коммита {commit_id} от {user_id}: {e}")
         return False
 
+
 async def get_vote_counts(commit_id: str) -> Dict[str, int]:
-    if not await ensure_connection(): return {'likes': 0, 'dislikes': 0}
+    if not await ensure_connection():
+        return {'likes': 0, 'dislikes': 0}
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 sql = """
-                    SELECT 
+                    SELECT
                         SUM(CASE WHEN vote_type = 1 THEN 1 ELSE 0 END) as likes,
                         SUM(CASE WHEN vote_type = -1 THEN 1 ELSE 0 END) as dislikes
-                    FROM commit_votes 
+                    FROM commit_votes
                     WHERE commit_id = %s
                 """
                 await cursor.execute(sql, (commit_id,))
                 counts = await cursor.fetchone()
-                return {'likes': counts['likes'] or 0, 'dislikes': counts['dislikes'] or 0}
+                return {
+                    'likes': counts['likes'] or 0,
+                    'dislikes': counts['dislikes'] or 0}
     except aiomysql.Error:
         return {'likes': 0, 'dislikes': 0}
-        
+
+
 async def update_commit_text(commit_id: str, new_text: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -616,9 +738,11 @@ async def update_commit_text(commit_id: str, new_text: str) -> bool:
     except aiomysql.Error as e:
         logger.error(f"Ошибка обновления текста коммита {commit_id}: {e}")
         return False
-        
+
+
 async def delete_commit_by_id(commit_id: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -628,8 +752,10 @@ async def delete_commit_by_id(commit_id: str) -> bool:
         logger.error(f"Ошибка удаления коммита {commit_id}: {e}")
         return False
 
+
 async def set_userbot_warning_status(ub_username: str, is_warned: bool, warning_time: Optional[datetime.datetime] = None):
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -639,33 +765,42 @@ async def set_userbot_warning_status(ub_username: str, is_warned: bool, warning_
                 )
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка установки статуса предупреждения для {ub_username}: {e}")
+        logger.error(
+            f"Ошибка установки статуса предупреждения для {ub_username}: {e}")
         return False
 
+
 async def get_warned_userbots() -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM userbots WHERE is_warned = TRUE")
                 return await cursor.fetchall()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения списка юзерботов с предупреждением: {e}")
+        logger.error(
+            f"Ошибка получения списка юзерботов с предупреждением: {e}")
         return []
-        
+
+
 async def regenerate_user_token(user_id: int, new_token: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("UPDATE users SET api_token = %s WHERE tg_user_id = %s", (new_token, user_id))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка регенерации токена для пользователя {user_id}: {e}")
+        logger.error(
+            f"Ошибка регенерации токена для пользователя {user_id}: {e}")
         return False
 
+
 async def add_userbot_shared_access(ub_username: str, tg_user_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     sql = "INSERT IGNORE INTO userbot_shared (ub_username, tg_user_id) VALUES (%s, %s)"
     try:
         async with pool.acquire() as conn:
@@ -673,33 +808,42 @@ async def add_userbot_shared_access(ub_username: str, tg_user_id: int) -> bool:
                 await cursor.execute(sql, (ub_username, tg_user_id))
                 return True
     except aiomysql.Error as e:
-        logger.error(f"Ошибка добавления доступа к {ub_username} для {tg_user_id}: {e}")
+        logger.error(
+            f"Ошибка добавления доступа к {ub_username} для {tg_user_id}: {e}")
         return False
 
+
 async def remove_userbot_shared_access(ub_username: str, tg_user_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("DELETE FROM userbot_shared WHERE ub_username = %s AND tg_user_id = %s", (ub_username, tg_user_id))
                 return True
     except aiomysql.Error as e:
-        logger.error(f"Ошибка удаления доступа к {ub_username} для {tg_user_id}: {e}")
+        logger.error(
+            f"Ошибка удаления доступа к {ub_username} для {tg_user_id}: {e}")
         return False
 
+
 async def has_userbot_shared_access(ub_username: str, tg_user_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT 1 FROM userbot_shared WHERE ub_username = %s AND tg_user_id = %s", (ub_username, tg_user_id))
                 return await cursor.fetchone() is not None
     except aiomysql.Error as e:
-        logger.error(f"Ошибка проверки доступа к {ub_username} для {tg_user_id}: {e}")
+        logger.error(
+            f"Ошибка проверки доступа к {ub_username} для {tg_user_id}: {e}")
         return False
 
+
 async def get_userbot_shared_users(ub_username: str) -> list:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -707,11 +851,14 @@ async def get_userbot_shared_users(ub_username: str) -> list:
                 rows = await cursor.fetchall()
                 return [row[0] for row in rows]
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения shared пользователей для {ub_username}: {e}")
+        logger.error(
+            f"Ошибка получения shared пользователей для {ub_username}: {e}")
         return []
 
+
 async def user_can_manage_ub(user_id: int, ub_username: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     ub_data = await get_userbot_data(ub_username)
     if not ub_data:
         return False
@@ -719,8 +866,10 @@ async def user_can_manage_ub(user_id: int, ub_username: str) -> bool:
         return True
     return await has_userbot_shared_access(ub_username, user_id)
 
+
 async def update_userbot_status_with_time(ub_username: str, status: str, stopped_time: Optional[datetime.datetime] = None) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -731,11 +880,15 @@ async def update_userbot_status_with_time(ub_username: str, status: str, stopped
                     await cursor.execute("UPDATE userbots SET status = %s, stopped_at = NULL WHERE ub_username = %s", (status, ub_username))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка обновления статуса UB {ub_username} (с временем): {e}", exc_info=True)
+        logger.error(
+            f"Ошибка обновления статуса UB {ub_username} (с временем): {e}",
+            exc_info=True)
         return False
 
+
 async def update_userbot_started_time(ub_username: str, started_time: Optional[datetime.datetime] = None) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -743,33 +896,45 @@ async def update_userbot_started_time(ub_username: str, started_time: Optional[d
                 await cursor.execute("UPDATE userbots SET started_at = %s WHERE ub_username = %s", (now, ub_username))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка обновления started_at для UB {ub_username}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка обновления started_at для UB {ub_username}: {e}",
+            exc_info=True)
         return False
 
+
 async def update_userbot_server(ub_username: str, new_server_ip: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("UPDATE userbots SET server_ip = %s WHERE ub_username = %s", (new_server_ip, ub_username))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка обновления сервера для UB {ub_username}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка обновления сервера для UB {ub_username}: {e}",
+            exc_info=True)
         return False
-        
+
+
 async def update_type(ub_username: str, userbot: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("UPDATE userbots SET ub_type = %s WHERE ub_username = %s", (userbot, ub_username))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка обновления сервера для UB {ub_username}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка обновления сервера для UB {ub_username}: {e}",
+            exc_info=True)
         return False
-        
+
+
 async def add_password(tg_id: int, username: str, password: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -780,11 +945,15 @@ async def add_password(tg_id: int, username: str, password: str) -> bool:
                 await conn.commit()
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка добавления пароля для пользователя {username}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка добавления пароля для пользователя {username}: {e}",
+            exc_info=True)
         return False
 
+
 async def get_password(tg_id: int) -> dict:
-    if not await ensure_connection(): return {}
+    if not await ensure_connection():
+        return {}
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -795,11 +964,15 @@ async def get_password(tg_id: int) -> dict:
                 result = await cursor.fetchone()
                 return result if result else {}
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения данных аутентификации для пользователя {tg_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения данных аутентификации для пользователя {tg_id}: {e}",
+            exc_info=True)
         return {}
 
+
 async def delete_password(tg_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -810,11 +983,15 @@ async def delete_password(tg_id: int) -> bool:
                 await conn.commit()
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка удаления пароля для пользователя {tg_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка удаления пароля для пользователя {tg_id}: {e}",
+            exc_info=True)
         return False
-        
+
+
 async def add_vpn(tg_id: int, link: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -825,11 +1002,15 @@ async def add_vpn(tg_id: int, link: str) -> bool:
                 await conn.commit()
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка добавления VPN для пользователя {tg_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка добавления VPN для пользователя {tg_id}: {e}",
+            exc_info=True)
         return False
 
+
 async def get_vpn(tg_id: int) -> str:
-    if not await ensure_connection(): return None
+    if not await ensure_connection():
+        return None
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -840,11 +1021,15 @@ async def get_vpn(tg_id: int) -> str:
                 result = await cursor.fetchone()
                 return result[0] if result else None
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения VPN для пользователя {tg_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения VPN для пользователя {tg_id}: {e}",
+            exc_info=True)
         return None
 
+
 async def delete_vpn(tg_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -855,11 +1040,15 @@ async def delete_vpn(tg_id: int) -> bool:
                 await conn.commit()
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка удаления VPN для пользователя {tg_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка удаления VPN для пользователя {tg_id}: {e}",
+            exc_info=True)
         return False
 
+
 async def get_user_counts_by_period(days: int) -> int:
-    if not await ensure_connection(): return 0
+    if not await ensure_connection():
+        return 0
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -868,11 +1057,14 @@ async def get_user_counts_by_period(days: int) -> int:
                 result = await cursor.fetchone()
                 return result[0] if result else 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка подсчета пользователей за период {days} дней: {e}")
+        logger.error(
+            f"Ошибка подсчета пользователей за период {days} дней: {e}")
         return 0
-        
+
+
 async def add_or_update_banned_user(tg_user_id: int, username: Optional[str] = None, full_name: Optional[str] = None) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     sql = """
         INSERT INTO users (tg_user_id, username, full_name, is_banned, agreement_accepted)
         VALUES (%s, %s, %s, TRUE, FALSE)
@@ -887,11 +1079,14 @@ async def add_or_update_banned_user(tg_user_id: int, username: Optional[str] = N
                 await cursor.execute(sql, (tg_user_id, username, full_name))
                 return True
     except aiomysql.Error as e:
-        logger.error(f"Ошибка при добавлении/обновлении забаненного пользователя {tg_user_id}: {e}")
+        logger.error(
+            f"Ошибка при добавлении/обновлении забаненного пользователя {tg_user_id}: {e}")
         return False
 
+
 async def create_referral_link(ref_name: str, admin_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -904,62 +1099,78 @@ async def create_referral_link(ref_name: str, admin_id: int) -> bool:
         logger.warning(f"Реферальная ссылка '{ref_name}' уже существует")
         return False
     except aiomysql.Error as e:
-        logger.error(f"Ошибка создания реферальной ссылки '{ref_name}': {e}", exc_info=True)
+        logger.error(
+            f"Ошибка создания реферальной ссылки '{ref_name}': {e}",
+            exc_info=True)
         return False
 
+
 async def get_all_referrals() -> List[Dict[str, Any]]:
-    if not await ensure_connection(): return []
+    if not await ensure_connection():
+        return []
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM referrals ORDER BY created_at DESC")
                 return await cursor.fetchall()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения реферальных ссылок: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения реферальных ссылок: {e}",
+            exc_info=True)
         return []
 
+
 async def get_referral_by_name(ref_name: str) -> Optional[Dict[str, Any]]:
-    if not await ensure_connection(): return None
+    if not await ensure_connection():
+        return None
     try:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("SELECT * FROM referrals WHERE ref_name = %s", (ref_name,))
                 return await cursor.fetchone()
     except aiomysql.Error as e:
-        logger.error(f"Ошибка получения реферальной ссылки '{ref_name}': {e}", exc_info=True)
+        logger.error(
+            f"Ошибка получения реферальной ссылки '{ref_name}': {e}",
+            exc_info=True)
         return None
 
+
 async def add_referral_activation(ref_name: str, user_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT activated_users FROM referrals WHERE ref_name = %s", (ref_name,))
                 result = await cursor.fetchone()
-                
+
                 if not result:
                     return False
-                
+
                 current_users = result[0] or ""
                 users_list = current_users.split(",") if current_users else []
-                
+
                 if str(user_id) in users_list:
                     return False
-                
+
                 users_list.append(str(user_id))
                 new_users = ",".join(users_list)
-                
+
                 await cursor.execute(
                     "UPDATE referrals SET total_activations = %s, activated_users = %s WHERE ref_name = %s",
                     (len(users_list), new_users, ref_name)
                 )
                 return True
     except aiomysql.Error as e:
-        logger.error(f"Ошибка добавления активации реферальной ссылки '{ref_name}' для пользователя {user_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка добавления активации реферальной ссылки '{ref_name}' для пользователя {user_id}: {e}",
+            exc_info=True)
         return False
 
+
 async def is_user_new(tg_user_id: int) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -967,19 +1178,26 @@ async def is_user_new(tg_user_id: int) -> bool:
                 result = await cursor.fetchone()
                 return result[0] == 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка проверки нового пользователя {tg_user_id}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка проверки нового пользователя {tg_user_id}: {e}",
+            exc_info=True)
         return False
 
+
 async def delete_referral_link(ref_name: str) -> bool:
-    if not await ensure_connection(): return False
+    if not await ensure_connection():
+        return False
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("DELETE FROM referrals WHERE ref_name = %s", (ref_name,))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка удаления реферальной ссылки '{ref_name}': {e}", exc_info=True)
+        logger.error(
+            f"Ошибка удаления реферальной ссылки '{ref_name}': {e}",
+            exc_info=True)
         return False
+
 
 async def set_premium_access(user_id: int, status: bool) -> bool:
     if not await ensure_connection():
@@ -996,6 +1214,7 @@ async def set_premium_access(user_id: int, status: bool) -> bool:
         logger.error(f"Ошибка установки премиум-доступа для {user_id}: {e}")
         return False
 
+
 async def check_premium_access(user_id: int) -> bool:
     if not await ensure_connection():
         return False
@@ -1011,6 +1230,7 @@ async def check_premium_access(user_id: int) -> bool:
     except aiomysql.Error:
         return False
 
+
 async def get_users_with_premium_access() -> List[Dict[str, Any]]:
     if not await ensure_connection():
         return []
@@ -1021,7 +1241,8 @@ async def get_users_with_premium_access() -> List[Dict[str, Any]]:
                 return await cursor.fetchall()
     except aiomysql.Error:
         return []
-        
+
+
 async def _modify_column_if_needed(cursor, table_name, column_name, new_column_definition):
     await cursor.execute(f"""
         SELECT DATA_TYPE
@@ -1031,11 +1252,12 @@ async def _modify_column_if_needed(cursor, table_name, column_name, new_column_d
         AND COLUMN_NAME = '{column_name}'
     """)
     result = await cursor.fetchone()
-    
+
     if result and result[0].lower() != 'bigint':
         await cursor.execute(f"ALTER TABLE `{table_name}` MODIFY COLUMN `{column_name}` {new_column_definition}")
         logger.info(f"ебал.")
-        
+
+
 async def delete_user_from_db(user_id: int) -> bool:
     if not await ensure_connection():
         return False
@@ -1047,22 +1269,25 @@ async def delete_user_from_db(user_id: int) -> bool:
     except aiomysql.Error as e:
         logger.error(f"Ошибка удаления пользователя {user_id} из БД: {e}")
         return False
-        
+
+
 async def generic_update(table_name: str, key_column: str, key_value: Any, update_column: str, new_value: Any) -> bool:
     if not await ensure_connection():
         return False
-    
+
     safe_table_name = f"`{table_name.replace('`', '')}`"
     safe_key_column = f"`{key_column.replace('`', '')}`"
     safe_update_column = f"`{update_column.replace('`', '')}`"
 
     sql = f"UPDATE {safe_table_name} SET {safe_update_column} = %s WHERE {safe_key_column} = %s"
-    
+
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(sql, (new_value, key_value))
                 return cursor.rowcount > 0
     except aiomysql.Error as e:
-        logger.error(f"Ошибка при выполнении generic_update для таблицы {table_name}: {e}", exc_info=True)
+        logger.error(
+            f"Ошибка при выполнении generic_update для таблицы {table_name}: {e}",
+            exc_info=True)
         return False
