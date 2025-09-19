@@ -25,6 +25,9 @@ TOPIC_MAP = {
     "inactive_session_warning": 140,
     "batched_session_warning": 140,
     "userbot_reinstalled": 30,
+    "api_container_error": 3206,
+    "installation_timeout": 3209,
+    "userbot_migrated": 3221,
 }
 
 KEYWORD_TO_TOPIC_MAP = {
@@ -58,7 +61,9 @@ EVENT_TAGS = {
     "referral_deleted": "#РЕФ_ССЫЛКА_УДАЛЕНА",
     "session_violation": "#НАРУШЕНИЕ_ПРАВИЛ",
     "unauthorized_access_attempt": "#НЕСАНКЦ_ДОСТУП",
-    "inactive_session_warning": "#ПРЕДУПРЕЖДЕНИЕ_СЕССИЯ",
+    "api_container_error": "#API_CONTAINER_ERROR",
+    "installation_timeout": "#INSTALLATION_TIMEOUT",
+    "userbot_migrated": "#ЮЗЕРБОТ_ПЕРЕНЕСЕН",
 }
 
 def _format_user_link(user_data: dict) -> str:
@@ -96,7 +101,10 @@ async def log_event(bot: Bot, event_type: str, data: dict):
         return
 
     is_api_event = event_type.startswith("api_")
-    tag_key = "api_event" if is_api_event else event_type
+    
+    tag_key = event_type
+    if is_api_event and tag_key not in EVENT_TAGS:
+        tag_key = "api_event"
     tag = EVENT_TAGS.get(tag_key, f"#{event_type.upper()}")
     
     admin_link = _format_user_link(data.get('admin_data'))
@@ -120,8 +128,9 @@ async def log_event(bot: Bot, event_type: str, data: dict):
     message_body = ""
     topic_id = TOPIC_MAP.get(event_type)
     
-    if is_api_event:
-        topic_id = TOPIC_MAP.get("api_event")
+    if is_api_event and event_type not in ["api_container_error", "installation_timeout"]:
+        if topic_id is None:
+            topic_id = TOPIC_MAP.get("api_event")
         message_body = (
             f"<b>Событие:</b> <code>{html.quote(event_type)}</code>\n"
             f"<b>Пользователь:</b> {user_link}\n"
@@ -143,6 +152,30 @@ async def log_event(bot: Bot, event_type: str, data: dict):
         message_body = (f"<b>Сервер:</b> {server_code}\n<b>Администратор:</b> {admin_link}\n<b>Детали:</b> {details_text}")
     elif event_type == "installation_failed":
         message_body = (f"<b>Пользователь:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Ошибка:</b> <pre>{error_text}</pre>")
+    elif event_type == "api_container_error":
+        message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Юзербот:</b> <code>{ub_name}</code>\n"
+            f"<b>Сервер:</b> {server_code}\n"
+            f"<b>Ошибка:</b> <pre>{error_text}</pre>"
+        )
+    elif event_type == "installation_timeout":
+         message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Юзербот:</b> <code>{ub_name}</code> ({ub_type.capitalize()})\n"
+            f"<b>Сервер:</b> {server_code}\n"
+            f"<b>Статус:</b> Таймаут ожидания ссылки для входа"
+        )
+    elif event_type == "userbot_migrated":
+        old_server_info = data.get('old_server_info', {})
+        old_server_code = html.quote(old_server_info.get('code', 'N/A'))
+        message_body = (
+            f"<b>Пользователь:</b> {user_link}\n"
+            f"<b>Юзербот:</b> <code>{ub_name}</code>\n"
+            f"<b>Старый сервер:</b> {old_server_code}\n"
+            f"<b>Новый сервер:</b> {server_code}\n"
+            f"<b>Статус:</b> Успешно перенесен"
+        )
     elif event_type == "deletion_by_admin":
         message_body = (f"<b>Администратор:</b> {admin_link}\n<b>Владелец:</b> {user_link}\n<b>Юзербот:</b> <code>{ub_name}</code>\n<b>Причина:</b> {reason}")
     elif event_type == "session_violation":

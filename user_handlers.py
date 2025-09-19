@@ -2695,6 +2695,18 @@ async def cq_migrate_ub_execute(call: types.CallbackQuery, state: FSMContext, bo
             await db.update_userbot_server(ub_username, old_server_ip)
             raise Exception(f"Ошибка восстановления: {restore_result.get('error', 'Неизвестная ошибка')}")
 
+        all_servers = server_config.get_servers()
+        old_server_details = all_servers.get(old_server_ip, {})
+        old_server_code_for_log = old_server_details.get('code', 'N/A')
+
+        log_data = {
+            "user_data": {"id": call.from_user.id, "full_name": call.from_user.full_name},
+            "ub_info": {"name": ub_username, "type": ub_type},
+            "server_info": {"ip": new_server_ip, "code": new_server_code},
+            "old_server_info": {"ip": old_server_ip, "code": old_server_code_for_log}
+        }
+        await log_event(bot, "userbot_migrated", log_data)
+
         builder = InlineKeyboardBuilder()
         builder.button(text="🔙 Назад", callback_data=f"refresh_panel:{ub_username}:{owner_id}")
         

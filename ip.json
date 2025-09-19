@@ -109,7 +109,7 @@
         "hosting": true,
         "proxy": false,
         "vpn": false,
-        "status": "true",
+        "status": "test",
         "slots": 20,
         "api_url": "http://94.241.142.190:8000",
         "api_token": "LlmzRfXBaay9N]p;x,Ru#T<f"
