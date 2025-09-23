@@ -75,6 +75,37 @@ SERVERINFO_PAGE_SIZE = 5
 ALLOWED_TABLES_FOR_UPDATE = ["userbots", "users"]
 
 
+def parse_duration(duration_str: str) -> timedelta | None:
+    if duration_str.lower() == 'lifetime':
+        return timedelta(days=365 * 1000)
+
+    regex = re.compile(r'(\d+)\s*(y|m|w|d|h|s)\w*')
+    parts = regex.findall(duration_str.lower())
+    if not parts:
+        return None
+
+    total_seconds = 0
+    for value, unit in parts:
+        value = int(value)
+        if unit == 's':
+            total_seconds += value
+        elif unit == 'h':
+            total_seconds += value * 3600
+        elif unit == 'd':
+            total_seconds += value * 86400
+        elif unit == 'w':
+            total_seconds += value * 7 * 86400
+        elif unit == 'm':
+            total_seconds += value * 30 * 86400
+        elif unit == 'y':
+            total_seconds += value * 365 * 86400
+
+    if total_seconds >= 999 * 365 * 86400:
+        return timedelta(days=365 * 1000)
+
+    return timedelta(seconds=total_seconds)
+
+
 async def _generate_container_list_page(containers_on_page: list, total_containers: int, expanded_container_name: str | None = None) -> str:
     text_parts = [
         f"🖥️ <b>Список всех контейнеров</b> (Всего: {total_containers})\n"]
@@ -4670,3 +4701,92 @@ async def cmd_transfer(message: types.Message, command: CommandObject, bot: Bot)
             f"<pre>{html.quote(str(e))}</pre>\n\n"
             "Проверьте состояние контейнера вручную."
         )
+
+
+@router.message(Command("userstatus"), IsSuperAdmin())
+async def cmd_user_status(message: types.Message, command: CommandObject, bot: Bot):
+    args = command.args.split() if command.args else []
+
+    if len(args) < 2 and not message.reply_to_message:
+        await message.reply(
+            "<b>Неверный формат.</b>\n\n"
+            "<b>Примеры:</b>\n"
+            "<code>/userstatus &lt;ID|@|reply&gt; premium 1y 2m 15d</code>\n"
+            "<code>/userstatus &lt;ID|@|reply&gt; premium lifetime</code>\n"
+            "<code>/userstatus &lt;ID|@|reply&gt; default</code>"
+        )
+        return
+
+    target_user_data, error_message = await _get_target_user_data(message, CommandObject(command="userstatus", args=args[0]), bot)
+    if error_message:
+        await message.reply(error_message)
+        return
+
+    target_id = target_user_data['tg_user_id']
+    target_name = html.quote(
+        target_user_data.get(
+            'full_name',
+            f"ID: {target_id}"))
+    new_status = args[1].lower()
+
+    if new_status == "premium":
+        if len(args) < 3:
+            await message.reply("<b>Ошибка:</b> Укажите срок действия премиум-статуса.\nНапример: <code>1m 15d</code> или <code>lifetime</code>")
+            return
+
+        duration_str = " ".join(args[2:])
+        duration = parse_duration(duration_str)
+
+        if not duration:
+            await message.reply("<b>Ошибка:</b> Неверный формат срока действия.")
+            return
+
+        current_user = await db.get_user_data(target_id)
+        current_expiry = current_user.get('premium_expires_at')
+        now = datetime.now()
+
+        is_extension = current_expiry and current_expiry > now
+
+        if is_extension:
+            new_expiry_date = current_expiry + duration
+            action_text = f"продлен на <b>{duration_str}</b>"
+        else:
+            new_expiry_date = now + duration
+            action_text = f"выдан до <b>{new_expiry_date.strftime('%d.%m.%Y %H:%M')}</b>"
+
+        if duration.days > 365 * 999:
+            new_expiry_date = datetime(2999, 12, 31)
+            action_text = "выдан <b>навсегда (Lifetime)</b>"
+
+        await db.set_premium_status(target_id, new_expiry_date)
+
+        await message.reply(f"✅ Премиум-статус для пользователя <b>{target_name}</b> (<code>{target_id}</code>) успешно {action_text}.")
+
+        try:
+            user_message = "⏳ <b>Вам выдан премиум-статус!</b>"
+            if is_extension:
+                user_message = f"⏳ <b>Ваш премиум-статус продлен на {duration_str}!</b>"
+
+            await bot.send_message(
+                target_id,
+                user_message,
+                reply_markup=kb.get_back_to_main_menu_keyboard()
+            )
+        except (TelegramForbiddenError, TelegramNotFound):
+            await message.answer("<i>Не удалось уведомить пользователя (заблокировал бота или неверный ID).</i>")
+
+    elif new_status == "default":
+        await db.set_premium_status(target_id, None)
+        await message.reply(f"✅ У пользователя <b>{target_name}</b> (<code>{target_id}</code>) отозван премиум-статус.")
+
+        try:
+            await bot.send_message(
+                target_id,
+                "<blockquote>🤝 Ваш премиум-статус был отозван администратором!</blockquote>",
+                reply_markup=kb.get_back_to_main_menu_keyboard()
+            )
+        except (TelegramForbiddenError, TelegramNotFound):
+            await message.answer("<i>Не удалось уведомить пользователя.</i>")
+
+    else:
+        await message.reply("<b>Ошибка:</b> Неизвестный статус. Доступные: <code>premium</code>, <code>default</code>.")

@@ -1309,4 +1309,12 @@ def get_cleanup_confirmation_keyboard(cleanup_id: str):
         callback_data=f"cleanup_cancel:{cleanup_id}")
     builder.adjust(2)
     return builder.as_markup()
+
+
+def get_back_to_main_menu_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="К главному меню",
+        callback_data="back_to_main_panel_delete")
+    return builder.as_markup()
 # --- END OF FILE keyboards.py ---

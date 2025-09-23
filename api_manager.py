@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 class APIManager:
     def __init__(self):
         self.vpn_base_url = "https://vpn.dev3quest.lol:8000"
-        self.vpn_username = "sharkhost"
-        self.vpn_password = "sharkhost"
+        self.vpn_username = "teahost"
+        self.vpn_password = "nloveuser_tg"
         self.base_url = "http://m7.sharkhost.space:8000"
         self.token = "kivWJmOe2ey9u50uCqEwCIcHstCwuZslu7QK4YcEsCTGQcUTx33JC3bZve0zvr8y"
 

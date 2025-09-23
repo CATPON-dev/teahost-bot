@@ -134,6 +134,8 @@ async def init_db():
                 await _add_column_if_not_exists(cursor, 'users', 'token_regen_count', 'INT DEFAULT 0')
                 await _add_column_if_not_exists(cursor, 'users', 'token_regen_timestamp', 'DATETIME')
                 await _add_column_if_not_exists(cursor, 'users', 'has_premium_access', 'BOOLEAN NOT NULL DEFAULT FALSE')
+                await _add_column_if_not_exists(cursor, 'users', 'premium_expires_at', 'DATETIME DEFAULT NULL')
+                await _add_column_if_not_exists(cursor, 'users', 'premium_grace_notified', 'BOOLEAN NOT NULL DEFAULT FALSE')
 
                 await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS userbots (
@@ -1220,14 +1222,17 @@ async def check_premium_access(user_id: int) -> bool:
         return False
     try:
         async with pool.acquire() as conn:
-            async with conn.cursor() as cursor:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute(
-                    "SELECT has_premium_access FROM users WHERE tg_user_id = %s",
+                    "SELECT premium_expires_at FROM users WHERE tg_user_id = %s",
                     (user_id,)
                 )
                 result = await cursor.fetchone()
-                return result[0] if result else False
-    except aiomysql.Error:
+                if not result or result['premium_expires_at'] is None:
+                    return False
+                return result['premium_expires_at'] > datetime.datetime.now()
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка проверки премиум-доступа для {user_id}: {e}")
         return False
 
 
@@ -1291,3 +1296,79 @@ async def generic_update(table_name: str, key_column: str, key_value: Any, updat
             f"Ошибка при выполнении generic_update для таблицы {table_name}: {e}",
             exc_info=True)
         return False
+
+
+async def set_premium_status(user_id: int, expiration_date: Optional[datetime.datetime]) -> bool:
+    if not await ensure_connection():
+        return False
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                has_premium = expiration_date is not None
+                await cursor.execute(
+                    "UPDATE users SET premium_expires_at = %s, has_premium_access = %s, premium_grace_notified = FALSE WHERE tg_user_id = %s",
+                    (expiration_date, has_premium, user_id)
+                )
+                return cursor.rowcount > 0
+    except aiomysql.Error as e:
+        logger.error(f"Ошибка установки премиум-статуса для {user_id}: {e}")
+        return False
+
+
+async def get_users_entering_grace_period() -> List[Dict[str, Any]]:
+    if not await ensure_connection():
+        return []
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT * FROM users WHERE has_premium_access = TRUE AND premium_expires_at IS NOT NULL AND premium_expires_at <= NOW() AND premium_grace_notified = FALSE"
+                )
+                return await cursor.fetchall()
+    except aiomysql.Error:
+        return []
+
+
+async def get_users_ending_grace_period() -> List[Dict[str, Any]]:
+    if not await ensure_connection():
+        return []
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT * FROM users WHERE has_premium_access = TRUE AND premium_expires_at IS NOT NULL AND premium_expires_at <= NOW() - INTERVAL 1 DAY AND premium_grace_notified = TRUE"
+                )
+                return await cursor.fetchall()
+    except aiomysql.Error:
+        return []
+
+
+async def set_grace_period_notified(user_id: int, status: bool) -> bool:
+    if not await ensure_connection():
+        return False
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "UPDATE users SET premium_grace_notified = %s WHERE tg_user_id = %s",
+                    (status, user_id)
+                )
+                return cursor.rowcount > 0
+    except aiomysql.Error:
+        return False
+
+
+async def get_expired_premium_users() -> List[Dict[str, Any]]:
+    if not await ensure_connection():
+        return []
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT * FROM users WHERE has_premium_access = TRUE AND premium_expires_at IS NOT NULL AND premium_expires_at <= NOW()"
+                )
+                return await cursor.fetchall()
+    except aiomysql.Error as e:
+        logger.error(
+            f"Ошибка получения пользователей с истекшим премиумом: {e}")
+        return []

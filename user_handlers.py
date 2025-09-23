@@ -291,16 +291,34 @@ def format_container_stats(stats_data: dict) -> str:
 async def _show_main_panel(bot: Bot, chat_id: int, user_id: int, user_name: str, state: FSMContext, message_id: int = None, topic_id: int = None, owner_id: int = None):
     from bot import BANNER_FILE_IDS
     await state.clear()
+
+    user_data = await db.get_user_data(user_id)
     user_bots = await db.get_userbots_by_tg_id(user_id)
     is_chat = False
     if owner_id is None:
         owner_id = user_id
     if str(chat_id).startswith("-"):
         is_chat = True
+
+    premium_status_text = ""
+    if user_data:
+        expires_at = user_data.get('premium_expires_at')
+        if expires_at and expires_at > datetime.now():
+            remaining = expires_at - datetime.now()
+            formatted_time = format_timedelta_to_human_readable(remaining)
+            premium_status_text = (
+                "\n\n<blockquote>"
+                f"💎 <b>Премиум-статус активен</b>\n"
+                f"      <i>Осталось: {formatted_time}</i>"
+                "</blockquote>"
+            )
+
     text = (
         f"<b>{get_greeting()}, {html.quote(user_name)}!</b>\n\n"
         f"<blockquote>☕ Добро пожаловать в панель управления хостингом <b>TeaHost</b>. "
-        f"Здесь вы можете легко управлять своими юзерботами.</blockquote>")
+        f"Здесь вы можете легко управлять своими юзерботами.</blockquote>"
+        f"{premium_status_text}")
+
     markup = kb.get_main_panel_keyboard(
         has_bots=bool(user_bots),
         user_id=owner_id,
@@ -311,8 +329,6 @@ async def _show_main_panel(bot: Bot, chat_id: int, user_id: int, user_name: str,
 
     if message_id:
         try:
-            # Простое решение: всегда пытаемся обновить только caption и markup
-            # Если это не работает, то отправляем новое сообщение с фото
             try:
                 await bot.edit_message_caption(
                     chat_id=chat_id,
@@ -321,8 +337,6 @@ async def _show_main_panel(bot: Bot, chat_id: int, user_id: int, user_name: str,
                     reply_markup=markup
                 )
             except TelegramBadRequest:
-                # Если не удалось обновить caption, отправляем новое сообщение
-                # с фото
                 await bot.edit_message_media(
                     media=InputMediaPhoto(media=photo, caption=text),
                     chat_id=chat_id,
@@ -3028,4 +3042,42 @@ async def cq_migrate_ub_execute(call: types.CallbackQuery, state: FSMContext, bo
             "Обратитесь в поддержку.",
             reply_markup=builder.as_markup()
         )
+
+
+def pluralize(count, one, few, many):
+    count = int(count)
+    if 10 <= count % 100 <= 20:
+        return many
+    if count % 10 == 1:
+        return one
+    if 2 <= count % 10 <= 4:
+        return few
+    return many
+
+
+def format_timedelta_to_human_readable(delta: timedelta) -> str:
+    if delta.days > 365 * 100:
+        return "<b>навсегда (Lifetime)</b> ✨"
+
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 0:
+        return "<i>истек</i>"
+
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+
+    parts = []
+    if days > 0:
+        parts.append(f"{days} {pluralize(days, 'день', 'дня', 'дней')}")
+    if hours > 0:
+        parts.append(f"{hours} {pluralize(hours, 'час', 'часа', 'часов')}")
+    if minutes > 0:
+        parts.append(
+            f"{minutes} {pluralize(minutes, 'минута', 'минуты', 'минут')}")
+
+    if not parts:
+        return "менее минуты"
+
+    return " ".join(parts[:2])
 # --- END OF FILE user_handlers.py ---

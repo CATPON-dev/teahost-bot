@@ -14,8 +14,8 @@
     "database": {
         "host": "138.124.114.163",
         "port": 3306,
-        "user": "sharkhost",
-        "password": "sharkhost",
-        "db_name": "sharkhost"
+        "user": "teahost",
+        "password": "nloveuser_tg",
+        "db_name": "teahost"
     }
 }

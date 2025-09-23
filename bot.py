@@ -843,6 +843,13 @@ async def main():
             args=[bot],
             misfire_grace_time=1800,
             id="auto_backup")
+        scheduler.add_job(
+            check_expired_premium,
+            'interval',
+            hours=1,
+            args=[bot],
+            id="check_expired_premium"
+        )
         scheduler.start()
         await update_status_message(bot, force_resend=True, page=1)
         await update_stats_message(bot, force_resend=True)
@@ -894,6 +901,82 @@ async def cq_status_page_handler(call: CallbackQuery, bot: Bot):
         logging.error(
             f"Критическая ошибка в cq_status_page_handler: {e}",
             exc_info=True)
+
+
+async def check_expired_premium(bot: Bot):
+    logging.info("Running scheduled check for expired premium statuses...")
+
+    users_entering_grace = await db.get_users_entering_grace_period()
+    for user in users_entering_grace:
+        user_id = user['tg_user_id']
+        logging.info(
+            f"Premium just expired for user {user_id}. Starting grace period.")
+
+        try:
+            await bot.send_message(
+                user_id,
+                "<blockquote>"
+                "⏳ <b>Срок действия вашего премиум-статуса истек.</b>\n\n"
+                "У вас есть <b>24 часа</b> на продление подписки. По истечении этого времени ваши юзерботы на премиум-серверах будут автоматически удалены.\n\n"
+                "Для продления обратитесь к @nloveuser."
+                "</blockquote>",
+                reply_markup=kb.get_back_to_main_menu_keyboard()
+            )
+            await db.set_grace_period_notified(user_id, True)
+        except (TelegramForbiddenError, TelegramNotFound):
+            logging.warning(
+                f"Failed to notify user {user_id} about grace period start.")
+            await db.set_grace_period_notified(user_id, True)
+
+        await asyncio.sleep(1)
+
+    users_ending_grace = await db.get_users_ending_grace_period()
+    if not users_ending_grace:
+        logging.info("No users ending their grace period found.")
+        return
+
+    servers = server_config.get_servers()
+    premium_server_ips = {
+        ip for ip,
+        details in servers.items() if details.get("status") == "premium"}
+
+    for user in users_ending_grace:
+        user_id = user['tg_user_id']
+        logging.info(
+            f"Grace period ended for user {user_id}. Revoking status and deleting userbots.")
+
+        await db.set_premium_status(user_id, None)
+
+        try:
+            await bot.send_message(
+                user_id,
+                "<blockquote>"
+                "🗑️ <b>Ваш льготный период истек.</b>\n\n"
+                "Премиум-статус отозван, а все ваши юзерботы на премиум-серверах удалены."
+                "</blockquote>",
+                reply_markup=kb.get_back_to_main_menu_keyboard()
+            )
+        except (TelegramForbiddenError, TelegramNotFound):
+            logging.warning(
+                f"Failed to notify user {user_id} about final premium removal.")
+
+        userbots = await db.get_userbots_by_tg_id(user_id)
+        for ub in userbots:
+            if ub['server_ip'] in premium_server_ips:
+                logging.info(
+                    f"Deleting userbot {ub['ub_username']} from premium server {ub['server_ip']} for user {user_id}.")
+                delete_result = await api_manager.delete_container(ub['ub_username'], ub['server_ip'])
+                if delete_result.get("success"):
+                    await db.delete_userbot_record(ub['ub_username'])
+                    try:
+                        await bot.send_message(user_id, f"🗑️ Ваш юзербот <code>{ub['ub_username']}</code> был удален с премиум-сервера.")
+                    except Exception:
+                        pass
+                else:
+                    logging.error(
+                        f"Failed to delete container {ub['ub_username']} for user {user_id} on grace period expiration.")
+
+        await asyncio.sleep(1)
 
 if __name__ == '__main__':
     logs_dir = 'logs'
